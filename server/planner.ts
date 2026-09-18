@@ -18,7 +18,6 @@ import {
   type TransitEdge,
 } from "./network";
 import { getConditions, getBusArrivals } from "./feeds";
-import { oneMapJourneys } from "./providers";
 
 export function noticeActive(n: Notice, departure: string, duration = 120) {
   const start = Date.parse(n.startsAt),
@@ -562,70 +561,30 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
         conditions.weather.cycleStatus === "valid",
     },
   };
-  let base: Journey[] = [];
-  if (request.dataMode === "live")
-    try {
-      base = await oneMapJourneys(routingRequest, journeyFromSegments);
-    } catch {
-      conditions.feeds.push({
-        name: "OneMap routing",
-        status: "unavailable",
-        detail: "Using the bundled OSM network and estimated times",
-      });
-    }
-  if (base.length) {
-    conditions.feeds.push({
-      name: "OneMap routing",
-      status: "live",
-      updatedAt: new Date().toISOString(),
-      detail: "Official Singapore routing itineraries",
-    });
-    // OneMap cannot accept our live closures or cycling-to-transit preferences.
-    // Keep its baseline, but supply independently routed OSM alternatives when needed.
-    const impacted = base.some((journey) =>
-      journey.segments.some((segment) =>
-        conditions.notices.some(
-          (notice) =>
-            noticeActive(notice, request.departure) &&
-            segmentAffected(notice, segment) &&
-            notice.kind !== "advisory",
-        ),
-      ),
+  conditions.feeds.unshift({
+    name: "Bundled OSM map & routing",
+    status: "local",
+    updatedAt: getNetwork().timestamp,
+    detail:
+      "Hosted with Wayce; route geometry is local and travel times are estimates",
+  });
+  let base = localJourneys(routingRequest, conditions);
+  // The bundled extract can miss a usable station when the user's normal
+  // walking preference is conservative. Retry with the supported upper
+  // bound before reporting that no route exists; this does not mutate the
+  // saved preference or silently invent a route.
+  if (!base.length && routingRequest.preferences.maxWalk < 3500) {
+    base = localJourneys(
+      {
+        ...routingRequest,
+        preferences: { ...routingRequest.preferences, maxWalk: 3500 },
+      },
+      conditions,
     );
-    if (
-      impacted ||
-      request.preferences.cycling ||
-      request.preferences.stepFree ||
-      conditions.weather.walkStatus !== "valid"
-    ) {
-      base.push(...localJourneys(routingRequest, conditions));
-      base = [
-        ...new Map(base.map((journey) => [journey.id, journey])).values(),
-      ];
-      if (request.preferences.stepFree) {
-        // OneMap PT cannot verify stairs; use our stairs-excluding walking graph.
-        base = base.filter((journey) => !journey.source.includes("OneMap"));
-      }
-    }
-  } else {
-    base = localJourneys(routingRequest, conditions);
-    // The bundled extract can miss a usable station when the user's normal
-    // walking preference is conservative. Retry with the supported upper
-    // bound before reporting that no route exists; this does not mutate the
-    // saved preference or silently invent a route.
-    if (!base.length && routingRequest.preferences.maxWalk < 3500) {
-      base = localJourneys(
-        {
-          ...routingRequest,
-          preferences: { ...routingRequest.preferences, maxWalk: 3500 },
-        },
-        conditions,
-      );
-    }
   }
   if (!base.length)
     throw new Error(
-      "No usable route found in this map extract. Try the supported Singapore places, increase the walking limit, or connect OneMap for wider coverage.",
+      "No usable route found in the bundled map extract. Try a mapped station or supported Singapore place, or increase the walking limit.",
     );
   if (request.dataMode === "live") {
     const stops = [

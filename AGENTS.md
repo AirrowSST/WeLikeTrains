@@ -7,6 +7,7 @@ This repository is intended for repeated human/AI collaboration. Treat this file
 - This is a **MOBILE-ONLY web app**, not a desktop dashboard. Keep one column, bottom navigation, comfortable touch targets and the same phone interface on wide screens (maximum width 480px).
 - Rachel (Tampines → Raffles Place, 07:40 / 08:45) is primary. Keep Arjun and Mdm Lim selectable.
 - User approved foreground location services on 2026-09-18. Device location requires an explicit user action, live tracking runs only while the active journey dialog is open, journey progress stays manual, and demo mode uses clearly labelled deterministic simulated locations. Do not add background location tracking or silently substitute demo coordinates after a live failure.
+- User approved fully local map, place search and routing data on 2026-09-19. Runtime map rendering and route computation must use the committed OSM extract; do not add public tile, geocoding or routing dependencies without a new user decision. Live LTA/NEA condition feeds remain separate external inputs.
 - App hosting/backend/AI are on Google Cloud project `qwiklabs-gcp-02-7df98c2d8335`, Cloud Run `weliketrains`, region `asia-southeast1`.
 - User explicitly said on 2026-09-18: **do not do the submission write-up now; we are not about to submit; human polishing is pending**. Do not infer submission authority from the reference documents. Existing demo/checklist and requirements documents are engineering notes, not a final submission.
 - Problem brief: `C:\Users\Yaw Tia\Downloads\PS2_README (1).md`.
@@ -41,21 +42,21 @@ See `docs/GCP.md` for deployment. Code-only redeploy retains secret bindings. Th
 
 ## Architecture map
 
-| Area | Source of truth |
-|---|---|
-| Mobile UI, profiles, local storage, consent, chat | `src/App.tsx`, `src/styles.css` |
-| OSM map and route overlays | `src/Map.tsx` |
-| Shared contracts / persona defaults / line aliases | `shared/types.ts`, `shared/catalog.ts` |
-| Explainable, non-probabilistic risk index | `shared/risk.ts` |
-| Walking/cycling A*, transit graph and local timings | `server/network.ts` |
-| Condition-aware candidates, ranking and comparison | `server/planner.ts` |
-| Official feed parsing, freshness, labelled demo | `server/feeds.ts` |
-| OneMap, Vertex AI, validated preferences and TTS | `server/providers.ts` |
-| API validation and middleware | `server/validation.ts`, `server/index.ts` |
-| Consented reminders, OIDC and retention | `server/notifications.ts` |
-| Offline assets / notification handling | `public/sw.js` |
-| OSM rebuild and provenance | `scripts/import-osm.mjs`, `data/OSM-PROVENANCE.json` |
-| Cloud infrastructure setup | `scripts/deploy-gcp.ps1`, `Dockerfile`, `docs/GCP.md` |
+| Area                                                         | Source of truth                                       |
+| ------------------------------------------------------------ | ----------------------------------------------------- |
+| Mobile UI, profiles, local storage, consent, chat            | `src/App.tsx`, `src/styles.css`                       |
+| OSM map and route overlays                                   | `src/Map.tsx`                                         |
+| Shared contracts / persona defaults / line aliases           | `shared/types.ts`, `shared/catalog.ts`                |
+| Explainable, non-probabilistic risk index                    | `shared/risk.ts`                                      |
+| Walking/cycling A*, transit graph and local timings          | `server/network.ts`                                   |
+| Condition-aware candidates, ranking and comparison           | `server/planner.ts`                                   |
+| Official feed parsing, freshness, labelled demo              | `server/feeds.ts`                                     |
+| Local place search, Vertex AI, validated preferences and TTS | `server/providers.ts`                                 |
+| API validation and middleware                                | `server/validation.ts`, `server/index.ts`             |
+| Consented reminders, OIDC and retention                      | `server/notifications.ts`                             |
+| Offline assets / notification handling                       | `public/sw.js`                                        |
+| OSM rebuild and provenance                                   | `scripts/import-osm.mjs`, `data/OSM-PROVENANCE.json`  |
+| Cloud infrastructure setup                                   | `scripts/deploy-gcp.ps1`, `Dockerfile`, `docs/GCP.md` |
 
 ## AI and data guardrails
 
@@ -71,6 +72,6 @@ See `docs/GCP.md` for deployment. Code-only redeploy retains secret bindings. Th
 
 ## Current handoff status
 
-The mobile app is deployed; human product/visual polishing is pending. Latest engineering checks: build/typecheck, 20 unit tests and all 14 browser checks pass when browser projects are run separately. The local synthetic evaluation still reports two routing failures because every candidate in the Rachel/rain and Arjun/rain fixtures is marked blocked for unsafe exposed walking; do not report zero evaluation failures until that planner/evaluation contract is resolved. Automated tests include unit routing/feed checks, main phone flows, validated chat route-card display, foreground/simulated location, narrow-width layout, large text/offline reload, and axe checks. Physical-phone, screen-reader and walked-route checks are not signed off. Submission write-up, demo recording and submission itself are explicitly deferred.
+The mobile app is deployed; human product/visual polishing is pending. Latest local-map change checks: build/typecheck and 22 unit tests pass; primary journey/map flows pass on phone and wide-screen projects, including an assertion that no OneMap resource loads. Existing automated contrast checks currently report low-contrast text/button selectors, and the long large-text/offline check exceeds the agent command runner's 30-second window; do not report the full browser suite as passing until those are resolved or rerun in CI. The local synthetic evaluation still reports two routing failures because every candidate in the Rachel/rain and Arjun/rain fixtures is marked blocked for unsafe exposed walking; do not report zero evaluation failures until that planner/evaluation contract is resolved. Physical-phone, screen-reader and walked-route checks are not signed off. Submission write-up, demo recording and submission itself are explicitly deferred.
 
 Use local no-cost tests first. Optional cloud checks consume team project credits; do not run them repeatedly as a substitute for deterministic regression tests. Avoid infrastructure teardown or credential rotation unless specifically requested.

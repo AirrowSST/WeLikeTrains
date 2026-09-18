@@ -46,7 +46,7 @@ if ($EnableReminders -and (-not $values.VAPID_PUBLIC_KEY -or -not $values.VAPID_
     $values.VAPID_PUBLIC_KEY = $vapid.publicKey
     $values.VAPID_PRIVATE_KEY = $vapid.privateKey
 }
-$secretKeys = @('LTA_ACCOUNT_KEY','ONEMAP_EMAIL','ONEMAP_PASSWORD','ONEMAP_TOKEN','VERTEX_API_KEY','VAPID_PRIVATE_KEY')
+$secretKeys = @('LTA_ACCOUNT_KEY','VERTEX_API_KEY','VAPID_PRIVATE_KEY')
 $secretBindings = @()
 $privateDir = Join-Path $repoRoot '.local\deploy'
 New-Item -ItemType Directory -Force -Path $privateDir | Out-Null
