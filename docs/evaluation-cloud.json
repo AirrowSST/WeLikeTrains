@@ -1,0 +1,270 @@
+{
+  "generatedAt": "2026-09-18T12:23:57.803Z",
+  "mode": "hosted Vertex AI + deterministic routing",
+  "limitations": "Synthetic labelled fixtures, not historical ground truth. Structural checks are not an accuracy or safety claim. Review recorded cloud answers manually; no real-phone validation is implied.",
+  "failures": 0,
+  "results": [
+    {
+      "persona": "rachel",
+      "scenario": "normal",
+      "elapsedMs": 18924,
+      "recommended": "EWL",
+      "duration": 54,
+      "originalDuration": 54,
+      "crowd": "moderate",
+      "provider": "vertex",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true,
+        "cloudModelActuallyUsed": true
+      },
+      "response": "Based on your preferences, the recommended route is EWL, arriving around 08:34. This demo advice suggests it's the best fit for current conditions. The risk index is not a probability; it's a rule-based score indicating a low risk level of 10, with no elevated signal in the available inputs. All timings are estimates and not from a published timetable."
+    },
+    {
+      "persona": "rachel",
+      "scenario": "disruption",
+      "elapsedMs": 1860,
+      "recommended": "DTL",
+      "duration": 60,
+      "originalDuration": 74,
+      "crowd": "low",
+      "provider": "vertex",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true,
+        "cloudModelActuallyUsed": true
+      },
+      "response": "This is a demo scenario. I recommend taking the DTL route. It is estimated to take between 57 and 69 minutes. The other routes, EWL, EWL → CCL → NSL, and Bus 67 → Bus 12, are affected by a signalling fault on the East West Line. The timings provided are estimates based on distance, estimated speed, dwell, and waiting allowances, not a published timetable. The risk index is a rule-based index, not a disruption probability or a trained forecast."
+    },
+    {
+      "persona": "rachel",
+      "scenario": "closure",
+      "elapsedMs": 1639,
+      "recommended": "DTL",
+      "duration": 60,
+      "originalDuration": 94,
+      "crowd": "low",
+      "provider": "vertex",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true,
+        "cloudModelActuallyUsed": true
+      },
+      "response": "The DTL route is recommended, taking 57-69 minutes with a 23-minute walk. The other options are EWL → Bus 196 → TEL → NSL (84-100 min, 22 min walk) and Bus 67 → Bus 12 (95-112 min, 24 min walk). The EWL route is blocked due to planned track works. All timings are estimates. This is a demo scenario, and the risk index is not a disruption probability or a forecast. It's a rule-based index."
+    },
+    {
+      "persona": "rachel",
+      "scenario": "rain",
+      "elapsedMs": 1532,
+      "recommended": "EWL",
+      "duration": 59,
+      "originalDuration": 59,
+      "crowd": "moderate",
+      "provider": "vertex",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true,
+        "cloudModelActuallyUsed": true
+      },
+      "response": "The demo context suggests taking the EWL. This route is recommended as the best fit for the current conditions. You should leave about 7 minutes earlier to ensure an arrival buffer. The risk index is a rule-based score, not a probability or forecast. It indicates a 'low' risk level with a score of 25, primarily due to rain increasing uncertainty for walking and surface transport."
+    },
+    {
+      "persona": "rachel",
+      "scenario": "crowded",
+      "elapsedMs": 1485,
+      "recommended": "EWL",
+      "duration": 57,
+      "originalDuration": 57,
+      "crowd": "high",
+      "provider": "vertex",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true,
+        "cloudModelActuallyUsed": true
+      },
+      "response": "The demo context suggests taking the EWL. This route is estimated to take between 54 and 65 minutes, including a 15-minute walk. Please allow extra boarding time due to anticipated crowded platforms. The risk index is a rule-based score, not a probability, indicating a moderate risk level (30) due to high crowd density. All timings are estimates and not a published timetable."
+    },
+    {
+      "persona": "arjun",
+      "scenario": "normal",
+      "elapsedMs": 2712,
+      "recommended": "NEL → CCL",
+      "duration": 60,
+      "originalDuration": 60,
+      "crowd": "moderate",
+      "provider": "vertex",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true,
+        "cloudModelActuallyUsed": true
+      },
+      "response": "The recommended route is \"NEL → CCL\". This route is estimated to take between 57 and 69 minutes, with a 9-minute walk. The timings are estimates based on distance, speed, dwell, and waiting allowances, not a published timetable. The risk index is a rule-based score, not a disruption probability or a trained forecast. This context is a demo."
+    },
+    {
+      "persona": "arjun",
+      "scenario": "rain",
+      "elapsedMs": 1615,
+      "recommended": "NEL → CCL",
+      "duration": 64,
+      "originalDuration": 64,
+      "crowd": "moderate",
+      "provider": "vertex",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true,
+        "cloudModelActuallyUsed": true
+      },
+      "response": "The demo context suggests taking the NEL → CCL route, arriving around 09:19. This route is recommended as the best fit for the conditions. The risk index is not a probability; it's a rule-based score indicating potential issues like rain affecting walking and surface transport. The timings are estimates, not a published timetable. Heavy rain is expected, which may affect exposed walks and bus journeys. Cycling is not recommended during thunderstorms."
+    },
+    {
+      "persona": "lim",
+      "scenario": "normal",
+      "elapsedMs": 11479,
+      "recommended": "EWL",
+      "duration": 55,
+      "originalDuration": 55,
+      "crowd": "moderate",
+      "provider": "vertex",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true,
+        "cloudModelActuallyUsed": true
+      },
+      "response": "The demo context suggests taking the EWL route. It is estimated to arrive between 09:55 and 10:06. Please note that timings are estimates and step-free access is not fully verified. The risk index is not a probability; it's a rule-based score indicating low risk due to no elevated signal in the inputs."
+    },
+    {
+      "persona": "lim",
+      "scenario": "maintenance",
+      "elapsedMs": 3913,
+      "recommended": "EWL → CCL → Bus 196 → Bus 2",
+      "duration": 85,
+      "originalDuration": 55,
+      "crowd": "moderate",
+      "provider": "vertex",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true,
+        "cloudModelActuallyUsed": true
+      },
+      "response": "The recommended route is \"EWL → CCL → Bus 196 → Bus 2\". This route is estimated to take 82-97 minutes with a 26-minute walk. Please note that timings are estimates and step-free access is not fully verified. The risk index is not a probability; it's a rule-based score indicating a low risk level based on available inputs in this demo scenario."
+    },
+    {
+      "message": "I need step-free access",
+      "expected": {
+        "stepFree": true
+      },
+      "actual": {
+        "stepFree": true,
+        "walkingSpeed": 40
+      },
+      "pass": true
+    },
+    {
+      "message": "I avoid crowds and need sheltered walks",
+      "expected": {
+        "avoidCrowds": true,
+        "sheltered": true
+      },
+      "actual": {
+        "avoidCrowds": true,
+        "sheltered": true
+      },
+      "pass": true
+    },
+    {
+      "message": "I like cycling",
+      "expected": {
+        "cycling": true
+      },
+      "actual": {
+        "cycling": true
+      },
+      "pass": true
+    },
+    {
+      "message": "I cannot cycle",
+      "expected": {
+        "cycling": false
+      },
+      "actual": {
+        "cycling": false
+      },
+      "pass": true
+    },
+    {
+      "message": "Stairs are fine",
+      "expected": {
+        "stepFree": false
+      },
+      "actual": {
+        "stepFree": false,
+        "walkingSpeed": 75
+      },
+      "pass": true
+    },
+    {
+      "message": "I don't mind crowds",
+      "expected": {
+        "avoidCrowds": false
+      },
+      "actual": {
+        "avoidCrowds": false
+      },
+      "pass": true
+    }
+  ]
+}

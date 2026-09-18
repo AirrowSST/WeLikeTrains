@@ -1,0 +1,16 @@
+.gcloudignore
+.git
+.gitignore
+.env
+.env.*
+.cache/**
+.local/**
+.credentials/**
+node_modules/**
+dist/**
+dist-server/**
+test-results/**
+playwright-report/**
+*.log
+*-credentials.json
+*-service-account.json

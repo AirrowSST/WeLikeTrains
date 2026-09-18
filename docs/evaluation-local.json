@@ -1,0 +1,252 @@
+{
+  "generatedAt": "2026-09-18T12:23:10.512Z",
+  "mode": "no-cost local fallback + deterministic routing",
+  "limitations": "Synthetic labelled fixtures, not historical ground truth. Structural checks are not an accuracy or safety claim. Review recorded cloud answers manually; no real-phone validation is implied.",
+  "failures": 0,
+  "results": [
+    {
+      "persona": "rachel",
+      "scenario": "normal",
+      "elapsedMs": 4621,
+      "recommended": "EWL",
+      "duration": 54,
+      "originalDuration": 54,
+      "crowd": "moderate",
+      "provider": "local",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true
+      }
+    },
+    {
+      "persona": "rachel",
+      "scenario": "disruption",
+      "elapsedMs": 127,
+      "recommended": "DTL",
+      "duration": 60,
+      "originalDuration": 74,
+      "crowd": "low",
+      "provider": "local",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true
+      }
+    },
+    {
+      "persona": "rachel",
+      "scenario": "closure",
+      "elapsedMs": 100,
+      "recommended": "DTL",
+      "duration": 60,
+      "originalDuration": 94,
+      "crowd": "low",
+      "provider": "local",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true
+      }
+    },
+    {
+      "persona": "rachel",
+      "scenario": "rain",
+      "elapsedMs": 96,
+      "recommended": "EWL",
+      "duration": 59,
+      "originalDuration": 59,
+      "crowd": "moderate",
+      "provider": "local",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true
+      }
+    },
+    {
+      "persona": "rachel",
+      "scenario": "crowded",
+      "elapsedMs": 81,
+      "recommended": "EWL",
+      "duration": 57,
+      "originalDuration": 57,
+      "crowd": "high",
+      "provider": "local",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true
+      }
+    },
+    {
+      "persona": "arjun",
+      "scenario": "normal",
+      "elapsedMs": 498,
+      "recommended": "NEL → CCL",
+      "duration": 60,
+      "originalDuration": 60,
+      "crowd": "moderate",
+      "provider": "local",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true
+      }
+    },
+    {
+      "persona": "arjun",
+      "scenario": "rain",
+      "elapsedMs": 95,
+      "recommended": "NEL → CCL",
+      "duration": 64,
+      "originalDuration": 64,
+      "crowd": "moderate",
+      "provider": "local",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true
+      }
+    },
+    {
+      "persona": "lim",
+      "scenario": "normal",
+      "elapsedMs": 3247,
+      "recommended": "EWL",
+      "duration": 55,
+      "originalDuration": 55,
+      "crowd": "moderate",
+      "provider": "local",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true
+      }
+    },
+    {
+      "persona": "lim",
+      "scenario": "maintenance",
+      "elapsedMs": 902,
+      "recommended": "EWL → CCL → Bus 196 → Bus 2",
+      "duration": 85,
+      "originalDuration": 55,
+      "crowd": "moderate",
+      "provider": "local",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "usableRoute": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true
+      }
+    },
+    {
+      "message": "I need step-free access",
+      "expected": {
+        "stepFree": true
+      },
+      "actual": {
+        "stepFree": true,
+        "walkingSpeed": 40
+      },
+      "pass": true
+    },
+    {
+      "message": "I avoid crowds and need sheltered walks",
+      "expected": {
+        "avoidCrowds": true,
+        "sheltered": true
+      },
+      "actual": {
+        "avoidCrowds": true,
+        "sheltered": true
+      },
+      "pass": true
+    },
+    {
+      "message": "I like cycling",
+      "expected": {
+        "cycling": true
+      },
+      "actual": {
+        "cycling": true
+      },
+      "pass": true
+    },
+    {
+      "message": "I cannot cycle",
+      "expected": {
+        "cycling": false
+      },
+      "actual": {
+        "cycling": false
+      },
+      "pass": true
+    },
+    {
+      "message": "Stairs are fine",
+      "expected": {
+        "stepFree": false
+      },
+      "actual": {
+        "stepFree": false,
+        "walkingSpeed": 75
+      },
+      "pass": true
+    },
+    {
+      "message": "I don't mind crowds",
+      "expected": {
+        "avoidCrowds": false
+      },
+      "actual": {
+        "avoidCrowds": false
+      },
+      "pass": true
+    }
+  ]
+}

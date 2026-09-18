@@ -1,0 +1,2 @@
+/* Self-hosted system fallback: no external font requests or tracking. */
+@font-face{font-family:'DM Sans';src:local('DM Sans');font-display:swap;font-weight:100 900}
