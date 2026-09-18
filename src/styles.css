@@ -1267,7 +1267,7 @@ input {
   .app-shell .arrival,
   .app-shell .place-field small,
   .app-shell .recommendation p {
-    color: #52665cbf !important;
+    color: #52665c !important;
     font-weight: 400;
   }
   .app-shell h1,
@@ -4045,15 +4045,15 @@ body {
     min-height: 54px;
     margin-top: 12px;
     border-radius: 15px;
-    border: 1px solid #afd0be;
-    background: #cfe6d8;
-    color: #1f503c;
+    border: 1px solid #007536;
+    background: #007f3a;
+    color: #fff;
     box-shadow: 0 7px 15px #5a8f7324;
     font-size: 16px;
     font-weight: 600;
   }
   .plan-button:hover {
-    background: #c1ddcc;
+    background: #006d32;
   }
   .recommendation {
     order: 2;
@@ -4104,7 +4104,7 @@ body {
     padding-top: 14px;
   }
   .recommended-label {
-    color: #009b46;
+    color: #006c32;
   }
   .route-summary .duration {
     color: #142c24;
@@ -4688,13 +4688,13 @@ body {
   .field-marker { transform: translateX(12px); }
   .swap-button { right: 10px; width: 34px; height: 34px; min-width: 34px; }
   .planner-secondary-controls { display: none; }
-  .plan-button { width: 100%; min-height: 54px; margin-top: 12px; border-radius: 15px; background: #00b14f; box-shadow: 0 7px 15px #00a84b2e; font-size: 17px; }
+  .plan-button { width: 100%; min-height: 54px; margin-top: 12px; border-radius: 15px; border-color: #007536; background: #007f3a; color: #fff; box-shadow: 0 7px 15px #00a84b2e; font-size: 17px; }
   .recommendation { order: 2; margin: 0; padding: 14px 18px; min-height: 0; border: 0; border-radius: 0; background: #f2fbf5; }
   .routes-heading { order: 3; }
   .route-options { order: 4; padding: 12px 16px 0; background: #fff; }
   .route-card { border: 0; border-bottom: 1px solid #edf1ed; border-radius: 0; box-shadow: none; }
   .route-card.selected { border-color: #00b14f; border-radius: 14px; box-shadow: inset 0 0 0 1px #00b14f; }
-  .recommended-label { color: #009b46; }
+  .recommended-label { color: #006c32; }
   .route-summary .duration { color: #142c24; font-size: 28px; }
 .recommendation-icon {
   width: 36px;

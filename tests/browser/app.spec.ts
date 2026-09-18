@@ -380,8 +380,13 @@ test("supports large text and preserves a previously loaded journey offline", as
       "You’re offline. Your saved map and journey are available. Conditions may have changed.",
     ),
   ).toBeVisible();
-  await expect(page.locator(".map-source-note")).toContainText(
-    "showing offline roads",
+  await expect(page.locator(".journey-map")).toHaveAttribute(
+    "data-map-source",
+    "bundled-osm",
+  );
+  await expect(page.locator(".journey-map")).toHaveAttribute(
+    "data-ready",
+    "true",
   );
   await expect(startJourneyButton(page)).toBeEnabled();
   await context.setOffline(false);
