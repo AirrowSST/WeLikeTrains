@@ -1,0 +1,39 @@
+name: Deploy WeLikeTrains
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Cloud Run revision
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://weliketrains-191711317812.asia-southeast1.run.app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/191711317812/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: weliketrains-github-deployer@qwiklabs-gcp-02-7df98c2d8335.iam.gserviceaccount.com
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy source to Cloud Run
+        run: >-
+          gcloud run deploy weliketrains
+          --source .
+          --project qwiklabs-gcp-02-7df98c2d8335
+          --region asia-southeast1
+          --service-account weliketrains-runtime@qwiklabs-gcp-02-7df98c2d8335.iam.gserviceaccount.com
+          --build-service-account projects/qwiklabs-gcp-02-7df98c2d8335/serviceAccounts/weliketrains-builder@qwiklabs-gcp-02-7df98c2d8335.iam.gserviceaccount.com
+          --quiet
