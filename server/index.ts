@@ -78,7 +78,7 @@ app.use("/api", (req, res, next) => {
   next();
 });
 app.get("/api/health", (_req, res) =>
-  res.json({ status: "ok", service: "WeLikeTrains", version: "1.0.0" }),
+  res.json({ status: "ok", service: "Wayce", version: "1.0.0" }),
 );
 app.get("/api/config", (_req, res) =>
   res.json({
@@ -259,6 +259,6 @@ app.use(
 if (process.env.NODE_ENV !== "test") {
   const port = Number(process.env.PORT ?? 8080);
   app.listen(port, "0.0.0.0", () =>
-    console.log(`WeLikeTrains running on http://localhost:${port}`),
+    console.log(`Wayce running on http://localhost:${port}`),
   );
 }

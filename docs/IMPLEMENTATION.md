@@ -18,6 +18,9 @@ The remote was initially empty. The organiser's referenced PS2/data and PS2/refe
 
 ## Engineering verification — 2026-09-18
 
+- Pedestrian routing now indexes every substantial connected component in the bundled OSM extract, while matching both ends of a walking leg to the same component. This restores searched western journeys such as NTU to Raffles Place without treating small isolated indoor paths as routable coverage.
+- The product name shown in the interface, install metadata, notifications and companion identity is now Wayce. Public Sans is bundled locally as the single interface typeface, including its italic variable font and OFL licence.
+- The mobile journey sheet below the map can now be dragged between expanded, half-open and collapsed positions. Its visible handle also supports keyboard snapping with Arrow Up/Down and Home/End.
 - The mobile journey map now distinguishes walking, bus, rail and cycling geometry with mode icons, labels and a compact legend; selected endpoints and a small set of Singapore landmarks provide orientation. Weather-affected walking areas use clearly labelled, approximate rain highlights rather than claiming radar-level precision.
 - Official OneMap tiles now provide complete online road, building and place context across Singapore. The committed OSM vectors remain underneath as an offline fallback, and reduced detail is visibly labelled if OneMap tiles fail.
 - Production build and TypeScript pass.

@@ -43,6 +43,7 @@ interface WalkEdge {
   cycle: boolean;
   name: string;
 }
+const MIN_ROUTABLE_WALK_COMPONENT_NODES = 100;
 export function distance(a: Coord, b: Coord) {
   const rad = Math.PI / 180;
   const lat = (b[0] - a[0]) * rad;
@@ -250,9 +251,11 @@ function buildNetwork() {
       nearby.map((t) => ({ to: t.id, distance: distance(s.coord, t.coord) })),
     );
   }
-  // Snap access points to the connected public walking network, not isolated indoor paths.
+  // Snap access points to substantial public walking networks, not isolated
+  // indoor paths. Regional extracts can contain more than one legitimate,
+  // disconnected component (for example, the separately bundled west).
   const seen = new Set<number>();
-  let largest: number[] = [];
+  const components: number[][] = [];
   for (const id of walk.keys()) {
     if (seen.has(id)) continue;
     const component = [id];
@@ -264,14 +267,19 @@ function buildNetwork() {
           component.push(e.to);
         }
       }
-    if (component.length > largest.length) largest = component;
+    if (component.length >= MIN_ROUTABLE_WALK_COMPONENT_NODES)
+      components.push(component);
   }
+  const componentByNode = new Map<number, number>();
   const grid = new Map<string, number[]>();
-  for (const id of largest) {
-    const c = coords.get(id)!;
-    const key = `${Math.floor(c[0] * 500)},${Math.floor(c[1] * 500)}`;
-    if (!grid.has(key)) grid.set(key, []);
-    grid.get(key)!.push(id);
+  for (const [componentId, component] of components.entries()) {
+    for (const id of component) {
+      componentByNode.set(id, componentId);
+      const c = coords.get(id)!;
+      const key = `${Math.floor(c[0] * 500)},${Math.floor(c[1] * 500)}`;
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key)!.push(id);
+    }
   }
   return {
     coords,
@@ -280,6 +288,7 @@ function buildNetwork() {
     transit,
     connectors,
     grid,
+    componentByNode,
     timestamp: raw.timestamp,
   };
 }
@@ -318,25 +327,42 @@ function calculateWalkingPath(
   verified: boolean;
   instructions: string;
 } | null {
-  const { coords, walk, grid } = getNetwork();
-  const nearest = (c: Coord) => {
-    let best = Infinity,
-      id = 0;
+  const { coords, walk, grid, componentByNode } = getNetwork();
+  const nearestByComponent = (c: Coord) => {
+    const nearest = new Map<number, { id: number; distance: number }>();
     const gx = Math.floor(c[0] * 500),
       gy = Math.floor(c[1] * 500);
     for (let x = -2; x <= 2; x++)
       for (let y = -2; y <= 2; y++)
         for (const n of grid.get(`${gx + x},${gy + y}`) ?? []) {
           const d = distance(c, coords.get(n)!);
-          if (d < best && (!cycle || walk.get(n)?.some((e) => e.cycle))) {
-            best = d;
-            id = n;
-          }
+          const component = componentByNode.get(n);
+          if (
+            component === undefined ||
+            (cycle && !walk.get(n)?.some((e) => e.cycle)) ||
+            d >= (nearest.get(component)?.distance ?? Infinity)
+          )
+            continue;
+          nearest.set(component, { id: n, distance: d });
         }
-    return { id, distance: best };
+    return nearest;
   };
-  const a = nearest(from),
-    b = nearest(to);
+  const fromCandidates = nearestByComponent(from);
+  const toCandidates = nearestByComponent(to);
+  let a: { id: number; distance: number } | undefined;
+  let b: { id: number; distance: number } | undefined;
+  let connectorDistance = Infinity;
+  for (const [component, fromCandidate] of fromCandidates) {
+    const toCandidate = toCandidates.get(component);
+    if (!toCandidate) continue;
+    const combined = fromCandidate.distance + toCandidate.distance;
+    if (combined < connectorDistance) {
+      connectorDistance = combined;
+      a = fromCandidate;
+      b = toCandidate;
+    }
+  }
+  if (!a || !b) return null;
   if (a.distance > 400 || b.distance > 400) return null;
   const heap = new Heap<number>();
   heap.push(0, a.id);

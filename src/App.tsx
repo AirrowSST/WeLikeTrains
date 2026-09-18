@@ -3,6 +3,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import {
@@ -139,6 +140,15 @@ function dateValue(iso: string) {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(iso));
+}
+function journeySheetHeights() {
+  const viewportHeight = window.innerHeight;
+  const middle = Math.min(510, Math.max(340, viewportHeight * 0.51));
+  return [
+    Math.min(middle, Math.max(240, viewportHeight * 0.3)),
+    middle,
+    Math.max(middle, Math.min(600, viewportHeight * 0.7)),
+  ];
 }
 function TimeScrollPicker({
   label,
@@ -463,6 +473,11 @@ export default function App() {
   const [savedRoutine, setSavedRoutine] = useState(!!saved.current);
   const [demoPersona, setDemoPersona] = useState<Persona>("lim");
   const [demoScenario, setDemoScenario] = useState<Scenario>("disruption");
+  const [sheetSnap, setSheetSnap] = useState(1);
+  const [sheetMapHeight, setSheetMapHeight] = useState<number | null>(() =>
+    window.innerWidth <= 700 ? journeySheetHeights()[1] : null,
+  );
+  const [sheetDragging, setSheetDragging] = useState(false);
   const [hardPreferences, setHardPreferences] = useState<Partial<Preferences>>(
     saved.current?.hardPreferences ?? {},
   );
@@ -470,6 +485,12 @@ export default function App() {
   const normalRequest = useRef<PlanRequest | null>(null);
   const lastProactiveWarning = useRef("");
   const locationWatch = useRef<number | null>(null);
+  const sheetDrag = useRef<{
+    pointerId: number;
+    startY: number;
+    startHeight: number;
+  } | null>(null);
+  const sheetMoved = useRef(false);
   const demoProfiles = (["arjun", "rachel", "lim"] as Persona[]).map(
     (id) => profiles.find((candidate) => candidate.id === id)!,
   );
@@ -511,6 +532,57 @@ export default function App() {
         })
       : undefined;
   const notify = (message: string) => setToast(message);
+  const snapJourneySheet = (snap: number) => {
+    const nextSnap = Math.min(2, Math.max(0, snap));
+    setSheetSnap(nextSnap);
+    setSheetMapHeight(journeySheetHeights()[nextSnap]);
+  };
+  const startSheetDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (window.innerWidth > 700) return;
+    const map = document.querySelector<HTMLElement>(".map-wrap");
+    if (!map) return;
+    sheetDrag.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight: map.getBoundingClientRect().height,
+    };
+    sheetMoved.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setSheetDragging(true);
+  };
+  const moveJourneySheet = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = sheetDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const delta = event.clientY - drag.startY;
+    if (Math.abs(delta) > 4) sheetMoved.current = true;
+    const heights = journeySheetHeights();
+    setSheetMapHeight(
+      Math.min(heights[2], Math.max(heights[0], drag.startHeight + delta)),
+    );
+  };
+  const finishSheetDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = sheetDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const heights = journeySheetHeights();
+    const currentHeight = Math.min(
+      heights[2],
+      Math.max(heights[0], drag.startHeight + event.clientY - drag.startY),
+    );
+    const nearestSnap = heights.reduce(
+      (nearest, height, index) =>
+        Math.abs(height - currentHeight) <
+        Math.abs(heights[nearest] - currentHeight)
+          ? index
+          : nearest,
+      0,
+    );
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    sheetDrag.current = null;
+    setSheetDragging(false);
+    snapJourneySheet(nearestSnap);
+  };
   const updateRequest = (value: Partial<PlanRequest>) =>
     setRequest((previous) => ({ ...previous, ...value }));
   const updatePreferences = (value: Partial<Preferences>) => {
@@ -696,6 +768,15 @@ export default function App() {
     const timer = setTimeout(() => setToast(""), 5000);
     return () => clearTimeout(timer);
   }, [toast]);
+  useEffect(() => {
+    const resizeSheet = () => {
+      setSheetMapHeight(
+        window.innerWidth <= 700 ? journeySheetHeights()[sheetSnap] : null,
+      );
+    };
+    window.addEventListener("resize", resizeSheet);
+    return () => window.removeEventListener("resize", resizeSheet);
+  }, [sheetSnap]);
   useEffect(() => {
     document.documentElement.classList.toggle("large-text", largeText);
     persist("wlt-large-text", largeText);
@@ -1007,13 +1088,12 @@ export default function App() {
         </nav>
       </header>
       <div className="bottom-controls" aria-label="App controls">
-        <a className="brand" href="/" aria-label="WeLikeTrains home">
+        <a className="brand" href="/" aria-label="Wayce home">
           <span className="brand-icon">
             <TrainFront size={23} />
           </span>
           <span>
-            WeLike<span className="brand-light">Trains</span>
-            <i />
+            Wayce<i />
           </span>
         </a>
         <div className="header-actions">
@@ -1070,9 +1150,55 @@ export default function App() {
         )}
         {tab === "today" && (
           <>
-            <div className="journey-layout">
+            <div
+              className={`journey-layout ${sheetDragging ? "sheet-dragging" : ""}`}
+              style={
+                sheetMapHeight === null
+                  ? undefined
+                  : ({
+                      "--mobile-map-height": `${sheetMapHeight}px`,
+                    } as React.CSSProperties)
+              }
+            >
               <aside className="planner-column">
                 <section className="planner-card">
+                  <button
+                    type="button"
+                    className="sheet-drag-handle"
+                    aria-label={`Resize journey panel, ${["expanded", "half open", "collapsed"][sheetSnap]}`}
+                    aria-controls="journey-planner"
+                    data-sheet-snap={["expanded", "middle", "collapsed"][sheetSnap]}
+                    title="Drag to resize the journey panel"
+                    onPointerDown={startSheetDrag}
+                    onPointerMove={moveJourneySheet}
+                    onPointerUp={finishSheetDrag}
+                    onPointerCancel={finishSheetDrag}
+                    onClick={(event) => {
+                      if (sheetMoved.current) {
+                        sheetMoved.current = false;
+                        event.preventDefault();
+                        return;
+                      }
+                      snapJourneySheet(sheetSnap === 0 ? 2 : 0);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "ArrowUp") {
+                        event.preventDefault();
+                        snapJourneySheet(sheetSnap - 1);
+                      } else if (event.key === "ArrowDown") {
+                        event.preventDefault();
+                        snapJourneySheet(sheetSnap + 1);
+                      } else if (event.key === "Home") {
+                        event.preventDefault();
+                        snapJourneySheet(0);
+                      } else if (event.key === "End") {
+                        event.preventDefault();
+                        snapJourneySheet(2);
+                      }
+                    }}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
                   <div className="section-title">
                     <h2>Navigate</h2>
                     <button
@@ -1090,36 +1216,63 @@ export default function App() {
                       void runPlan(request);
                     }}
                   >
-                    <div className="place-inputs">
-                      <PlacePicker
-                        label="FROM"
-                        marker="A"
-                        value={request.origin}
-                        onChange={(p) => {
-                          clearLocation();
-                          updateRequestAndPlan({ origin: p });
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="swap-button"
-                        onClick={() => {
-                          clearLocation();
-                          updateRequestAndPlan({
-                            origin: request.destination,
-                            destination: request.origin,
-                          });
-                        }}
-                        aria-label="Swap origin and destination"
-                      >
-                        <ArrowDownUp size={16} />
-                      </button>
-                      <PlacePicker
-                        label="TO"
-                        marker="B"
-                        value={request.destination}
-                        onChange={(p) => updateRequest({ destination: p })}
-                      />
+                    <div className="route-input-group">
+                      <div className="place-inputs">
+                        <PlacePicker
+                          label="FROM"
+                          marker="A"
+                          value={request.origin}
+                          onChange={(p) => {
+                            clearLocation();
+                            updateRequestAndPlan({ origin: p });
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="swap-button"
+                          onClick={() => {
+                            clearLocation();
+                            updateRequestAndPlan({
+                              origin: request.destination,
+                              destination: request.origin,
+                            });
+                          }}
+                          aria-label="Swap origin and destination"
+                        >
+                          <ArrowDownUp size={16} />
+                        </button>
+                        <PlacePicker
+                          label="TO"
+                          marker="B"
+                          value={request.destination}
+                          onChange={(p) => updateRequest({ destination: p })}
+                        />
+                      </div>
+                      <div className="time-fields time-sequence">
+                        <TimeScrollPicker
+                          label="LEAVE"
+                          value={sgTime(request.departure)}
+                          onChange={(value) =>
+                            updateRequest({
+                              departure: `${dateValue(request.departure)}T${value}:00+08:00`,
+                            })
+                          }
+                        />
+                        <span className="time-sequence-arrow" aria-hidden="true">
+                          <ArrowRight size={17} />
+                        </span>
+                        <TimeScrollPicker
+                          label="ARRIVE"
+                          value={
+                            request.arriveBy ? sgTime(request.arriveBy) : "10:30"
+                          }
+                          onChange={(value) =>
+                            updateRequest({
+                              arriveBy: `${dateValue(request.departure)}T${value}:00+08:00`,
+                            })
+                          }
+                        />
+                      </div>
                     </div>
                     <div className="location-control">
                       <button
@@ -1155,31 +1308,6 @@ export default function App() {
                         <TriangleAlert size={14} /> {locationError}
                       </p>
                     )}
-                    <div className="time-fields time-sequence">
-                      <TimeScrollPicker
-                        label="LEAVE"
-                        value={sgTime(request.departure)}
-                        onChange={(value) =>
-                          updateRequest({
-                            departure: `${dateValue(request.departure)}T${value}:00+08:00`,
-                          })
-                        }
-                      />
-                      <span className="time-sequence-arrow" aria-hidden="true">
-                        <ArrowRight size={17} />
-                      </span>
-                      <TimeScrollPicker
-                        label="ARRIVE"
-                        value={
-                          request.arriveBy ? sgTime(request.arriveBy) : "10:30"
-                        }
-                        onChange={(value) =>
-                          updateRequest({
-                            arriveBy: `${dateValue(request.departure)}T${value}:00+08:00`,
-                          })
-                        }
-                      />
-                    </div>
                   </form>
                   <div className="planner-secondary-controls">
                     <div className="travel-date-field">

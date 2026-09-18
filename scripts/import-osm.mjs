@@ -51,7 +51,7 @@ try {
           headers: {
             Accept: "application/json",
             "User-Agent":
-              "WeLikeTrains/1.0 (+https://github.com/AirrowSST/WeLikeTrains)",
+              "Wayce/1.0 (+https://github.com/AirrowSST/WeLikeTrains)",
           },
         },
       );
@@ -97,7 +97,7 @@ for (const [index, part] of westExpansion.entries()) {
         headers: {
           Accept: "application/json",
           "User-Agent":
-            "WeLikeTrains/1.0 (+https://github.com/AirrowSST/WeLikeTrains)",
+            "Wayce/1.0 (+https://github.com/AirrowSST/WeLikeTrains)",
         },
       },
     );
@@ -130,7 +130,7 @@ try {
       headers: {
         Accept: "application/json",
         "User-Agent":
-          "WeLikeTrains/1.0 (+https://github.com/AirrowSST/WeLikeTrains)",
+          "Wayce/1.0 (+https://github.com/AirrowSST/WeLikeTrains)",
       },
     },
   );

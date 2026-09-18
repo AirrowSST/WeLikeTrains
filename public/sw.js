@@ -1,4 +1,4 @@
-const CACHE = "weliketrains-v2";
+const CACHE = "wayce-v3";
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
@@ -12,6 +12,8 @@ self.addEventListener("install", (event) => {
         "/icon.svg",
         "/manifest.webmanifest",
         "/fonts/fonts.css",
+        "/fonts/public-sans-latin.woff2",
+        "/fonts/public-sans-latin-italic.woff2",
         "/data/basemap.json",
         ...assets,
       ]);
@@ -62,7 +64,7 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener("push", (event) => {
   let data = {
     title: "Your commute",
-    body: "Open WeLikeTrains for your update.",
+    body: "Open Wayce for your update.",
     url: "/",
   };
   try {

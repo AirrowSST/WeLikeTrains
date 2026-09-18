@@ -1,2 +1,15 @@
-/* Self-hosted system fallback: no external font requests or tracking. */
-@font-face{font-family:'DM Sans';src:local('DM Sans');font-display:swap;font-weight:100 900}
+/* Public Sans is bundled locally so the interface keeps its typography offline. */
+@font-face {
+  font-family: "Public Sans";
+  src: url("/fonts/public-sans-latin.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Public Sans";
+  src: url("/fonts/public-sans-latin-italic.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+}
