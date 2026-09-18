@@ -854,6 +854,9 @@ input {
 .crowd-badge.high {
   color: #ae6446;
 }
+.crowd-badge.moderate {
+  color: #8a6b24;
+}
 .crowd-badge.low {
   color: #62824c;
 }
@@ -1008,6 +1011,7 @@ input {
 .map-landmark-anchor,
 .route-mode-anchor,
 .map-weather-anchor,
+.map-comparison-anchor,
 .map-pin-anchor {
   background: transparent !important;
   border: 0 !important;
@@ -1120,6 +1124,21 @@ input {
     -1px 1px 0 #fff,
     1px 1px 0 #fff;
 }
+.map-comparison-marker {
+  padding: 5px 8px;
+  border: 1px solid #b5483e;
+  background: #fff8f4f2;
+  color: #8d312c;
+  font-size: 9px;
+  font-weight: 750;
+}
+.map-comparison-marker .map-symbol {
+  display: none;
+}
+.route-original,
+.route-original-affected {
+  pointer-events: none;
+}
 .rain-zone {
   animation: rain-pulse 2.4s ease-in-out infinite;
 }
@@ -1187,13 +1206,17 @@ input {
 }
 .map-legend {
   position: absolute;
-  bottom: 28px;
-  left: 16px;
+  top: 58px;
+  left: 12px;
+  right: 52px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 6px 12px;
+  width: fit-content;
+  max-width: calc(100% - 64px);
   background: #fffffff5;
-  padding: 7px 12px;
+  padding: 6px 9px;
   border-radius: 6px;
   z-index: 450;
   box-shadow: 0 1px 8px #27432808;
@@ -1217,7 +1240,7 @@ input {
   border-top: 2px dashed #869780;
 }
 .legend-line.affected {
-  border-color: #c55c40;
+  border-top: 3px dotted #b5483e;
 }
 .legend-location {
   display: inline-block;
@@ -1852,7 +1875,7 @@ input {
   line-height: 1.5;
   display: block;
   margin-top: 4px;
-  color: #819271;
+  color: #52664a;
 }
 .toggle-row input {
   appearance: none;
@@ -1883,7 +1906,7 @@ input {
   transform: translateX(14px);
 }
 .text-size-icon {
-  color: #738f5c;
+  color: #4f6247;
   font-size: 17px;
 }
 .settings-fields {

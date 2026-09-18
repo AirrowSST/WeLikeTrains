@@ -199,6 +199,62 @@ export default function JourneyMap({
     if (!m || !group || !plan) return;
     group.clearLayers();
     const journey = selected ?? plan.recommended;
+    const comparing = journey.id !== plan.original.id;
+    if (comparing) {
+      plan.original.segments.forEach((segment) => {
+        L.polyline(segment.geometry, {
+          color: "#65736d",
+          weight: 5,
+          opacity: 0.68,
+          dashArray: "8 10",
+          lineCap: "butt",
+          className: "route-original",
+          interactive: false,
+        })
+          .bindTooltip("Original route", { sticky: true })
+          .addTo(group);
+      });
+      let affectedLabelled = false;
+      plan.original.segments.forEach((segment) => {
+        const affectedGeometry = segment.affectedGeometry?.length
+          ? segment.affectedGeometry
+          : segment.affected
+            ? [segment.geometry]
+            : [];
+        affectedGeometry.forEach((geometry) => {
+          L.polyline(geometry, {
+            color: "#b5483e",
+            weight: 8,
+            opacity: 0.92,
+            dashArray: "2 8",
+            lineCap: "round",
+            className: "route-original-affected",
+            interactive: false,
+          })
+            .bindTooltip("Affected part of original route", { sticky: true })
+            .addTo(group);
+          const midpoint = geometry[Math.floor(geometry.length / 2)];
+          if (!affectedLabelled && midpoint) {
+            affectedLabelled = true;
+            L.marker(midpoint, {
+              interactive: false,
+              keyboard: false,
+              zIndexOffset: 1050,
+              icon: L.divIcon({
+                className: "map-comparison-anchor",
+                html: labelledIcon(
+                  "map-comparison-marker",
+                  "landmark",
+                  "Affected original",
+                ),
+                iconSize: [124, 28],
+                iconAnchor: [62, -10],
+              }),
+            }).addTo(group);
+          }
+        });
+      });
+    }
     const rainySegments = journey.segments.filter((segment) =>
       segment.issues?.includes("rain"),
     );
@@ -265,6 +321,9 @@ export default function JourneyMap({
         color: colour,
         weight: s.mode === "walk" ? 4 : s.mode === "rail" ? 7 : 6,
         opacity: 1,
+        className: comparing
+          ? "route-selected route-revised"
+          : "route-selected",
         dashArray:
           s.mode === "walk"
             ? "2 8"
@@ -319,7 +378,12 @@ export default function JourneyMap({
           }),
         }).addTo(group);
     });
-    const points = journey.segments.flatMap((s) => s.geometry);
+    const points = [
+      ...journey.segments.flatMap((s) => s.geometry),
+      ...(comparing
+        ? plan.original.segments.flatMap((s) => s.geometry)
+        : []),
+    ];
     if (points.length) {
       const marker = (
         coord: [number, number],
@@ -403,6 +467,7 @@ export default function JourneyMap({
       });
   };
   const journey = selected ?? plan?.recommended;
+  const comparing = !!plan && !!journey && journey.id !== plan.original.id;
   const visibleModes = (["walk", "bus", "rail", "cycle"] as Mode[]).filter(
     (mode) => journey?.segments.some((segment) => segment.mode === mode),
   );
@@ -412,7 +477,7 @@ export default function JourneyMap({
         ref={element}
         className="journey-map"
         role="region"
-        aria-label={`${mapDetail === "detailed" ? "OneMap" : "Bundled OpenStreetMap"} showing your selected route, walking legs and affected portions of the original route${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
+        aria-label={`${mapDetail === "detailed" ? "OneMap" : "Bundled OpenStreetMap"} showing ${comparing ? "the original route, its affected portion and the revised route" : "your selected route and walking legs"}${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
       />
       <div className="map-top">
         <span className="map-label">
@@ -427,12 +492,23 @@ export default function JourneyMap({
         </button>
       </div>
       <div className="map-legend">
-        <span>
-          <i className="legend-line" /> Selected route
-        </span>
-        <span>
-          <i className="legend-line affected" /> Affected
-        </span>
+        {comparing ? (
+          <>
+            <span>
+              <i className="legend-line dashed" /> Original route
+            </span>
+            <span>
+              <i className="legend-line affected" /> Affected original
+            </span>
+            <span>
+              <i className="legend-line" /> Revised route
+            </span>
+          </>
+        ) : (
+          <span>
+            <i className="legend-line" /> Selected route
+          </span>
+        )}
         {location && (
           <span>
             <i className={`legend-location ${location.source}`} />

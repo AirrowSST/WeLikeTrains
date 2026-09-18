@@ -56,7 +56,9 @@ for (const fixture of cases) {
       ["walk", "cycle"].includes(plan.recommended.segments[0].mode) &&
       plan.recommended.segments.at(-1)?.mode === "walk",
     geometry: plan.recommended.segments.every((s) => s.geometry.length >= 2),
-    usableRoute: !plan.recommended.blocked,
+    safeTravelDecision:
+      (!plan.recommended.blocked && plan.travelDecision === "travel") ||
+      (plan.recommended.blocked && plan.travelDecision === "wait"),
     uncertaintyShown: plan.recommended.range[1] > plan.recommended.duration,
     riskNotProbability: plan.risk.disclaimer.includes(
       "not a disruption probability",
@@ -75,6 +77,7 @@ for (const fixture of cases) {
     ...fixture,
     elapsedMs: Math.round(performance.now() - start),
     recommended: plan.recommended.title,
+    travelDecision: plan.travelDecision,
     duration: plan.recommended.duration,
     originalDuration: plan.original.duration,
     crowd: plan.recommended.crowd,

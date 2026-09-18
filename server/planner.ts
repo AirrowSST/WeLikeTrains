@@ -623,23 +623,34 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
     .map((j) => applyConditions(j, conditions, request))
     .sort((a, b) => a.score - b.score);
   const recommended = ranked.find((j) => !j.blocked) ?? ranked[0];
+  const travelDecision = recommended.blocked ? "wait" : "travel";
+  const weatherBlocksEveryRoute =
+    travelDecision === "wait" &&
+    conditions.weather.walkStatus === "invalid" &&
+    ranked.every((journey) => journey.blocked);
   const risk = estimateRisk(conditions, original);
   const date = Date.parse(request.departure);
   const deadline = request.arriveBy ? Date.parse(request.arriveBy) : null;
   const safeArrival = date + recommended.range[1] * 60000;
-  let advice = recommended.blocked
-    ? "No verified usable alternative is available. Check official advice before leaving."
+  let advice =
+    travelDecision === "wait"
+      ? weatherBlocksEveryRoute
+        ? "Wait for the heavy weather to pass, then re-plan. Every mapped option currently includes an exposed section, so Wayce is not recommending a journey yet."
+        : "Wait and re-plan before leaving. No verified usable route is available under the current conditions."
     : recommended.id !== original.id
       ? `Take ${recommended.title}. ${original.blocked ? "Avoid the affected route." : `Save about ${Math.max(0, original.duration - recommended.duration)} min compared with your usual route.`}`
       : `Take ${recommended.title}. ${recommended.reasons[0] ?? "Your route is the best fit for the available conditions."}`;
-  if (deadline && safeArrival > deadline)
-    advice += ` Leave about ${Math.ceil((safeArrival - deadline) / 60000)} min earlier to keep an arrival buffer.`;
-  else advice += ` Arrive around ${sgTime(recommended.arrival)}.`;
+  if (travelDecision === "travel") {
+    if (deadline && safeArrival > deadline)
+      advice += ` Leave about ${Math.ceil((safeArrival - deadline) / 60000)} min earlier to keep an arrival buffer.`;
+    else advice += ` Arrive around ${sgTime(recommended.arrival)}.`;
+  }
   return {
     request,
     recommended,
     original,
     alternatives: ranked.filter((j) => j.id !== recommended.id).slice(0, 3),
+    travelDecision,
     conditions,
     risk,
     advice,

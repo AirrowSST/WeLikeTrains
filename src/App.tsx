@@ -450,11 +450,16 @@ function LinePill({ segment }: { segment: Segment }) {
   );
 }
 function CrowdBadge({ crowd }: { crowd: Journey["crowd"] }) {
-  if (crowd !== "high") return null;
+  const labels: Record<Journey["crowd"], string> = {
+    low: "Low crowd",
+    moderate: "Moderate crowd",
+    high: "High crowd",
+    unknown: "Crowd unknown",
+  };
   return (
     <span className={`crowd-badge ${crowd}`}>
       <UsersRound size={14} />
-      Crowded
+      {labels[crowd]}
     </span>
   );
 }
@@ -1775,7 +1780,12 @@ export default function App() {
                                   : "alternative-label"
                               }
                             >
-                              {i === 0 ? (
+                              {i === 0 && journey.blocked ? (
+                                <>
+                                  <TriangleAlert size={12} /> WAIT FOR SAFER
+                                  CONDITIONS
+                                </>
+                              ) : i === 0 ? (
                                 <>
                                   <Sparkles size={12} /> BEST FIT FOR YOU
                                 </>
@@ -1894,9 +1904,7 @@ export default function App() {
                     </h2>
                     <p>
                       {plan
-                        ? plan.recommended.blocked
-                          ? plan.advice
-                          : `${1 + plan.alternatives.length} routes · Arrive at ${sgTime(plan.recommended.arrival)}`
+                        ? plan.advice
                         : "Checking routes and conditions."}
                     </p>
                   </div>

@@ -54,6 +54,10 @@ describe("real OSM journeys", () => {
     const rain = await planJourney(request("rachel", "rain"));
     expect(rain.recommended.duration).toBeGreaterThan(dry.recommended.duration);
     expect(rain.conditions.weather.rain).toBe(true);
+    expect(rain.recommended.blocked).toBe(true);
+    expect(rain.travelDecision).toBe("wait");
+    expect(rain.advice).toContain("Wait for the heavy weather to pass");
+    expect(rain.advice).not.toContain("Arrive around");
     expect(rain.risk.disclaimer).toContain("not a disruption probability");
   });
   it("provides Arjun a followable multimodal route to one-north", async () => {

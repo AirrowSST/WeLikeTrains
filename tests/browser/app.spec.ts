@@ -226,6 +226,64 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   ).toBeVisible();
   expect(errors).toEqual([]);
 });
+test("compares original, affected and revised routes with complete crowd labels", async ({
+  page,
+}) => {
+  const currentPlan = await useDeterministicPlans(page, true);
+  await page.goto("/");
+  await openDeveloperDemos(page);
+  await page.getByLabel("Network condition").selectOption("disruption");
+  await page.getByLabel("Demo weather").selectOption("clear");
+  await page.getByRole("button", { name: "Start demo" }).click();
+
+  await expect
+    .poll(() => page.locator(".route-original").count())
+    .toBeGreaterThan(0);
+  await expect
+    .poll(() => page.locator(".route-original-affected").count())
+    .toBeGreaterThan(0);
+  await expect
+    .poll(() => page.locator(".route-revised").count())
+    .toBeGreaterThan(0);
+  await expect(page.locator(".map-comparison-marker")).toContainText(
+    "Affected original",
+  );
+  await expect(page.locator(".map-legend")).toContainText("Original route");
+  await expect(page.locator(".map-legend")).toContainText("Affected original");
+  await expect(page.locator(".map-legend")).toContainText("Revised route");
+
+  const routeCards = page.locator(".route-card");
+  await expect(routeCards.first().locator(".crowd-badge")).toContainText(
+    /crowd/i,
+  );
+  await expect(page.locator(".crowd-badge")).toHaveCount(
+    await routeCards.count(),
+  );
+  await expect(page.locator(".recommendation p")).toHaveText(
+    currentPlan()!.advice,
+  );
+});
+test("tells the commuter to wait when heavy weather blocks every route", async ({
+  page,
+}) => {
+  await useDeterministicPlans(page, true);
+  await page.goto("/");
+  await openDeveloperDemos(page);
+  await page.getByLabel("Network condition").selectOption("rain");
+  await page.getByLabel("Demo weather").selectOption("storm");
+  await page.getByRole("button", { name: "Start demo" }).click();
+
+  await expect(page.locator(".recommendation")).toContainText(
+    "Route unavailable",
+  );
+  await expect(page.locator(".recommendation")).toContainText(
+    "Wait for the heavy weather to pass",
+  );
+  await expect(page.locator(".route-card").first()).toContainText(
+    "WAIT FOR SAFER CONDITIONS",
+  );
+  await expect(startJourneyButton(page)).toBeDisabled();
+});
 test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
   await useDeterministicPlans(page);
   await page.goto("/");
@@ -260,14 +318,19 @@ test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
     .include("dialog")
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
-  expect(optionsResults.violations.map((violation) => violation.id)).toEqual(
-    [],
-  );
+  expect(
+    optionsResults.violations.map((violation) => ({
+      id: violation.id,
+      nodes: violation.nodes.map((node) => node.target),
+    })),
+  ).toEqual([]);
 });
 test("bell shows only service-disruption alerts", async ({ page }) => {
   await useDeterministicPlans(page);
   await page.goto("/");
-  await page.getByLabel("Disruption simulator").selectOption("disruption");
+  await openDeveloperDemos(page);
+  await page.getByLabel("Network condition").selectOption("disruption");
+  await page.getByRole("button", { name: "Start demo" }).click();
   await expect(startJourneyButton(page)).toBeEnabled();
 
   await page.getByRole("button", { name: "View disruption alerts" }).click();

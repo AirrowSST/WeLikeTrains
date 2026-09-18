@@ -209,6 +209,7 @@ export interface PlanResponse {
   recommended: Journey;
   original: Journey;
   alternatives: Journey[];
+  travelDecision: "travel" | "wait";
   conditions: Conditions;
   risk: Risk;
   advice: string;
