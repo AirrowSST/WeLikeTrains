@@ -4028,9 +4028,7 @@ body {
     border: 1px solid #d6e1d9;
     background: #f7faf7;
   }
-  .location-control,
   .planner-secondary-controls,
-  .time-fields,
   .planner-card > .section-title + form + .planner-secondary-controls {
     display: none;
   }
@@ -4657,7 +4655,7 @@ body {
   .place-field label { right: 12px; width: auto; font-size: 10px; }
   .field-marker { transform: translateX(12px); }
   .swap-button { right: 10px; width: 34px; height: 34px; min-width: 34px; }
-  .location-control, .planner-secondary-controls, .time-fields { display: none; }
+  .planner-secondary-controls { display: none; }
   .plan-button { width: 100%; min-height: 54px; margin-top: 12px; border-radius: 15px; background: #00b14f; box-shadow: 0 7px 15px #00a84b2e; font-size: 17px; }
   .recommendation { order: 2; margin: 0; padding: 14px 18px; min-height: 0; border: 0; border-radius: 0; background: #f2fbf5; }
   .routes-heading { order: 3; }

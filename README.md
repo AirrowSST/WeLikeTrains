@@ -35,13 +35,12 @@ Optional: copy `.env.example` to `.env` and fill credentials. Never commit `.env
 ## Verification
 
 ```sh
-npm test
-npm run evaluate
 npx playwright install chromium
-npm run test:e2e
+npm run verify
+npm run evaluate
 ```
 
-The build type-checks client and server. Unit tests cover OSM routing, rerouting, closures, lift avoidance, parser nesting, canonical line codes, crowd sources, preferences and input validation. Browser checks cover the mobile-only layout at phone and wide viewports, main interactions, offline reload and automated WCAG A/AA rules. These are **not a substitute for a real-phone field test**; see [demo and phone checklist](docs/DEMO.md).
+`npm run verify` builds fresh client and server assets before running the unit and browser suites. `npm ci` also configures the repository's pre-push hook to run the same verification locally. Unit tests cover OSM routing, rerouting, closures, lift avoidance, parser nesting, canonical line codes, crowd sources, preferences and input validation. Browser checks cover the mobile-only layout at phone and wide viewports, main interactions, offline reload and automated WCAG A/AA rules. These are **not a substitute for a real-phone field test**; see [demo and phone checklist](docs/DEMO.md).
 
 `npm run evaluate` is a no-cost, reproducible synthetic evaluation. [Recorded local results](docs/evaluation-local.json) include per-case checks and timings. They are not a forecast-accuracy benchmark. To evaluate the team-hosted AI using its credits, run `node --import tsx scripts/evaluate.ts --url=https://weliketrains-191711317812.asia-southeast1.run.app`; without the flag, the local companion is tested.
 

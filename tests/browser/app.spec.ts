@@ -4,9 +4,12 @@ import AxeBuilder from "@axe-core/playwright";
 import type { PlanResponse } from "../../shared/types";
 
 async function useDeterministicPlans(page: Page) {
-  let template: PlanResponse | undefined;
+  const templates = new Map<string, PlanResponse>();
+  let latestTemplate: PlanResponse | undefined;
   await page.route("**/api/plan", async (route) => {
     const request = route.request().postDataJSON();
+    const fixtureKey = request.scenario ?? "normal";
+    let template = templates.get(fixtureKey);
     if (!template) {
       const response = await route.fetch({
         postData: JSON.stringify({
@@ -15,11 +18,15 @@ async function useDeterministicPlans(page: Page) {
         }),
       });
       if (!response.ok())
-        throw new Error(`Fixture plan request failed: HTTP ${response.status()}`);
-      template = await response.json();
+        throw new Error(
+          `Fixture plan request failed: HTTP ${response.status()}`,
+        );
+      const fetchedTemplate = (await response.json()) as PlanResponse;
+      templates.set(fixtureKey, fetchedTemplate);
+      template = fetchedTemplate;
     }
     const plan = template;
-    if (!plan) throw new Error("Fixture plan was not created.");
+    latestTemplate = plan;
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -29,7 +36,10 @@ async function useDeterministicPlans(page: Page) {
       }),
     });
   });
-  return () => template;
+  return () => latestTemplate;
+}
+function startJourneyButton(page: Page) {
+  return page.getByRole("button", { name: "Start", exact: true });
 }
 test("plans, compares, saves, interviews preferences and shows planned notices", async ({
   page,
@@ -48,9 +58,7 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
-  await expect(
-    page.getByRole("button", { name: "Start directions" }),
-  ).toBeEnabled();
+  await expect(startJourneyButton(page)).toBeEnabled();
   await expect(page.locator(".demo-toolbar")).toContainText("Live LTA + NEA");
   await expect(
     page.getByRole("link", { name: "OpenStreetMap contributors" }),
@@ -68,7 +76,8 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   const navigation = await page.getByRole("navigation").boundingBox();
   expect(navigation!.y).toBeGreaterThan(page.viewportSize()!.height - 100);
   const preferencesButton = page.getByRole("button", {
-    name: /^Journey preferences:/,
+    name: "Journey preferences",
+    exact: true,
   });
   await expect(preferencesButton).toBeVisible();
   await expect(page.locator(".journey-preferences-button")).toHaveCount(1);
@@ -89,18 +98,15 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
     path: `test-results/${info.project.name}-journey.png`,
     fullPage: true,
   });
-  await page.getByLabel("Demo scenario").selectOption("rain");
+  await page.getByLabel("Disruption simulator").selectOption("rain");
   await expect(page.locator(".rain-zone").first()).toBeVisible();
   await expect(page.locator(".map-mode-key")).toContainText("Rain area");
-  await page.getByLabel("Demo scenario").selectOption("normal");
-  await expect(
-    page.getByText("You’re on the right track.", { exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Save route", exact: true })
-    .click();
+  await page.getByLabel("Disruption simulator").selectOption("normal");
+  await expect(page.getByLabel("Disruption simulator")).toHaveValue("normal");
+  await expect(page.locator(".map-mode-key")).not.toContainText("Rain area");
+  await page.getByRole("button", { name: "Save route", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("saved");
-  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await startJourneyButton(page).click();
   await expect(page.getByRole("dialog")).toContainText("STEP 1");
   await page.getByRole("button", { name: "I’m here" }).click();
   await expect(page.getByRole("dialog")).toContainText("STEP 2");
@@ -135,9 +141,14 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
 test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
   await useDeterministicPlans(page);
   await page.goto("/");
-  await expect(
-    page.getByRole("button", { name: "Start directions" }),
-  ).toBeEnabled();
+  await expect(startJourneyButton(page)).toBeEnabled();
+  for (const name of ["leave time", "arrive time"] as const) {
+    const trigger = page.getByRole("button", { name, exact: true });
+    await expect(trigger).toHaveCount(1);
+    await expect(
+      trigger.locator("a[href], button, input, select, textarea"),
+    ).toHaveCount(0);
+  }
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
@@ -171,16 +182,12 @@ test("renders validated route cards when the companion displays routes", async (
     });
   });
   await page.goto("/");
-  await expect(
-    page.getByRole("button", { name: "Start directions" }),
-  ).toBeEnabled();
+  await expect(startJourneyButton(page)).toBeEnabled();
   await page
     .getByRole("button", { name: "A little help for the journey" })
     .click();
   await page.getByRole("checkbox").check();
-  await page
-    .getByRole("button", { name: "Show me my route options" })
-    .click();
+  await page.getByRole("button", { name: "Show me my route options" }).click();
   const routeCards = page.locator(".chat-route-card");
   await expect(routeCards.first()).toBeVisible();
   await expect(routeCards.first()).toContainText("min");
@@ -209,14 +216,10 @@ test("shows labelled simulated location and follows manual demo progress", async
 }) => {
   await useDeterministicPlans(page);
   await page.goto("/");
-  await expect(
-    page.getByRole("button", { name: "Start directions" }),
-  ).toBeEnabled();
+  await expect(startJourneyButton(page)).toBeEnabled();
   await page.getByRole("button", { name: "Demo mode", exact: true }).click();
   await page.getByRole("button", { name: "Start demo" }).click();
-  await page
-    .getByRole("button", { name: "Use simulated location" })
-    .click();
+  await page.getByRole("button", { name: "Use simulated location" }).click();
   await expect(page.getByLabel("FROM")).toHaveValue(
     "Simulated current location",
   );
@@ -228,7 +231,7 @@ test("shows labelled simulated location and follows manual demo progress", async
     "aria-busy",
     "false",
   );
-  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await startJourneyButton(page).click();
   await expect(page.getByRole("dialog")).toContainText(
     "Simulated position follows each confirmed step",
   );
@@ -240,14 +243,12 @@ test("uses browser geolocation in live mode only after explicit action", async (
   context,
 }) => {
   await useDeterministicPlans(page);
+  await page.goto("/");
   await context.grantPermissions(["geolocation"], {
-    origin: "http://localhost:8080",
+    origin: new URL(page.url()).origin,
   });
   await context.setGeolocation({ latitude: 1.3521, longitude: 103.9398 });
-  await page.goto("/");
-  await expect(
-    page.getByRole("button", { name: "Start directions" }),
-  ).toBeEnabled();
+  await expect(startJourneyButton(page)).toBeEnabled();
   await expect(page.locator(".demo-toolbar")).toContainText("Live LTA + NEA");
   await page.getByRole("button", { name: "Use my location" }).click();
   await expect(page.getByLabel("FROM")).toHaveValue("Current location");
@@ -257,7 +258,7 @@ test("uses browser geolocation in live mode only after explicit action", async (
     "aria-busy",
     "false",
   );
-  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await startJourneyButton(page).click();
   await page.getByRole("button", { name: "Start live location" }).click();
   await expect(page.getByRole("dialog")).toContainText("Live location on");
 });
@@ -265,23 +266,17 @@ test("fits a narrow phone without horizontal overflow", async ({ page }) => {
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 320, height: 700 });
   await page.goto("/");
-  await expect(
-    page.getByRole("button", { name: "Start directions" }),
-  ).toBeEnabled();
+  await expect(startJourneyButton(page)).toBeEnabled();
   await page.getByRole("button", { name: "Demo mode", exact: true }).click();
   await page.getByRole("button", { name: "Start demo" }).click();
-  await page
-    .getByRole("button", { name: "Use simulated location" })
-    .click();
+  await page.getByRole("button", { name: "Use simulated location" }).click();
   await expect(page.getByText("Simulated location active")).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
-  const button = await page
-    .getByRole("button", { name: "Start directions" })
-    .boundingBox();
+  const button = await startJourneyButton(page).boundingBox();
   expect(button!.height).toBeGreaterThanOrEqual(44);
 });
 test("supports large text and preserves a previously loaded journey offline", async ({
@@ -290,18 +285,14 @@ test("supports large text and preserves a previously loaded journey offline", as
 }) => {
   await useDeterministicPlans(page);
   await page.goto("/");
-  await expect(
-    page.getByRole("button", { name: "Start directions" }),
-  ).toBeEnabled();
+  await expect(startJourneyButton(page)).toBeEnabled();
   await page
     .getByRole("button", { name: "Open profile and preferences" })
     .click();
   await page.getByLabel("Larger, easier-to-read text").check();
   await page.getByRole("button", { name: "Apply my preferences" }).click();
   await expect(page.locator("html")).toHaveClass("large-text");
-  await expect(
-    page.getByRole("button", { name: "Start directions" }),
-  ).toBeEnabled();
+  await expect(startJourneyButton(page)).toBeEnabled();
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
   });
@@ -315,8 +306,6 @@ test("supports large text and preserves a previously loaded journey offline", as
   await expect(page.locator(".map-source-note")).toContainText(
     "showing offline roads",
   );
-  await expect(
-    page.getByRole("button", { name: "Start", exact: true }),
-  ).toBeEnabled();
+  await expect(startJourneyButton(page)).toBeEnabled();
   await context.setOffline(false);
 });
