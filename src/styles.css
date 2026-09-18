@@ -1181,10 +1181,12 @@ input {
   color: #315633;
 }
 .current-location-marker {
+  position: relative;
   width: 24px;
   height: 24px;
   border-radius: 50%;
   border: 3px solid #fff;
+  color: #2479a9;
   background: #2479a9;
   box-shadow:
     0 0 0 3px #2479a944,
@@ -1193,16 +1195,38 @@ input {
   place-items: center;
 }
 .current-location-marker.demo {
+  color: #b2873c;
   background: #b2873c;
   box-shadow:
     0 0 0 3px #b2873c44,
     0 2px 7px #60471f55;
 }
+.current-location-marker::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: currentColor;
+  pointer-events: none;
+  animation: location-pulse 2s ease-out infinite;
+}
 .current-location-marker > span {
+  position: relative;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: #fff;
+}
+@keyframes location-pulse {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+  75%,
+  100% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
 }
 .map-legend {
   position: absolute;
@@ -1803,7 +1827,7 @@ input {
 }
 .account-card small {
   margin-top: 3px;
-  color: #758568;
+  color: #52664a;
   font-size: 10px;
   overflow-wrap: anywhere;
 }
@@ -1919,7 +1943,7 @@ input {
   flex-direction: column;
   gap: 8px;
   font-size: 11px;
-  color: #758c61;
+  color: #52664a;
   flex: 1;
   min-width: 0;
 }
@@ -3988,6 +4012,9 @@ body {
     animation-duration: 0.01ms !important;
     transition: none !important;
     scroll-behavior: auto !important;
+  }
+  .current-location-marker::before {
+    animation: none;
   }
 }
 .eyebrow,
