@@ -90,21 +90,35 @@ export default function JourneyMap({
             const style: L.PathOptions =
               kind === "water"
                 ? {
-                    color: "#b8d7d3",
-                    weight: 1,
-                    fillColor: "#b8d7d3",
-                    fillOpacity: 0.9,
+                    className: "local-map-feature local-map-water",
+                    color: "#88b6bb",
+                    weight: 1.2,
+                    fillColor: "#b8d9d8",
+                    fillOpacity: 0.95,
                   }
                 : kind === "park"
                   ? {
-                      color: "#dce7d6",
-                      weight: 0,
-                      fillColor: "#dce7d6",
-                      fillOpacity: 0.8,
+                      className: "local-map-feature local-map-park",
+                      color: "#b9d1b2",
+                      weight: 0.8,
+                      fillColor: "#d2e4cc",
+                      fillOpacity: 0.92,
                     }
                   : kind === "coast"
-                    ? { color: "#9ebfb7", weight: 1.5 }
-                    : { color: "#ffffff", weight: 2.5, opacity: 0.95 };
+                    ? {
+                        className: "local-map-feature local-map-coast",
+                        color: "#719c96",
+                        weight: 1.8,
+                        opacity: 0.95,
+                      }
+                    : {
+                        className: "local-map-feature local-map-road",
+                        color: "#a5b1ab",
+                        weight: 2.35,
+                        opacity: 1,
+                        lineCap: "round",
+                        lineJoin: "round",
+                      };
             return style;
           },
         }).addTo(m);

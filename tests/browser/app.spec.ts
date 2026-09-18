@@ -106,6 +106,12 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
     "bundled-osm",
   );
   await expect(page.locator(".map-extract")).toContainText("Bundled OSM map");
+  expect(await page.locator(".local-map-road").count()).toBeGreaterThan(100);
+  expect(await page.locator(".local-map-water").count()).toBeGreaterThan(0);
+  await expect(page.locator(".local-map-road").first()).toHaveAttribute(
+    "stroke",
+    "#a5b1ab",
+  );
   await expect(page.getByRole("link", { name: "OneMap" })).toHaveCount(0);
   expect(
     await page.evaluate(() =>
