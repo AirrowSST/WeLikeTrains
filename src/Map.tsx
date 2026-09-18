@@ -75,6 +75,31 @@ function transitStopPopup(stop: TransitStop) {
   return root;
 }
 
+function centerMapOnLocation(map: L.Map, coord: L.LatLngExpression) {
+  const mapRect = map.getContainer().getBoundingClientRect();
+  const sheetRect = map
+    .getContainer()
+    .closest(".journey-layout")
+    ?.querySelector<HTMLElement>(".journey-sheet")
+    ?.getBoundingClientRect();
+  const coveredHeight = sheetRect
+    ? Math.max(
+        0,
+        Math.min(mapRect.bottom, sheetRect.bottom) -
+          Math.max(mapRect.top, sheetRect.top),
+      )
+    : 0;
+  const upwardOffset = Math.min(110, Math.round(coveredHeight * 0.25));
+  map.setView(coord, 15, { animate: false });
+  if (upwardOffset) {
+    const shiftedCenter = map.unproject(
+      map.project(L.latLng(coord), 15).add([0, upwardOffset]),
+      15,
+    );
+    map.setView(shiftedCenter, 15, { animate: false });
+  }
+}
+
 export default function JourneyMap({
   plan,
   selected,
@@ -587,7 +612,7 @@ export default function JourneyMap({
     }
     const coord: [number, number] = [location.lat, location.lon];
     if (!centeredOnLocation.current) {
-      m.setView(coord, 15, { animate: false });
+      centerMapOnLocation(m, coord);
       centeredOnLocation.current = true;
     }
     if (location.source === "device" && location.accuracy > 0)
@@ -616,9 +641,14 @@ export default function JourneyMap({
       .addTo(group);
   }, [location]);
   const recenter = () => {
-    const points =
+    const routePoints =
       (selected ?? plan?.recommended)?.segments.flatMap((s) => s.geometry) ??
       [];
+    if (!routePoints.length && location && map.current) {
+      centerMapOnLocation(map.current, [location.lat, location.lon]);
+      return;
+    }
+    const points = [...routePoints];
     if (location) points.push([location.lat, location.lon]);
     if (points?.length)
       map.current?.fitBounds(L.latLngBounds(points), {

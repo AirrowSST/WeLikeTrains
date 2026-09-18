@@ -1296,11 +1296,16 @@ test("starts with automatic location, a Where to prompt, and leave now", async (
   });
   await page.goto("/");
   await expect(page.getByLabel("FROM")).toHaveValue("Current location");
-  await expect(page.getByLabel("TO")).toHaveAttribute(
-    "placeholder",
-    "Where to?",
+  const destinationInput = page.getByLabel("TO", { exact: true });
+  const locationMarker = page.locator(".current-location-marker.device");
+  await expect(locationMarker).toBeVisible();
+  const mapBox = (await page.locator(".map-wrap").boundingBox())!;
+  const markerBox = (await locationMarker.boundingBox())!;
+  expect(markerBox.y + markerBox.height / 2).toBeLessThan(
+    mapBox.y + mapBox.height / 2 - 50,
   );
-  await expect(page.getByLabel("TO")).toHaveValue("");
+  await expect(destinationInput).toHaveAttribute("placeholder", "Where to?");
+  await expect(destinationInput).toHaveValue("");
   await expect(page.getByRole("button", { name: "leave time" })).toContainText(
     "Now",
   );
@@ -1310,7 +1315,7 @@ test("starts with automatic location, a Where to prompt, and leave now", async (
   await expect(
     page.getByRole("button", { name: "Find my best route" }),
   ).toBeDisabled();
-  await page.getByLabel("TO").click();
+  await destinationInput.click();
   await page.getByRole("option", { name: /Raffles Place/ }).click();
   await page.getByRole("button", { name: "Find my best route" }).click();
   const plannedResponse = await locationPlan;
@@ -1319,7 +1324,7 @@ test("starts with automatic location, a Where to prompt, and leave now", async (
     Math.abs(Date.now() - Date.parse(plannedRequest.departure)),
   ).toBeLessThan(30_000);
   expect(plannedRequest.arriveBy).toBeUndefined();
-  await expect(page.locator(".current-location-marker.device")).toBeVisible();
+  await expect(locationMarker).toBeVisible();
   await expect(page.getByText(/Device location · ±/)).toBeVisible();
   await expect(page.locator(".route-options")).toHaveAttribute(
     "aria-busy",
