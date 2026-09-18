@@ -4693,9 +4693,11 @@ body {
 }
 .time-adjuster output {
   color: #183d2f;
-  font-size: clamp(27px, 8vw, 36px);
+  font-size: clamp(22px, 6vw, 28px);
   font-weight: 600;
   letter-spacing: -0.05em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
   text-align: center;
 }
 .time-adjuster-colon {
@@ -4749,6 +4751,9 @@ body {
   .time-adjuster button {
     width: 40px;
     height: 40px;
+  }
+  .time-adjuster output {
+    font-size: 18px;
   }
   .time-picker-actions {
     grid-template-columns: 1fr;
