@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
-import { Layers, LocateFixed } from "lucide-react";
-import type { Journey, PlanResponse } from "../shared/types";
+import { Bell, Layers, LocateFixed } from "lucide-react";
+import type { Journey, PlanResponse, TransitStop } from "../shared/types";
 import type { Mode } from "../shared/types";
 import { lineColors } from "../shared/catalog";
 import type { LocationFix } from "./location";
@@ -46,14 +46,47 @@ function labelledIcon(
   return root;
 }
 
+function transitStopIcon(mode: TransitStop["mode"]) {
+  const root = document.createElement("span");
+  root.className = "transit-stop-symbol";
+  root.setAttribute("aria-hidden", "true");
+  root.innerHTML = mapIcons[mode];
+  return root;
+}
+
+function transitStopPopup(stop: TransitStop) {
+  const root = document.createElement("section");
+  root.className = "transit-stop-popup";
+  const heading = document.createElement("strong");
+  heading.textContent = stop.name;
+  const kind = document.createElement("span");
+  kind.textContent = stop.mode === "rail" ? "MRT / LRT station" : "Bus stop";
+  root.append(heading, kind);
+  if (stop.codes.length) {
+    const codes = document.createElement("small");
+    codes.textContent = `${stop.mode === "rail" ? "Station" : "Stop"} ${stop.codes.join(" · ")}`;
+    root.append(codes);
+  }
+  if (stop.lines.length) {
+    const lines = document.createElement("small");
+    lines.textContent = `${stop.mode === "rail" ? "Lines" : "Mapped services"} ${stop.lines.join(" · ")}`;
+    root.append(lines);
+  }
+  return root;
+}
+
 export default function JourneyMap({
   plan,
   selected,
   location,
+  onViewAlerts,
+  hasAlerts,
 }: {
   plan: PlanResponse | null;
   selected: Journey | null;
   location: LocationFix | null;
+  onViewAlerts: () => void;
+  hasAlerts: boolean;
 }) {
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -66,6 +99,11 @@ export default function JourneyMap({
   >("loading");
   useEffect(() => {
     if (!element.current) return;
+    // Keep touch-first map gestures on phones, while allowing a desktop mouse
+    // wheel to stand in for pinch zoom during desktop browser testing.
+    const allowMouseWheelZoom = window.matchMedia(
+      "(hover: hover) and (pointer: fine)",
+    ).matches;
     const m = L.map(element.current, {
       zoomControl: false,
       attributionControl: true,
@@ -73,13 +111,12 @@ export default function JourneyMap({
       // overlays use SVG so Leaflet cannot run a queued canvas redraw after
       // this tab unmounts on some mobile Chromium builds.
       preferCanvas: false,
-      scrollWheelZoom: false,
+      scrollWheelZoom: allowMouseWheelZoom,
       maxBounds: singaporeBounds,
       maxBoundsViscosity: 0.85,
       minZoom: 11,
     }).setView([1.325, 103.882], 12);
     map.current = m;
-    L.control.zoom({ position: "bottomright" }).addTo(m);
     m.attributionControl.setPrefix(false);
     m.attributionControl.addAttribution(
       '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
@@ -93,6 +130,7 @@ export default function JourneyMap({
     let localBasemapLoading = false;
     let loadedTileCount = 0;
     let failedTileCount = 0;
+    const stopRequest = new AbortController();
     const localRenderer = L.canvas({ pane: "local-basemap" });
     const loadLocalBasemap = () => {
       if (!alive) return;
@@ -211,13 +249,97 @@ export default function JourneyMap({
         }),
       }).addTo(m),
     );
+    const transitLayer = L.layerGroup().addTo(m);
+    let transitStops: TransitStop[] = [];
+    const transitMarkers = new Map<string, L.Marker>();
+    const updateTransitStops = () => {
+      const zoom = m.getZoom();
+      const bounds = m.getBounds().pad(0.12);
+      const showBusStops = zoom >= 14;
+      const visibleLimit = zoom === 11 ? 60 : Number.POSITIVE_INFINITY;
+      const visibleStops = new Set(
+        zoom < 11
+          ? []
+          : transitStops
+              .filter(
+                (stop) =>
+                  (stop.mode === "rail" || showBusStops) &&
+                  bounds.contains([stop.lat, stop.lon]),
+              )
+              .sort(
+                (a, b) =>
+                  m.distance(m.getCenter(), [a.lat, a.lon]) -
+                  m.distance(m.getCenter(), [b.lat, b.lon]),
+              )
+              .slice(0, visibleLimit)
+              .map((stop) => stop.id),
+      );
+      for (const [id, marker] of transitMarkers)
+        if (!visibleStops.has(id)) {
+          transitLayer.removeLayer(marker);
+          transitMarkers.delete(id);
+        }
+      for (const stop of transitStops) {
+        if (!visibleStops.has(stop.id) || transitMarkers.has(stop.id)) continue;
+        const kind = stop.mode === "rail" ? "MRT / LRT station" : "bus stop";
+        const marker = L.marker([stop.lat, stop.lon], {
+          keyboard: true,
+          title: `Open ${stop.name} ${kind} details`,
+          alt: `${stop.name} ${kind}`,
+          zIndexOffset: stop.mode === "rail" ? 220 : 180,
+          icon: L.divIcon({
+            className: `transit-stop-marker ${stop.mode}`,
+            html: transitStopIcon(stop.mode),
+            iconSize: [44, 44],
+            iconAnchor: [22, 22],
+            popupAnchor: [0, -19],
+          }),
+        })
+          .bindPopup(transitStopPopup(stop), { maxWidth: 230 })
+          .addTo(transitLayer);
+        marker
+          .getElement()
+          ?.setAttribute("aria-label", `${stop.name} ${kind}`);
+        transitMarkers.set(stop.id, marker);
+      }
+    };
+    m.on("moveend zoomend", updateTransitStops);
+    fetch("/api/transit-stops", { signal: stopRequest.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Transit stops unavailable");
+        return response.json() as Promise<TransitStop[]>;
+      })
+      .then((stops) => {
+        if (!alive) return;
+        transitStops = stops;
+        updateTransitStops();
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      });
     routes.current = L.layerGroup().addTo(m);
     position.current = L.layerGroup().addTo(m);
-    const observer = new ResizeObserver(() => m.invalidateSize());
+    let resizeFrame: number | null = null;
+    const resizeMap = () => {
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null;
+        m.invalidateSize({ pan: false, debounceMoveend: true });
+      });
+    };
+    const observer = new ResizeObserver(() => {
+      if (document.querySelector(".sheet-dragging")) return;
+      resizeMap();
+    });
     observer.observe(element.current);
+    window.addEventListener("wayce:journey-sheet-resized", resizeMap);
     return () => {
       alive = false;
+      stopRequest.abort();
       window.removeEventListener("offline", loadLocalBasemap);
+      window.removeEventListener("wayce:journey-sheet-resized", resizeMap);
+      m.off("moveend zoomend", updateTransitStops);
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
       observer.disconnect();
       m.remove();
       map.current = null;
@@ -517,11 +639,19 @@ export default function JourneyMap({
         role="region"
         aria-label={`${mapDetail === "detailed" ? "OneMap" : "Bundled OpenStreetMap"} showing ${comparing ? "the original route, its affected portion and the revised route" : "your selected route and walking legs"}${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
       />
-      <div className="map-top">
+      <div className="map-controls">
+        <button
+          className="icon-button"
+          onClick={onViewAlerts}
+          aria-label="View disruption alerts"
+        >
+          <Bell size={21} />
+          {hasAlerts && <i className="notification-dot" />}
+        </button>
         <button
           className="icon-button"
           onClick={recenter}
-          aria-label="Recenter route"
+          aria-label="Recenter map"
         >
           <LocateFixed size={19} />
         </button>

@@ -3,6 +3,7 @@ import webpush from "web-push";
 import { createHash } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
 import type { Request } from "express";
+import { meetsDelayAlertThreshold } from "../shared/alerts";
 import type { PlanRequest } from "../shared/types";
 import { planJourney, noticeActive, segmentAffected } from "./planner";
 let database: Firestore | undefined;
@@ -114,11 +115,17 @@ export async function sendReminders() {
           noticeActive(n, request.departure) &&
           plan.original.segments.some((s) => segmentAffected(n, s)),
       );
+      const delayThresholdMet = meetsDelayAlertThreshold(
+        disruptionDelay,
+        saved.preferences.alertThreshold,
+      );
+      const timeSensitiveDelay = !!item.timeSensitive && delayThresholdMet;
+      const delayBody = timeSensitiveDelay
+        ? `Your ${item.timeSensitive} common route is delayed by ${disruptionDelay} min. `
+        : "";
       const matters =
         (beforeDeparture &&
-          ((item.timeSensitive && disruptionDelay > 15) ||
-            plan.original.duration - plan.original.baselineDuration >=
-              saved.preferences.alertThreshold ||
+          (delayThresholdMet ||
             plan.original.blocked ||
             plan.recommended.blocked)) ||
         (dayBefore && planned.length > 0);
@@ -132,10 +139,10 @@ export async function sendReminders() {
         JSON.stringify({
           title: dayBefore
             ? "A heads-up for tomorrow"
-            : item.timeSensitive && disruptionDelay > 15
+            : timeSensitiveDelay
               ? "Leave earlier or change route"
               : "Your commute needs a small change",
-          body: `${saved.dataMode === "demo" ? "DEMO: " : ""}${item.timeSensitive && disruptionDelay > 15 ? `Your ${item.timeSensitive} common route is delayed by ${disruptionDelay} min. ` : ""}${plan.advice}`,
+          body: `${saved.dataMode === "demo" ? "DEMO: " : ""}${delayBody}${plan.advice}`,
           url: "/",
         }),
       );

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { searchPlaces } from "../server/providers";
+import { listTransitStops } from "../server/network";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -44,5 +45,28 @@ describe("place search", () => {
     const results = await searchPlaces("NTU");
 
     expect(results).toEqual([]);
+  });
+
+  it("exposes deduplicated rail stations and bus stops for the map", () => {
+    const stops = listTransitStops();
+
+    expect(new Set(stops.map((stop) => stop.id)).size).toBe(stops.length);
+    expect(stops).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          mode: "rail",
+          name: "Tampines",
+          codes: expect.arrayContaining(["EW2"]),
+          lines: expect.arrayContaining(["EWL"]),
+        }),
+      ]),
+    );
+    expect(
+      stops.some(
+        (stop) =>
+          stop.mode === "bus" &&
+          stop.codes.some((code) => /^\d{5}$/.test(code)),
+      ),
+    ).toBe(true);
   });
 });

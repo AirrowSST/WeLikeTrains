@@ -8,6 +8,7 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { planJourney } from "./planner";
 import { getBusArrivals } from "./feeds";
+import { listTransitStops } from "./network";
 import { chat, searchPlaces, speech } from "./providers";
 import { places, profiles, scenarios } from "../shared/catalog";
 import { accountStateSchema, planSchema } from "./validation";
@@ -166,6 +167,10 @@ app.delete("/api/account", async (req, res) => {
 app.get("/api/places", async (req, res) =>
   res.json(await searchPlaces(z.string().min(1).max(100).parse(req.query.q))),
 );
+app.get("/api/transit-stops", (_req, res) => {
+  res.set("Cache-Control", "public, max-age=86400");
+  res.json(listTransitStops());
+});
 app.post("/api/plan", async (req, res) => {
   const request = planSchema.parse(req.body);
   res.json(await planJourney(request));

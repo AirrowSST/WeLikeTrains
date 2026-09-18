@@ -1,5 +1,10 @@
 import { readFileSync } from "node:fs";
-import type { Coord, Preferences, Segment } from "../shared/types";
+import type {
+  Coord,
+  Preferences,
+  Segment,
+  TransitStop,
+} from "../shared/types";
 import { canonicalLine } from "../shared/catalog";
 interface RawWay {
   id: number;
@@ -294,6 +299,42 @@ function buildNetwork() {
 }
 export function getNetwork() {
   return (network ??= buildNetwork());
+}
+let mapTransitStops: TransitStop[] | undefined;
+export function listTransitStops(): TransitStop[] {
+  if (mapTransitStops) return mapTransitStops;
+  const { stations, transit } = getNetwork();
+  const linesByStop = new Map<string, Set<string>>();
+  const addLine = (id: string, line: string) => {
+    const lines = linesByStop.get(id) ?? new Set<string>();
+    lines.add(line);
+    linesByStop.set(id, lines);
+  };
+  for (const edges of transit.values())
+    for (const edge of edges) {
+      addLine(edge.from, edge.line);
+      addLine(edge.to, edge.line);
+    }
+  mapTransitStops = [...stations.values()]
+    .map((station) => ({
+      id: station.id,
+      name: station.name,
+      mode: station.mode,
+      lat: station.coord[0],
+      lon: station.coord[1],
+      codes: [...station.codes].sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true }),
+      ),
+      lines: [...(linesByStop.get(station.id) ?? [])].sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true }),
+      ),
+    }))
+    .sort(
+      (a, b) =>
+        Number(a.mode === "bus") - Number(b.mode === "bus") ||
+        a.name.localeCompare(b.name),
+    );
+  return mapTransitStops;
 }
 const walkingCache = new Map<string, ReturnType<typeof calculateWalkingPath>>();
 export function walkingPath(

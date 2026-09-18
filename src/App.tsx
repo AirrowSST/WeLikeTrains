@@ -3,7 +3,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import {
@@ -18,6 +17,7 @@ import {
   CheckCheck,
   ChevronDown,
   ChevronRight,
+  CircleUserRound,
   Clock3,
   CloudSun,
   DoorOpen,
@@ -30,6 +30,7 @@ import {
   LoaderCircle,
   LocateFixed,
   MessageCircle,
+  Mic,
   Minus,
   Navigation,
   Plus,
@@ -76,7 +77,9 @@ import {
   scenarios,
   sgTime,
 } from "../shared/catalog";
+import { meetsDelayAlertThreshold } from "../shared/alerts";
 import JourneyMap from "./Map";
+import { useJourneySheet } from "./useJourneySheet";
 import GoogleSignIn, { disableGoogleAutoSelect } from "./GoogleSignIn";
 import {
   demoJourneyFix,
@@ -88,9 +91,44 @@ import {
   type LocationFix,
 } from "./location";
 
+interface SpeechRecognitionResultLike {
+  readonly isFinal: boolean;
+  readonly length: number;
+  readonly [index: number]: { readonly transcript: string };
+}
+interface SpeechRecognitionEventLike {
+  readonly resultIndex: number;
+  readonly results: {
+    readonly length: number;
+    readonly [index: number]: SpeechRecognitionResultLike;
+  };
+}
+interface BrowserSpeechRecognition {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: { readonly error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+type SpeechRecognitionWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+};
+const getSpeechRecognition = () => {
+  const speechWindow = window as SpeechRecognitionWindow;
+  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+};
+
 type Tab = "today" | "commutes" | "updates";
 type ModalName =
   | "profile"
+  | "preferences"
   | "demo"
   | "chat"
   | "sources"
@@ -119,7 +157,26 @@ const PROFILE_KEY = "wlt-profile-v1",
   GUEST_KEY = "wlt-guest-v2",
   PLAN_KEY = "wlt-journey-v1",
   ACTIVITY_KEY = "wlt-activity-v1",
-  DEVELOPER_KEY = "wlt-developer-mode";
+  COMPANION_CONSENT_KEY = "wlt-companion-consent-v1",
+  DEVELOPER_KEY = "wlt-developer-mode",
+  ONBOARDING_KEY = "wlt-onboarding-v1";
+const UNSET_ORIGIN: Place = {
+  id: "origin-unset",
+  name: "",
+  subtitle: "Location turns on automatically",
+  lat: 0,
+  lon: 0,
+};
+const UNSET_DESTINATION: Place = {
+  id: "destination-unset",
+  name: "",
+  subtitle: "Search stations, landmarks, or addresses",
+  lat: 0,
+  lon: 0,
+};
+const isPlannable = (request: PlanRequest) =>
+  request.origin.id !== UNSET_ORIGIN.id &&
+  request.destination.id !== UNSET_DESTINATION.id;
 function readSaved<T>(key: string): T | null {
   try {
     const v = JSON.parse(localStorage.getItem(key) ?? "null");
@@ -156,27 +213,25 @@ function dateValue(iso: string) {
     day: "2-digit",
   }).format(new Date(iso));
 }
-function journeySheetHeights() {
-  const viewportHeight = window.innerHeight;
-  const middle = Math.min(510, Math.max(340, viewportHeight * 0.51));
-  return [
-    Math.min(middle, Math.max(240, viewportHeight * 0.3)),
-    middle,
-    Math.max(middle, Math.min(600, viewportHeight * 0.7)),
-  ];
-}
 function TimeScrollPicker({
   label,
   value,
   onChange,
+  isNow = false,
+  onNow,
 }: {
   label: "Leave" | "Arrive";
-  value: string;
+  value?: string;
   onChange: (value: string) => void;
+  isNow?: boolean;
+  onNow?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [draftMinutes, setDraftMinutes] = useState(0);
-  const [hourText = "09", minuteText = "00"] = value.split(":");
+  const defaultTime = sgTime(new Date(Date.now() + 60 * 60 * 1000));
+  const [hourText = "09", minuteText = "00"] = (value ?? defaultTime).split(
+    ":",
+  );
   const hour24 = Number(hourText);
   const hour12 = hour24 % 12 || 12;
   const period = hour24 >= 12 ? "PM" : "AM";
@@ -187,7 +242,11 @@ function TimeScrollPicker({
   const draftPeriod = draftHour24 >= 12 ? "PM" : "AM";
   const draftDisplayTime = `${String(draftHour12).padStart(2, "0")}:${String(draftMinute).padStart(2, "0")} ${draftPeriod}`;
   const openPicker = () => {
-    setDraftMinutes(hour24 * 60 + Number(minuteText));
+    const current = new Date();
+    const currentMinutes =
+      Number(sgTime(current).slice(0, 2)) * 60 +
+      Number(sgTime(current).slice(3, 5));
+    setDraftMinutes(isNow ? currentMinutes : hour24 * 60 + Number(minuteText));
     setOpen(true);
   };
   const adjustTime = (amount: number) =>
@@ -229,7 +288,8 @@ function TimeScrollPicker({
           <strong className="time-label">{label}</strong>
         </span>
         <span className="time-picker-value">
-          {displayTime} <ChevronDown size={17} />
+          {isNow ? "Now" : value ? displayTime : "Any time"}{" "}
+          <ChevronDown size={17} />
         </span>
       </button>
       {open && (
@@ -270,11 +330,7 @@ function TimeScrollPicker({
               <span className="time-adjuster-colon" aria-hidden="true">
                 :
               </span>
-              <div
-                className="time-adjuster"
-                role="group"
-                aria-label="Minute"
-              >
+              <div className="time-adjuster" role="group" aria-label="Minute">
                 <span>Minute</span>
                 <button
                   type="button"
@@ -312,6 +368,18 @@ function TimeScrollPicker({
                 </button>
               ))}
             </div>
+            {label === "Leave" && onNow && (
+              <button
+                type="button"
+                className="secondary-button full"
+                onClick={() => {
+                  onNow();
+                  setOpen(false);
+                }}
+              >
+                Leave now
+              </button>
+            )}
             <div className="time-picker-actions">
               <button
                 type="button"
@@ -351,6 +419,16 @@ function makeRequest(
     dataMode,
     scenario,
     ...(dataMode === "demo" && demoWeather ? { demoWeather } : {}),
+  };
+}
+function makeStartRequest(preferences: Preferences): PlanRequest {
+  return {
+    ...makeRequest("rachel", "live", "normal"),
+    origin: UNSET_ORIGIN,
+    destination: UNSET_DESTINATION,
+    departure: new Date().toISOString(),
+    arriveBy: undefined,
+    preferences,
   };
 }
 function liveRequest(request: PlanRequest): PlanRequest {
@@ -506,16 +584,183 @@ function Modal({
     </dialog>
   );
 }
+function Onboarding({
+  preferences,
+  largeText,
+  onSave,
+  onSkip,
+}: {
+  preferences: Preferences;
+  largeText: boolean;
+  onSave: (preferences: Preferences, largeText: boolean) => void;
+  onSkip: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [draft, setDraft] = useState(preferences);
+  const [draftLargeText, setDraftLargeText] = useState(largeText);
+  useEffect(() => {
+    ref.current?.showModal();
+    return () => ref.current?.close();
+  }, []);
+  const choices = [
+    {
+      key: "stepFree",
+      title: "Avoid stairs",
+      description: "Prefer mapped step-free paths and known working lifts",
+      icon: Accessibility,
+    },
+    {
+      key: "sheltered",
+      title: "Stay out of the rain",
+      description: "Give mapped covered walking paths more weight",
+      icon: Umbrella,
+    },
+    {
+      key: "avoidCrowds",
+      title: "A little more breathing room",
+      description: "Favour quieter rides when the data is available",
+      icon: UsersRound,
+    },
+    {
+      key: "cycling",
+      title: "Bring cycling into the mix",
+      description: "Consider cycling to a station and parking before boarding",
+      icon: Bike,
+    },
+  ] as const;
+  return (
+    <dialog
+      ref={ref}
+      className="onboarding-modal"
+      aria-label="Welcome to Wayce"
+      onCancel={(event) => event.preventDefault()}
+    >
+      <div className="onboarding-header">
+        <span className="onboarding-mark" aria-hidden="true">
+          <Route size={25} />
+        </span>
+        <p className="eyebrow">WELCOME TO WAYCE</p>
+        <h1 tabIndex={-1} autoFocus>
+          Let’s make every journey feel more like yours.
+        </h1>
+        <p>
+          Pick what matters and we’ll use it when comparing routes. Nothing
+          here is required—you can skip this and change it later in Preferences.
+        </p>
+      </div>
+      <div className="onboarding-body">
+        <fieldset className="onboarding-choices">
+          <legend>What matters on your way?</legend>
+          {choices.map((choice) => (
+            <label className="onboarding-choice" key={choice.key}>
+              <choice.icon size={21} />
+              <span>
+                <strong>{choice.title}</strong>
+                <small>{choice.description}</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={draft[choice.key]}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    [choice.key]: event.target.checked,
+                    ...(choice.key === "stepFree"
+                      ? { walkingSpeed: event.target.checked ? 40 : 75 }
+                      : {}),
+                  }))
+                }
+              />
+            </label>
+          ))}
+        </fieldset>
+        <div className="onboarding-fields">
+          <label>
+            <span>Maximum walk</span>
+            <small>Between 200 and 3,500 metres</small>
+            <div className="onboarding-number">
+              <input
+                type="number"
+                min="200"
+                max="3500"
+                step="100"
+                value={draft.maxWalk}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    maxWalk: Math.min(
+                      3500,
+                      Math.max(200, Number(event.target.value)),
+                    ),
+                  }))
+                }
+              />
+              <span>m</span>
+            </div>
+          </label>
+          <label>
+            <span>Alert me when a delay adds</span>
+            <small>Between 3 and 60 minutes</small>
+            <div className="onboarding-number">
+              <input
+                type="number"
+                min="3"
+                max="60"
+                value={draft.alertThreshold}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    alertThreshold: Math.min(
+                      60,
+                      Math.max(3, Number(event.target.value)),
+                    ),
+                  }))
+                }
+              />
+              <span>min</span>
+            </div>
+          </label>
+        </div>
+        <label className="onboarding-choice onboarding-text-choice">
+          <span className="text-size-icon">Aa</span>
+          <span>
+            <strong>Larger, easier-to-read text</strong>
+            <small>Add a little more space throughout Wayce</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={draftLargeText}
+            onChange={(event) => setDraftLargeText(event.target.checked)}
+          />
+        </label>
+      </div>
+      <div className="onboarding-actions">
+        <button type="button" className="text-button" onClick={onSkip}>
+          Skip for now
+        </button>
+        <button
+          type="button"
+          className="primary-button"
+          onClick={() => onSave(draft, draftLargeText)}
+        >
+          Save preferences <ArrowRight size={17} />
+        </button>
+      </div>
+    </dialog>
+  );
+}
 function PlacePicker({
   label,
   value,
   onChange,
   fieldKey,
+  placeholder,
 }: {
   label: string;
   value: Place;
   onChange: (p: Place) => void;
   fieldKey: "A" | "B";
+  placeholder?: string;
 }) {
   const [query, setQuery] = useState(value.name);
   const [editing, setEditing] = useState(false);
@@ -562,6 +807,7 @@ function PlacePicker({
           aria-expanded={editing}
           aria-controls={`places-${fieldKey}`}
           value={query}
+          placeholder={placeholder}
           onFocus={() => {
             setEditing(true);
             setResults(places);
@@ -627,20 +873,25 @@ export default function App() {
   const [request, setRequest] = useState<PlanRequest>(() =>
     saved.current?.request
       ? liveRequest(saved.current.request)
-      : {
-          ...makeRequest(),
-          preferences: {
-            ...makeRequest().preferences,
-            ...guest.current!.preferences,
-          },
-        },
+      : makeStartRequest({
+          ...makeRequest().preferences,
+          ...guest.current!.preferences,
+        }),
   );
   const [plan, setPlan] = useState<PlanResponse | null>(
-    readSaved<PlanResponse>(PLAN_KEY),
+    saved.current || !navigator.onLine
+      ? readSaved<PlanResponse>(PLAN_KEY)
+      : null,
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("today");
   const [modal, setModal] = useState<ModalName>(null);
+  const [showOnboarding, setShowOnboarding] = useState(
+    () =>
+      readLocal<boolean>(ONBOARDING_KEY) !== true &&
+      localStorage.getItem(GUEST_KEY) === null &&
+      localStorage.getItem(PROFILE_KEY) === null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [online, setOnline] = useState(navigator.onLine);
@@ -655,6 +906,9 @@ export default function App() {
   );
   const [developerMode, setDeveloperMode] = useState(
     localStorage.getItem(DEVELOPER_KEY) === "true",
+  );
+  const [companionConsent, setCompanionConsent] = useState(
+    readLocal<boolean>(COMPANION_CONSENT_KEY) === true,
   );
   const [expanded, setExpanded] = useState<string | null>(null);
   const [journeyStep, setJourneyStep] = useState(0);
@@ -671,14 +925,11 @@ export default function App() {
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [trackingLocation, setTrackingLocation] = useState(false);
+  const [leaveNow, setLeaveNow] = useState(!saved.current);
   const [demoPersona, setDemoPersona] = useState<Persona>("rachel");
   const [demoScenario, setDemoScenario] = useState<Scenario>("disruption");
   const [demoWeather, setDemoWeather] = useState(demoDefaults.rachel.weather);
-  const [sheetSnap, setSheetSnap] = useState(1);
-  const [sheetMapHeight, setSheetMapHeight] = useState<number>(
-    () => journeySheetHeights()[1],
-  );
-  const [sheetDragging, setSheetDragging] = useState(false);
+  const { journeyLayout, sheetSnap, sheetDragging, sheetMoved, snapJourneySheet, startSheetDrag } = useJourneySheet(tab === "today");
   const [hardPreferences, setHardPreferences] = useState<Partial<Preferences>>(
     guest.current.hardPreferences,
   );
@@ -689,15 +940,10 @@ export default function App() {
     commutes: SavedCommute[];
     saved: SavedCommute | null;
     largeText: boolean;
+    leaveNow: boolean;
   } | null>(null);
   const lastProactiveWarning = useRef("");
   const locationWatch = useRef<number | null>(null);
-  const sheetDrag = useRef<{
-    pointerId: number;
-    startY: number;
-    startHeight: number;
-  } | null>(null);
-  const sheetMoved = useRef(false);
   const demoProfiles = (["arjun", "rachel", "lim"] as Persona[]).map((id) =>
     profiles.find((candidate) => candidate.id === id)!,
   );
@@ -742,64 +988,6 @@ export default function App() {
         })
       : undefined;
   const notify = (message: string) => setToast(message);
-  const snapJourneySheet = (snap: number) => {
-    const nextSnap = Math.min(2, Math.max(0, snap));
-    setSheetSnap(nextSnap);
-    setSheetMapHeight(journeySheetHeights()[nextSnap]);
-  };
-  const startSheetDrag = (event: ReactPointerEvent<HTMLElement>) => {
-    const interactiveTarget = (event.target as HTMLElement).closest(
-      "button, a, input, select, textarea",
-    );
-    if (
-      event.button !== 0 ||
-      (interactiveTarget && interactiveTarget !== event.currentTarget)
-    )
-      return;
-    const map = document.querySelector<HTMLElement>(".map-wrap");
-    if (!map) return;
-    sheetDrag.current = {
-      pointerId: event.pointerId,
-      startY: event.clientY,
-      startHeight: map.getBoundingClientRect().height,
-    };
-    sheetMoved.current = false;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setSheetDragging(true);
-  };
-  const moveJourneySheet = (event: ReactPointerEvent<HTMLElement>) => {
-    const drag = sheetDrag.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const delta = event.clientY - drag.startY;
-    if (Math.abs(delta) > 4) sheetMoved.current = true;
-    const heights = journeySheetHeights();
-    setSheetMapHeight(
-      Math.min(heights[2], Math.max(heights[0], drag.startHeight + delta)),
-    );
-  };
-  const finishSheetDrag = (event: ReactPointerEvent<HTMLElement>) => {
-    const drag = sheetDrag.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const heights = journeySheetHeights();
-    const currentHeight = Math.min(
-      heights[2],
-      Math.max(heights[0], drag.startHeight + event.clientY - drag.startY),
-    );
-    const nearestSnap = heights.reduce(
-      (nearest, height, index) =>
-        Math.abs(height - currentHeight) <
-        Math.abs(heights[nearest] - currentHeight)
-          ? index
-          : nearest,
-      0,
-    );
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    sheetDrag.current = null;
-    setSheetDragging(false);
-    snapJourneySheet(nearestSnap);
-  };
   const updateRequest = (value: Partial<PlanRequest>) =>
     setRequest((previous) => ({ ...previous, ...value }));
   const updatePreferences = (value: Partial<Preferences>) => {
@@ -810,6 +998,11 @@ export default function App() {
     }));
   };
   const runPlan = useCallback(async (value: PlanRequest) => {
+    if (!isPlannable(value)) {
+      setPlan(null);
+      setLoading(false);
+      return;
+    }
     activeRequest.current?.abort();
     const control = new AbortController();
     activeRequest.current = control;
@@ -883,6 +1076,32 @@ export default function App() {
       );
     }
   };
+  const finishOnboarding = (
+    preferences?: Preferences,
+    nextLargeText = largeText,
+  ) => {
+    const nextPreferences = preferences ?? request.preferences;
+    const nextHardPreferences = preferences
+      ? { ...hardPreferences, ...preferences }
+      : hardPreferences;
+    const nextRequest = { ...request, preferences: nextPreferences };
+    const nextState = buildAccountState({
+      preferences: nextPreferences,
+      hardPreferences: nextHardPreferences,
+      largeText: nextLargeText,
+    });
+    setRequest(nextRequest);
+    setHardPreferences(nextHardPreferences);
+    setLargeText(nextLargeText);
+    void storeRealState(nextState);
+    persist(ONBOARDING_KEY, true);
+    setShowOnboarding(false);
+    notify(
+      preferences
+        ? "Preferences saved. You can change them anytime in Preferences."
+        : "Setup skipped. You can add preferences anytime in Preferences.",
+    );
+  };
   const applyRealState = (state: AccountState) => {
     const primary = state.commutes[0] ?? null;
     const base = primary?.request ?? liveRequest(request);
@@ -898,6 +1117,7 @@ export default function App() {
     setCommutes(state.commutes);
     setHardPreferences(state.hardPreferences);
     setLargeText(state.largeText);
+    setLeaveNow(!primary);
     setRequest(next);
     void runPlan(next);
   };
@@ -964,6 +1184,7 @@ export default function App() {
   const acceptDeviceLocation = (
     position: GeolocationPosition,
     useAsOrigin: boolean,
+    onlyIfOriginUnset = false,
   ): boolean => {
     const fix = deviceLocationFix(position);
     if (!isSupportedLocation(fix)) {
@@ -976,9 +1197,13 @@ export default function App() {
     setLocationBusy(false);
     setLocationError("");
     if (useAsOrigin) {
-      const next = { ...request, origin: locationPlace(fix) };
-      setRequest(next);
-      void runPlan(next);
+      setRequest((previous) => {
+        if (onlyIfOriginUnset && previous.origin.id !== UNSET_ORIGIN.id)
+          return previous;
+        const next = { ...previous, origin: locationPlace(fix) };
+        if (isPlannable(next)) void runPlan(next);
+        return next;
+      });
     }
     return true;
   };
@@ -1000,6 +1225,10 @@ export default function App() {
       void runPlan(next);
       return;
     }
+    requestDeviceLocation();
+  };
+  const requestDeviceLocation = (onlyIfOriginUnset = false) => {
+    setLocationError("");
     if (!window.isSecureContext) {
       failLocation(
         "Device location requires HTTPS. Open the secure hosted app or choose an origin manually.",
@@ -1014,7 +1243,8 @@ export default function App() {
     }
     setLocationBusy(true);
     navigator.geolocation.getCurrentPosition(
-      (position) => acceptDeviceLocation(position, true),
+      (position) =>
+        acceptDeviceLocation(position, true, onlyIfOriginUnset),
       (error) => failLocation(locationErrorMessage(error)),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
     );
@@ -1065,11 +1295,14 @@ export default function App() {
       .then((response) => response.json())
       .then((session) => {
         if (!session.authenticated || !session.user || !session.state) return;
+        persist(ONBOARDING_KEY, true);
+        setShowOnboarding(false);
         setAccountUser(session.user);
         applyRealState(session.state);
       })
       .catch(() => {});
-    if (navigator.onLine) void runPlan(request);
+    if (navigator.onLine && isPlannable(request)) void runPlan(request);
+    if (request.dataMode === "live") requestDeviceLocation(true);
     const yes = () => setOnline(true),
       no = () => setOnline(false);
     window.addEventListener("online", yes);
@@ -1086,13 +1319,6 @@ export default function App() {
     const timer = setTimeout(() => setToast(""), 5000);
     return () => clearTimeout(timer);
   }, [toast]);
-  useEffect(() => {
-    const resizeSheet = () => {
-      setSheetMapHeight(journeySheetHeights()[sheetSnap]);
-    };
-    window.addEventListener("resize", resizeSheet);
-    return () => window.removeEventListener("resize", resizeSheet);
-  }, [sheetSnap]);
   useEffect(() => {
     document.documentElement.classList.toggle("large-text", largeText);
     if (request.dataMode === "live" && !accountUser) {
@@ -1187,7 +1413,13 @@ export default function App() {
       0,
       plan.original.duration - plan.original.baselineDuration,
     );
-    if (delay <= 15) return;
+    if (
+      !meetsDelayAlertThreshold(
+        delay,
+        commonRoute.request.preferences.alertThreshold,
+      )
+    )
+      return;
     const routeDate = dateValue(plan.request.departure);
     let target = Date.parse(
       `${routeDate}T${commonRoute.timeSensitive}:00+08:00`,
@@ -1224,6 +1456,7 @@ export default function App() {
         commutes,
         saved: saved.current,
         largeText,
+        leaveNow,
       };
     }
     stopLocationTracking();
@@ -1237,6 +1470,7 @@ export default function App() {
     setLargeText(persona === "lim");
     setCurrentLocation(fix);
     setLocationError("");
+    setLeaveNow(false);
     setRequest(value);
     setModal(null);
     void runPlan(value);
@@ -1252,10 +1486,12 @@ export default function App() {
     setHardPreferences(stored?.hardPreferences ?? {});
     setCommutes(stored?.commutes ?? []);
     setLargeText(stored?.largeText ?? false);
+    setLeaveNow(stored?.leaveNow ?? false);
     saved.current = stored?.saved ?? null;
     normalState.current = null;
     setRequest(value);
     void runPlan(value);
+    requestDeviceLocation();
   };
   const saveCommute = async () => {
     if (request.dataMode === "demo") {
@@ -1302,6 +1538,7 @@ export default function App() {
     };
     saved.current = commute;
     setHardPreferences(commute.hardPreferences);
+    setLeaveNow(false);
     setRequest(next);
     setTab("today");
     void runPlan(next);
@@ -1417,6 +1654,8 @@ export default function App() {
       GUEST_KEY,
       PLAN_KEY,
       ACTIVITY_KEY,
+      COMPANION_CONSENT_KEY,
+      ONBOARDING_KEY,
       "wlt-device-token",
       "wlt-large-text",
     ])
@@ -1427,9 +1666,14 @@ export default function App() {
     setCommutes([]);
     setHardPreferences({});
     setLargeText(false);
-    const next = makeRequest();
+    setCompanionConsent(false);
+    const next = makeStartRequest(clean.preferences);
+    setLeaveNow(true);
     setRequest(next);
-    void runPlan(next);
+    setPlan(null);
+    setModal(null);
+    setShowOnboarding(true);
+    requestDeviceLocation();
     notify("Saved guest, account, journey and reminder data deleted.");
   };
   const dateLabel = new Intl.DateTimeFormat("en-SG", {
@@ -1450,6 +1694,7 @@ export default function App() {
     plan?.conditions.notices.filter(
       (notice) => notice.kind === "disruption" || notice.kind === "planned",
     ) ?? [];
+  const primaryPage = modal === "preferences" || modal === "profile";
   return (
     <div className="app-shell">
       <a href="#main" className="skip-link">
@@ -1457,22 +1702,44 @@ export default function App() {
       </a>
       <header className="site-header">
         <nav aria-label="Main navigation">
+          <button
+            type="button"
+            onClick={() => setModal("preferences")}
+            className={modal === "preferences" ? "nav-item active" : "nav-item"}
+            aria-current={modal === "preferences" ? "page" : undefined}
+          >
+            <Settings2 size={17} />
+            Preferences
+          </button>
           {(
             [
-              { id: "today", label: "My journey", icon: Route },
               {
                 id: "updates",
                 label: "Disruptions",
                 icon: Radio,
+                featured: false,
               },
-              { id: "commutes", label: "Routes", icon: Bookmark },
+              { id: "today", label: "My journey", icon: Route, featured: true },
+              {
+                id: "commutes",
+                label: "Routes",
+                icon: Bookmark,
+                featured: false,
+              },
             ] as const
           ).map((item) => (
             <button
               key={item.id}
-              onClick={() => setTab(item.id)}
-              className={tab === item.id ? "nav-item active" : "nav-item"}
-              aria-current={tab === item.id ? "page" : undefined}
+              onClick={() => {
+                setTab(item.id);
+                setModal(null);
+              }}
+              className={`${!primaryPage && tab === item.id ? "nav-item active" : "nav-item"}${
+                "featured" in item && item.featured ? " journey-nav-item" : ""
+              }`}
+              aria-current={
+                !primaryPage && tab === item.id ? "page" : undefined
+              }
             >
               <item.icon size={17} />
               {item.label}
@@ -1482,52 +1749,29 @@ export default function App() {
                 ) && <i className="notification-dot" />}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setModal("profile")}
+            className={modal === "profile" ? "nav-item active" : "nav-item"}
+            aria-current={modal === "profile" ? "page" : undefined}
+            aria-label="Account"
+          >
+            <CircleUserRound size={17} />
+            Account
+          </button>
         </nav>
       </header>
-      <div className="bottom-controls" aria-label="App controls">
-        <a className="brand" href="/" aria-label="Wayce home">
-          <span className="brand-icon">
-            <TrainFront size={23} />
-          </span>
-          <span>
-            Wayce
-            <i />
-          </span>
-        </a>
-        <div className="header-actions">
-          <button
-            className="icon-button help-button"
-            onClick={() => setModal("help")}
-            aria-label="Help"
-          >
-            <HelpCircle size={21} />
-          </button>
-          <button
-            className="icon-button"
-            onClick={() => setModal("alerts")}
-            aria-label="View disruption alerts"
-          >
-            <Bell size={21} />
-            {disruptionAlerts.length > 0 && <i className="notification-dot" />}
-          </button>
-          <button
-            className="avatar"
-            onClick={() => setModal("profile")}
-            aria-label="Open options and account"
-          >
-            {request.dataMode === "demo"
-              ? selectedDemoProfile.name[0]
-              : (accountUser?.name?.[0]?.toUpperCase() ?? "G")}
-          </button>
-        </div>
-      </div>
       {!online && (
         <div className="connection-banner" role="status">
           <WifiOff size={16} /> You’re offline. Your saved map and journey are
           available. Conditions may have changed.
         </div>
       )}
-      <main id="main">
+      <main
+        id="main"
+        className={tab === "today" ? "journey-page" : "secondary-tab-page"}
+        hidden={primaryPage}
+      >
         {tab !== "today" && (
           <section className="greeting">
             <div>
@@ -1547,17 +1791,20 @@ export default function App() {
         {tab === "today" && (
           <>
             <div
+              ref={journeyLayout}
               className={`journey-layout sheet-${
                 ["expanded", "middle", "collapsed"][sheetSnap]
               } ${sheetDragging ? "sheet-dragging" : ""}`}
-              style={
-                sheetMapHeight === null
-                  ? undefined
-                  : ({
-                      "--mobile-map-height": `${sheetMapHeight}px`,
-                    } as React.CSSProperties)
-              }
             >
+              <div className="journey-map-slot">
+                <JourneyMap
+                  plan={plan}
+                  selected={selected}
+                  location={currentLocation}
+                  onViewAlerts={() => setModal("alerts")}
+                  hasAlerts={disruptionAlerts.length > 0}
+                />
+              </div>
               <aside className="planner-column">
                 <section className="planner-card">
                   <button
@@ -1570,9 +1817,6 @@ export default function App() {
                     }
                     title="Drag to resize the journey panel"
                     onPointerDown={startSheetDrag}
-                    onPointerMove={moveJourneySheet}
-                    onPointerUp={finishSheetDrag}
-                    onPointerCancel={finishSheetDrag}
                     onClick={(event) => {
                       if (sheetMoved.current) {
                         sheetMoved.current = false;
@@ -1603,24 +1847,39 @@ export default function App() {
                     className="section-title sheet-drag-surface"
                     title="Drag to resize the journey panel"
                     onPointerDown={startSheetDrag}
-                    onPointerMove={moveJourneySheet}
-                    onPointerUp={finishSheetDrag}
-                    onPointerCancel={finishSheetDrag}
                   >
                     <h2>Navigate</h2>
-                    <button
-                      className="planner-preferences-trigger"
-                      onClick={() => setModal("profile")}
-                      aria-label="Journey preferences"
-                    >
-                      Preferences
-                    </button>
+                    <div className="sheet-title-actions">
+                      {sheetSnap === 0 && (
+                        <button
+                          type="button"
+                          className="sheet-collapse-button"
+                          onClick={() => snapJourneySheet(2)}
+                          aria-label="Show map and collapse journey panel"
+                        >
+                          <ChevronDown size={16} aria-hidden="true" />
+                          Show map
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="planner-preferences-trigger"
+                        onClick={() => setModal("preferences")}
+                        aria-label="Journey preferences"
+                      >
+                        Preferences
+                      </button>
+                    </div>
                   </div>
                   <form
                     id="journey-planner"
                     onSubmit={(e) => {
                       e.preventDefault();
-                      void runPlan(request);
+                      const next = leaveNow
+                        ? { ...request, departure: new Date().toISOString() }
+                        : request;
+                      setRequest(next);
+                      void runPlan(next);
                     }}
                   >
                     <div className="route-input-group">
@@ -1629,6 +1888,7 @@ export default function App() {
                           label="FROM"
                           fieldKey="A"
                           value={request.origin}
+                          placeholder="Current location"
                           onChange={(p) => {
                             clearLocation();
                             updateRequestAndPlan({ origin: p });
@@ -1638,6 +1898,7 @@ export default function App() {
                           label="TO"
                           fieldKey="B"
                           value={request.destination}
+                          placeholder="Where to?"
                           onChange={(p) => updateRequest({ destination: p })}
                         />
                       </div>
@@ -1645,18 +1906,26 @@ export default function App() {
                         <TimeScrollPicker
                           label="Leave"
                           value={sgTime(request.departure)}
-                          onChange={(value) =>
+                          isNow={leaveNow}
+                          onNow={() => {
+                            setLeaveNow(true);
+                            updateRequest({
+                              departure: new Date().toISOString(),
+                            });
+                          }}
+                          onChange={(value) => {
+                            setLeaveNow(false);
                             updateRequest({
                               departure: `${dateValue(request.departure)}T${value}:00+08:00`,
-                            })
-                          }
+                            });
+                          }}
                         />
                         <TimeScrollPicker
                           label="Arrive"
                           value={
                             request.arriveBy
                               ? sgTime(request.arriveBy)
-                              : "10:30"
+                              : undefined
                           }
                           onChange={(value) =>
                             updateRequest({
@@ -1667,18 +1936,24 @@ export default function App() {
                       </div>
                     </div>
                     <div className="location-control">
-                      <button
-                        type="button"
-                        className="location-button"
-                        onClick={useCurrentLocation}
-                        disabled={locationBusy}
-                      >
-                        {locationBusy
-                          ? "Finding your location…"
-                          : request.dataMode === "demo"
+                      {(request.dataMode === "demo" ||
+                        (!locationBusy && !currentLocation)) && (
+                        <button
+                          type="button"
+                          className="location-button"
+                          onClick={useCurrentLocation}
+                        >
+                          {request.dataMode === "demo"
                             ? "Use simulated location"
-                            : "Use my location"}
-                      </button>
+                            : "Retry location"}
+                        </button>
+                      )}
+                      {locationBusy && (
+                        <span className="location-status" role="status">
+                          <LoaderCircle className="spin" size={14} /> Finding
+                          your location…
+                        </span>
+                      )}
                       {currentLocation && (
                         <span className="location-status" role="status">
                           <span
@@ -1713,6 +1988,7 @@ export default function App() {
                                   ? `${e.target.value}T${sgTime(request.arriveBy)}:00+08:00`
                                   : undefined,
                               });
+                            setLeaveNow(false);
                           }}
                         />
                       </label>
@@ -1720,7 +1996,7 @@ export default function App() {
                     <button
                       type="button"
                       className="journey-preferences-button"
-                      onClick={() => setModal("profile")}
+                      onClick={() => setModal("preferences")}
                       aria-label={`Journey preferences: ${preferenceSummary.length ? preferenceSummary.join(", ") : "No extra preferences"}`}
                     >
                       <span>
@@ -1737,7 +2013,7 @@ export default function App() {
                     type="submit"
                     form="journey-planner"
                     className="primary-button plan-button"
-                    disabled={loading || !online}
+                    disabled={loading || !online || !isPlannable(request)}
                   >
                     {loading ? "Finding your way…" : "Find my best route"}
                   </button>
@@ -1747,7 +2023,9 @@ export default function App() {
                   <span>
                     {plan
                       ? `${1 + plan.alternatives.length} routes`
-                      : "Planning…"}
+                      : isPlannable(request)
+                        ? "Ready to plan"
+                        : "Choose where to go"}
                   </span>
                 </div>
                 <div
@@ -1756,8 +2034,18 @@ export default function App() {
                 >
                   {!plan && (
                     <div className="loading-card">
-                      <LoaderCircle size={22} className="spin" />
-                      <p>Connecting your door to your destination…</p>
+                      {loading ? (
+                        <LoaderCircle size={22} className="spin" />
+                      ) : (
+                        <Navigation size={22} />
+                      )}
+                      <p>
+                        {loading
+                          ? "Connecting your door to your destination…"
+                          : isPlannable(request)
+                            ? "Ready when you are. Find your best route."
+                            : "Choose a destination to see your route options."}
+                      </p>
                     </div>
                   )}
                   {plan &&
@@ -1865,22 +2153,24 @@ export default function App() {
                     />
                   </button>
                 )}
-                <button
-                  className={`save-button ${savedRoutine ? "saved" : ""}`}
-                  onClick={() => void saveCommute()}
-                  disabled={request.dataMode === "demo"}
-                >
-                  {savedRoutine ? (
-                    <CheckCheck size={17} />
-                  ) : (
-                    <Bookmark size={17} />
-                  )}{" "}
-                  {request.dataMode === "demo"
-                    ? "Faux account route"
-                    : savedRoutine
-                      ? "Route saved"
-                      : "Save route"}
-                </button>
+                {plan && (
+                  <button
+                    className={`save-button ${savedRoutine ? "saved" : ""}`}
+                    onClick={() => void saveCommute()}
+                    disabled={request.dataMode === "demo"}
+                  >
+                    {savedRoutine ? (
+                      <CheckCheck size={17} />
+                    ) : (
+                      <Bookmark size={17} />
+                    )}{" "}
+                    {request.dataMode === "demo"
+                      ? "Faux account route"
+                      : savedRoutine
+                        ? "Route saved"
+                        : "Save route"}
+                  </button>
+                )}
               </aside>
               <div className="journey-content">
                 <section
@@ -1900,27 +2190,26 @@ export default function App() {
                         ? plan.recommended.blocked
                           ? "Route unavailable"
                           : `Routes · Use ${plan.recommended.title}`
-                        : "Finding route"}
+                        : "Where to?"}
                     </h2>
                     <p>
                       {plan
                         ? plan.advice
-                        : "Checking routes and conditions."}
+                        : "Choose a destination and we’ll compare the best ways there."}
                     </p>
                   </div>
                   <button
                     className="icon-button"
                     onClick={() => setModal("chat")}
-                    aria-label="Ask why this route was recommended"
+                    aria-label={
+                      plan
+                        ? "Ask why this route was recommended"
+                        : "Open journey companion"
+                    }
                   >
                     <ArrowRight size={21} />
                   </button>
                 </section>
-                <JourneyMap
-                  plan={plan}
-                  selected={selected}
-                  location={currentLocation}
-                />
                 <div className="journey-insights">
                   <div>
                     <span className="insight-icon">
@@ -2030,7 +2319,9 @@ export default function App() {
                               {w}
                             </p>
                           ))}
-                          <p>{selected.source} · © OpenStreetMap contributors</p>
+                          <p>
+                            {selected.source} · © OpenStreetMap contributors
+                          </p>
                         </div>
                       )}
                     </section>
@@ -2358,12 +2649,14 @@ export default function App() {
           </span>
         </footer>
       </main>
-      <button className="companion-button" onClick={() => setModal("chat")}>
-        <span>
-          <Sparkles size={20} />
-        </span>{" "}
-        A little help for the journey <MessageCircle size={17} />
-      </button>
+      {!primaryPage && (
+        <button className="companion-button" onClick={() => setModal("chat")}>
+          <span>
+            <Sparkles size={20} />
+          </span>{" "}
+          A little help for the journey <MessageCircle size={17} />
+        </button>
+      )}
       {toast && (
         <div className="toast" role="status">
           <Check size={18} />
@@ -2455,9 +2748,11 @@ export default function App() {
         </Modal>
       )}
       {modal === "profile" && (
-        <Modal title="Options & account" onClose={() => setModal(null)}>
-          <div className="modal-body">
-            <h3>Account</h3>
+        <main className="nav-page" aria-labelledby="account-page-title">
+          <header className="nav-page-header">
+            <h1 id="account-page-title">Account</h1>
+          </header>
+          <div className="modal-body nav-page-body">
             <div
               className={`account-card ${request.dataMode === "demo" ? "demo" : ""}`}
             >
@@ -2523,7 +2818,52 @@ export default function App() {
                 {accountError}
               </p>
             )}
-            <h3>Preferences</h3>
+            <div className="developer-options">
+              <h3>Developer options</h3>
+              <label className="toggle-row">
+                <Settings2 size={21} />
+                <span>
+                  <strong>Developer mode</strong>
+                  <small>
+                    Show isolated persona demos and simulation controls
+                  </small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={developerMode}
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setDeveloperMode(enabled);
+                    persist(DEVELOPER_KEY, enabled);
+                    if (!enabled && request.dataMode === "demo") exitDemo();
+                  }}
+                />
+              </label>
+              {developerMode && (
+                <button
+                  className="secondary-button full"
+                  onClick={() => setModal("demo")}
+                >
+                  Open demo presets <ArrowRight size={16} />
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              className="secondary-button full"
+              onClick={() => setModal("help")}
+            >
+              <HelpCircle size={17} /> Help &amp; app guide
+            </button>
+          </div>
+        </main>
+      )}
+      {modal === "preferences" && (
+        <main className="nav-page" aria-labelledby="preferences-page-title">
+          <header className="nav-page-header">
+            <h1 id="preferences-page-title">Preferences</h1>
+          </header>
+          <div className="modal-body nav-page-body">
             {(
               [
                 {
@@ -2585,6 +2925,26 @@ export default function App() {
                 onChange={(e) => setLargeText(e.target.checked)}
               />
             </label>
+            <label className="toggle-row">
+              <ShieldCheck size={21} />
+              <span>
+                <strong>Companion data sharing</strong>
+                <small>
+                  Allow route context, recent chat and voice drafts you send.
+                  Browser voice recognition may use its vendor’s online service.
+                </small>
+              </span>
+              <input
+                type="checkbox"
+                aria-label="Companion data sharing"
+                checked={companionConsent}
+                onChange={(event) => {
+                  const consent = event.target.checked;
+                  setCompanionConsent(consent);
+                  persist(COMPANION_CONSENT_KEY, consent);
+                }}
+              />
+            </label>
             <div className="settings-fields">
               <label>
                 Maximum walk (m)
@@ -2638,38 +2998,8 @@ export default function App() {
             >
               <Trash2 size={15} /> Delete my saved data and reminders
             </button>
-            <div className="developer-options">
-              <h3>Developer options</h3>
-              <label className="toggle-row">
-                <Settings2 size={21} />
-                <span>
-                  <strong>Developer mode</strong>
-                  <small>
-                    Show isolated persona demos and simulation controls
-                  </small>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={developerMode}
-                  onChange={(event) => {
-                    const enabled = event.target.checked;
-                    setDeveloperMode(enabled);
-                    persist(DEVELOPER_KEY, enabled);
-                    if (!enabled && request.dataMode === "demo") exitDemo();
-                  }}
-                />
-              </label>
-              {developerMode && (
-                <button
-                  className="secondary-button full"
-                  onClick={() => setModal("demo")}
-                >
-                  Open demo presets <ArrowRight size={16} />
-                </button>
-              )}
-            </div>
           </div>
-        </Modal>
+        </main>
       )}
       {modal === "chat" && (
         <Modal
@@ -2679,6 +3009,11 @@ export default function App() {
           <Companion
             plan={plan}
             request={request}
+            consent={companionConsent}
+            onConsentChange={(consent) => {
+              setCompanionConsent(consent);
+              persist(COMPANION_CONSENT_KEY, consent);
+            }}
             onApply={(preferences) => {
               const nextHardPreferences = {
                 ...hardPreferences,
@@ -2859,7 +3194,8 @@ export default function App() {
               marks every signal with its source and availability. Demo
               scenarios use actual OpenStreetMap routes with simulated
               disruptions, crowds, weather and works. Demo location is labelled;
-              live location is requested only when you tap a location control.
+              normal live mode requests a one-shot device location when it
+              opens, with a visible manual fallback if permission fails.
             </p>
             <h3>Maps & route estimates</h3>
             <p>
@@ -2875,6 +3211,21 @@ export default function App() {
               routing. No public map, geocoding or routing requests are made.
               Local timings are estimates; coverage, station access and shelter
               are not fully verified.
+            </p>
+            <h3>Official transport data</h3>
+            <p>
+              Train schedules and live transport conditions contain information
+              from LTA DataMall. The committed timetable is planned service,
+              not a guarantee of actual movement, and is made available under
+              the{" "}
+              <a
+                href="https://datamall.lta.gov.sg/content/datamall/en/SingaporeOpenDataLicence.html"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Singapore Open Data Licence v1.0
+              </a>
+              . Wayce is not endorsed by LTA.
             </p>
             <h3>AI with its feet on the ground</h3>
             <p>
@@ -2918,9 +3269,9 @@ export default function App() {
               <span>01</span>
               <h3>Tell us where your day takes you.</h3>
               <p>
-                Choose your origin, destination, departure and arrival deadline.
-                Guest mode works without sign-in, and device location is used
-                only after your explicit action.
+                We request your current location in normal live mode, then you
+                choose where to go. Leave defaults to Now, and every field stays
+                editable. Guest mode works without sign-in.
               </p>
             </div>
             <div>
@@ -2929,7 +3280,7 @@ export default function App() {
               <p>
                 Route warnings appear only when a live condition affects the
                 selected journey. Persona simulations are available only after
-                enabling Developer mode in Options.
+                enabling Developer mode in Account.
               </p>
             </div>
             <div>
@@ -3071,6 +3422,16 @@ export default function App() {
           </div>
         </Modal>
       )}
+      {showOnboarding && request.dataMode === "live" && (
+        <Onboarding
+          preferences={request.preferences}
+          largeText={largeText}
+          onSave={(preferences, onboardingLargeText) =>
+            finishOnboarding(preferences, onboardingLargeText)
+          }
+          onSkip={() => finishOnboarding()}
+        />
+      )}
     </div>
   );
 }
@@ -3165,12 +3526,16 @@ function ChatRouteCards({
 function Companion({
   plan,
   request,
+  consent,
+  onConsentChange,
   onApply,
   config,
   onSelectRoute,
 }: {
   plan: PlanResponse | null;
   request: PlanRequest;
+  consent: boolean;
+  onConsentChange: (consent: boolean) => void;
   onApply: (p: Partial<Preferences>) => void;
   config: any;
   onSelectRoute: (id: string) => void;
@@ -3193,24 +3558,44 @@ function Companion({
   ]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [consent, setConsent] = useState(false);
   const [speechStatus, setSpeechStatus] = useState("");
+  const [listening, setListening] = useState(false);
   const end = useRef<HTMLDivElement>(null);
+  const recognition = useRef<BrowserSpeechRecognition | null>(null);
+  const voiceBaseMessage = useRef("");
+  const voiceHeard = useRef(false);
+  const voiceFailed = useRef(false);
+  const voiceInputSupported = Boolean(getSpeechRecognition());
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
+  useEffect(
+    () => () => {
+      const activeRecognition = recognition.current;
+      recognition.current = null;
+      if (!activeRecognition) return;
+      activeRecognition.onstart = null;
+      activeRecognition.onresult = null;
+      activeRecognition.onerror = null;
+      activeRecognition.onend = null;
+      activeRecognition.abort();
+    },
+    [],
+  );
   const send = async (text: string) => {
     if (!text.trim() || busy || !consent) return;
     setMessage("");
     setMessages((previous) => [...previous, { role: "user", text }]);
     setBusy(true);
     try {
+      const contextRequest =
+        plan?.request ?? (isPlannable(request) ? request : undefined);
       const r = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text,
-          request: plan?.request ?? request,
+          request: contextRequest,
           history: messages
             .filter((entry) => entry.role === "user" || entry.provider)
             .slice(-8)
@@ -3219,7 +3604,10 @@ function Companion({
         }),
       });
       const data: ChatResponse & { error?: string } = await r.json();
-      if (!r.ok) throw new Error(data.error);
+      if (!r.ok)
+        throw new Error(
+          data.error || `The companion returned HTTP ${r.status}.`,
+        );
       setMessages((previous) => [
         ...previous,
         {
@@ -3231,13 +3619,17 @@ function Companion({
           displayedRouteIds: data.displayedRouteIds,
         },
       ]);
-    } catch {
+    } catch (error) {
+      const detail =
+        error instanceof Error && error.message !== "Failed to fetch"
+          ? error.message.trim().replace(/[.!?]+$/, "")
+          : "";
       setMessages((previous) => [
         ...previous,
         {
           role: "assistant",
           text: navigator.onLine
-            ? "The companion could not connect. Your route and journey steps are still available."
+            ? `The companion could not respond${detail ? `: ${detail}` : " right now"}. ${plan ? "Your route and journey steps are still available." : "You can continue planning your journey."}`
             : "You’re offline. Follow the saved journey steps and check updated conditions when you reconnect.",
           provider: "local",
         },
@@ -3277,6 +3669,118 @@ function Companion({
       setSpeechStatus("Audio could not play. The full text is above.");
     }
   };
+  const toggleVoiceInput = () => {
+    if (listening) {
+      recognition.current?.stop();
+      return;
+    }
+    const SpeechRecognition = getSpeechRecognition();
+    if (!SpeechRecognition) {
+      setSpeechStatus(
+        "Voice input is not supported in this browser. You can still type your message.",
+      );
+      return;
+    }
+    window.speechSynthesis?.cancel();
+    const nextRecognition = new SpeechRecognition();
+    recognition.current = nextRecognition;
+    voiceBaseMessage.current = message.trim();
+    voiceHeard.current = false;
+    voiceFailed.current = false;
+    nextRecognition.lang = "en-SG";
+    nextRecognition.continuous = false;
+    nextRecognition.interimResults = true;
+    nextRecognition.onstart = () => {
+      setListening(true);
+      setSpeechStatus(
+        "Listening… Speak naturally, then tap stop when finished.",
+      );
+    };
+    nextRecognition.onresult = (event) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i += 1)
+        transcript += `${event.results[i][0]?.transcript ?? ""} `;
+      transcript = transcript.trim().replace(/\s+/g, " ");
+      if (!transcript) return;
+      voiceHeard.current = true;
+      setMessage(
+        [voiceBaseMessage.current, transcript]
+          .filter(Boolean)
+          .join(" ")
+          .slice(0, 1500),
+      );
+      setSpeechStatus("Transcribing…");
+    };
+    nextRecognition.onerror = (event) => {
+      voiceFailed.current = true;
+      setListening(false);
+      setSpeechStatus(
+        event.error === "not-allowed" || event.error === "service-not-allowed"
+          ? "Microphone permission was denied. Allow microphone access or type your message."
+          : event.error === "audio-capture"
+            ? "No microphone was found. You can still type your message."
+            : event.error === "no-speech"
+              ? "I didn’t hear anything. Tap the microphone to try again."
+              : "Voice input could not finish. You can try again or type your message.",
+      );
+    };
+    nextRecognition.onend = () => {
+      recognition.current = null;
+      setListening(false);
+      if (voiceFailed.current) return;
+      setSpeechStatus(
+        voiceHeard.current
+          ? "Voice draft ready. Review it before sending."
+          : "I didn’t hear anything. Tap the microphone to try again.",
+      );
+    };
+    try {
+      nextRecognition.start();
+    } catch {
+      recognition.current = null;
+      setListening(false);
+      setSpeechStatus(
+        "Voice input could not start. You can try again or type your message.",
+      );
+    }
+  };
+  if (!consent)
+    return (
+      <div className="chat-panel consent-pending">
+        <section
+          className="chat-consent-overlay"
+          aria-labelledby="companion-consent-title"
+        >
+          <span className="chat-consent-icon" aria-hidden="true">
+            <ShieldCheck size={28} />
+          </span>
+          <p className="eyebrow">ONE-TIME AGREEMENT</p>
+          <h3 id="companion-consent-title">Before you chat or use voice</h3>
+          <p>
+            Wayce sends the message you choose to submit, your current route
+            context and recent chat context to the companion. Wayce does not
+            store your chat history.
+          </p>
+          <p>
+            If you use the microphone, your browser may use its vendor’s online
+            speech service. Wayce receives only the editable transcript draft
+            you decide to send, not microphone audio.
+          </p>
+          <label className="chat-consent-choice">
+            <input
+              type="checkbox"
+              checked={false}
+              onChange={(event) => onConsentChange(event.target.checked)}
+            />
+            <span>I agree to this companion and voice data use.</span>
+          </label>
+          <small>
+            This choice stays on this device. You can change it anytime in
+            Preferences.
+          </small>
+        </section>
+      </div>
+    );
   return (
     <div className="chat-panel">
       <div className="chat-intro">
@@ -3376,18 +3880,6 @@ function Companion({
             ))}
           </div>
         )}
-        <label className="chat-consent">
-          <input
-            type="checkbox"
-            checked={consent}
-            onChange={(e) => setConsent(e.target.checked)}
-          />
-          <span>
-            I agree to send this message and route context to the companion,
-            including Google Vertex AI when connected. Recent messages are sent
-            for conversational context, but we don’t store chat history.
-          </span>
-        </label>
         <form
           className="chat-input"
           onSubmit={(e) => {
@@ -3398,22 +3890,40 @@ function Companion({
           <input
             aria-label="Message your companion"
             placeholder={
-              consent
-                ? "What would make your journey better?"
-                : "Check the consent box to start"
+              listening
+                ? "Listening…"
+                : consent
+                  ? "What would make your journey better?"
+                  : "Check the consent box to start"
             }
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             maxLength={1500}
-            disabled={!consent || busy}
+            disabled={!consent || busy || listening}
           />
           <button
+            type="button"
+            className={`voice-input-button ${listening ? "listening" : ""}`}
+            aria-label={listening ? "Stop voice input" : "Start voice input"}
+            aria-pressed={listening}
+            aria-describedby="voice-input-note"
+            onClick={toggleVoiceInput}
+            disabled={!consent || busy || !voiceInputSupported}
+          >
+            <Mic size={18} />
+          </button>
+          <button
             aria-label="Send message"
-            disabled={!consent || !message.trim() || busy}
+            disabled={!consent || !message.trim() || busy || listening}
           >
             <Send size={18} />
           </button>
         </form>
+        <p id="voice-input-note" className="voice-input-note">
+          {voiceInputSupported
+            ? "Voice transcription is handled by your browser and may use its online speech service. Wayce receives only the draft you send."
+            : "Voice input is not supported in this browser. You can still type your message."}
+        </p>
         {speechStatus && (
           <p className="privacy-note" role="status">
             {speechStatus}
