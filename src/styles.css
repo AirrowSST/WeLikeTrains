@@ -965,9 +965,6 @@ input {
   background: #e7ece5 !important;
   z-index: 1;
 }
-.onemap-tiles {
-  filter: saturate(0.68) brightness(1.04) contrast(0.9);
-}
 .leaflet-container {
   font-family: inherit !important;
 }
@@ -1070,7 +1067,10 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 650;
-  text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff,
+  text-shadow:
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
     1px 1px 0 #fff;
 }
 .route-mode-marker {
@@ -1088,7 +1088,10 @@ input {
   filter: drop-shadow(0 1px 0 #fff) drop-shadow(0 0 2px #fff);
 }
 .route-mode-marker strong {
-  text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff,
+  text-shadow:
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
     1px 1px 0 #fff;
 }
 .route-mode-marker.walk {
@@ -1116,7 +1119,10 @@ input {
   filter: drop-shadow(0 1px 0 #fff) drop-shadow(0 0 2px #fff);
 }
 .map-weather-marker strong {
-  text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff,
+  text-shadow:
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
     1px 1px 0 #fff;
 }
 .rain-zone {
@@ -1166,13 +1172,17 @@ input {
   border-radius: 50%;
   border: 3px solid #fff;
   background: #2479a9;
-  box-shadow: 0 0 0 3px #2479a944, 0 2px 7px #173b4e55;
+  box-shadow:
+    0 0 0 3px #2479a944,
+    0 2px 7px #173b4e55;
   display: grid;
   place-items: center;
 }
 .current-location-marker.demo {
   background: #b2873c;
-  box-shadow: 0 0 0 3px #b2873c44, 0 2px 7px #60471f55;
+  box-shadow:
+    0 0 0 3px #b2873c44,
+    0 2px 7px #60471f55;
 }
 .current-location-marker > span {
   width: 6px;
@@ -2197,6 +2207,10 @@ input {
 .feed-status.demo {
   background: #f6f1e2;
   color: #a79663;
+}
+.feed-status.local {
+  background: #e7f1ec;
+  color: #39735a;
 }
 .feed-status.unavailable,
 .feed-status.stale {
@@ -4458,7 +4472,9 @@ body {
   color: #234f3d;
   cursor: pointer;
   touch-action: manipulation;
-  transition: box-shadow 160ms ease, transform 160ms ease;
+  transition:
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 .time-picker-card:hover,
 .time-picker-card:focus-visible,

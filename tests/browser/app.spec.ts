@@ -101,8 +101,19 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
     "data-ready",
     "true",
   );
-  await expect(page.locator(".onemap-tiles").first()).toBeAttached();
-  await expect(page.getByRole("link", { name: "OneMap" })).toBeVisible();
+  await expect(page.locator(".journey-map")).toHaveAttribute(
+    "data-map-source",
+    "bundled-osm",
+  );
+  await expect(page.locator(".map-extract")).toContainText("Bundled OSM map");
+  await expect(page.getByRole("link", { name: "OneMap" })).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      performance
+        .getEntriesByType("resource")
+        .some((entry) => entry.name.includes("onemap.gov.sg")),
+    ),
+  ).toBe(false);
   await expect(page.locator(".route-mode-marker.walk").first()).toBeVisible();
   await expect(page.locator(".route-mode-marker.rail").first()).toBeVisible();
   await expect(page.locator(".map-mode-key")).toContainText("Walk");
@@ -172,13 +183,13 @@ test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
     })),
   ).toEqual([]);
 });
-test("resizes the mobile journey sheet by drag and keyboard", async ({ page }) => {
+test("resizes the mobile journey sheet by drag and keyboard", async ({
+  page,
+}) => {
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(
-    startJourneyButton(page),
-  ).toBeEnabled();
+  await expect(startJourneyButton(page)).toBeEnabled();
 
   const handle = page.getByRole("button", { name: /Resize journey panel/ });
   await expect(handle).toBeVisible();

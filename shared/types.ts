@@ -133,7 +133,7 @@ export interface TrafficReading {
 }
 export interface FeedStatus {
   name: string;
-  status: "live" | "demo" | "stale" | "unavailable";
+  status: "live" | "local" | "demo" | "stale" | "unavailable";
   updatedAt?: string;
   detail: string;
 }
