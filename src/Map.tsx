@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
-import { LocateFixed, Layers, Navigation } from "lucide-react";
+import { LocateFixed, Navigation } from "lucide-react";
 import type { Journey, PlanResponse } from "../shared/types";
 import { lineColors } from "../shared/catalog";
 
@@ -15,7 +15,6 @@ export default function JourneyMap({
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const routes = useRef<L.LayerGroup | null>(null);
-  const [showOriginal, setShowOriginal] = useState(true);
   const [mapError, setMapError] = useState(false);
   useEffect(() => {
     if (!element.current) return;
@@ -113,27 +112,19 @@ export default function JourneyMap({
     if (!m || !group || !plan) return;
     group.clearLayers();
     const journey = selected ?? plan.recommended;
-    if (showOriginal && plan.original.id !== journey.id)
-      plan.original.segments.forEach((s) => {
-        L.polyline(s.geometry, {
-          color: "#89958e",
-          weight: 4,
-          opacity: 0.7,
-          dashArray: "8 7",
-          interactive: false,
-        }).addTo(group);
-        for (const geometry of s.affectedGeometry ?? [])
-          L.polyline(geometry, {
-            color: "#c55c40",
-            weight: 6,
-            opacity: 0.85,
-            dashArray: "8 7",
-            interactive: false,
-          }).addTo(group);
-      });
     journey.segments.forEach((s) => {
+      const issues = s.issues ?? [];
+      const severe =
+        issues.includes("flood") || issues.includes("road-closure");
+      const colour = severe
+        ? "#171a19"
+        : issues.includes("accident") || issues.includes("disruption")
+          ? "#c55c40"
+          : issues.includes("congestion")
+            ? "#d99216"
+            : (lineColors[s.line] ?? lineColors[s.mode]);
       const tooltip = document.createElement("span");
-      tooltip.textContent = `${s.line.toUpperCase()}: ${s.from} → ${s.to}${s.affected ? " · affected" : ""}`;
+      tooltip.textContent = `${s.from} → ${s.to}`;
       L.polyline(s.geometry, {
         color: "#fff",
         weight: s.mode === "walk" ? 6 : 9,
@@ -141,9 +132,7 @@ export default function JourneyMap({
         interactive: false,
       }).addTo(group);
       L.polyline(s.geometry, {
-        color: s.affected
-          ? "#c55c40"
-          : (lineColors[s.line] ?? lineColors[s.mode]),
+        color: colour,
         weight: s.mode === "walk" ? 3 : 5,
         opacity: 1,
         dashArray: s.mode === "walk" ? "3 7" : undefined,
@@ -160,6 +149,30 @@ export default function JourneyMap({
             fillOpacity: 1,
           }).addTo(group);
       }
+      const midpoint = s.geometry[Math.floor(s.geometry.length / 2)];
+      if (midpoint && s.sheltered && s.mode === "walk")
+        L.marker(midpoint, {
+          interactive: false,
+          keyboard: false,
+          icon: L.divIcon({
+            className: "map-shelter",
+            html: "⌂",
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+          }),
+        }).addTo(group);
+      const issue = issues.find((item) => item !== "shelter");
+      if (midpoint && issue)
+        L.marker(midpoint, {
+          interactive: false,
+          keyboard: false,
+          icon: L.divIcon({
+            className: `map-issue ${issue}`,
+            html: severe ? "×" : "!",
+            iconSize: [20, 20],
+            iconAnchor: [10, 10],
+          }),
+        }).addTo(group);
     });
     const points = journey.segments.flatMap((s) => s.geometry);
     if (points.length) {
@@ -187,7 +200,7 @@ export default function JourneyMap({
         animate: false,
       });
     }
-  }, [plan, selected, showOriginal]);
+  }, [plan, selected]);
   const recenter = () => {
     const points = (selected ?? plan?.recommended)?.segments.flatMap(
       (s) => s.geometry,
@@ -208,7 +221,7 @@ export default function JourneyMap({
       />
       <div className="map-top">
         <span className="map-label">
-          <Navigation size={14} /> Your journey, in perspective
+          <Navigation size={14} /> Route
         </span>
         <button
           className="icon-button"
@@ -218,24 +231,6 @@ export default function JourneyMap({
           <LocateFixed size={19} />
         </button>
       </div>
-      <div className="map-legend">
-        <span>
-          <i className="legend-line" /> Selected route
-        </span>
-        <button
-          className={showOriginal ? "legend-toggle active" : "legend-toggle"}
-          onClick={() => setShowOriginal(!showOriginal)}
-          aria-pressed={showOriginal}
-        >
-          <i className="legend-line dashed" /> Original route
-        </button>
-        <span>
-          <i className="legend-line affected" /> Affected
-        </span>
-      </div>
-      <span className="map-extract">
-        <Layers size={12} /> Offline OSM map
-      </span>
       {mapError && (
         <div className="map-error">
           Map extract unavailable. Your journey steps are still below.

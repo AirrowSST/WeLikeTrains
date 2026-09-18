@@ -27,6 +27,11 @@ export function noticeActive(n: Notice, departure: string, duration = 120) {
   return Number.isFinite(start) && start <= at + duration * 60000 && end >= at;
 }
 export function segmentAffected(n: Notice, s: Segment) {
+  if (n.kind === "flood")
+    return (
+      !!n.location &&
+      s.geometry.some((point) => distance(point, n.location!) < 180)
+    );
   if (n.kind !== "lift" && n.line && n.line !== s.line) return false;
   const codes = new Set(s.stops.flatMap((x) => x.split(/[;,/ ]/)));
   return n.stations.length
@@ -83,6 +88,7 @@ export function applyConditions(
     segment.delay = 0;
     segment.affected = false;
     segment.affectedGeometry = [];
+    segment.issues = segment.sheltered && s.mode === "walk" ? ["shelter"] : [];
     if (s.mode === "bus") {
       const bus = conditions.buses.find(
         (b) =>
@@ -106,8 +112,15 @@ export function applyConditions(
       )
         continue;
       if (notice.kind === "lift" && !request.preferences.stepFree) continue;
-      if (["disruption", "planned", "lift"].includes(notice.kind)) {
+      if (["disruption", "planned", "lift", "flood"].includes(notice.kind)) {
         segment.affected = true;
+        segment.issues.push(
+          notice.kind === "flood"
+            ? "flood"
+            : notice.kind === "disruption"
+              ? "disruption"
+              : "road-closure",
+        );
         segment.affectedGeometry.push(
           ...(s.hops
             ?.filter((h) =>
@@ -125,19 +138,73 @@ export function applyConditions(
           seenDelay.add(notice.id);
           reasons.push(notice.title);
         }
-        if (notice.kind === "planned" || notice.kind === "lift") blocked = true;
+        if (
+          notice.kind === "flood" ||
+          notice.kind === "planned" ||
+          notice.kind === "lift"
+        )
+          blocked = true;
+        if (
+          notice.kind === "disruption" &&
+          notice.freeBus &&
+          s.mode === "rail"
+        ) {
+          segment.issues.push("bridging-bus");
+          warnings.push(
+            `${notice.freeBus}. Use the free bridging bus where it serves your affected rail section.`,
+          );
+        }
+      }
+    }
+    if (s.mode === "bus") {
+      for (const traffic of conditions.traffic) {
+        if (
+          !traffic.location ||
+          !s.geometry.some((point) => distance(point, traffic.location!) < 250)
+        )
+          continue;
+        segment.affected = true;
+        segment.affectedGeometry.push(s.geometry);
+        segment.delay += traffic.delayMinutes;
+        segment.issues.push(
+          traffic.kind === "road-closure"
+            ? "road-closure"
+            : traffic.kind === "incident"
+              ? "accident"
+              : "congestion",
+        );
+        if (!seenDelay.has(traffic.id)) {
+          seenDelay.add(traffic.id);
+          reasons.push(traffic.description);
+        }
+        if (traffic.kind === "road-closure") blocked = true;
       }
     }
     if (segment.crowd === "high" && s.mode === "rail") {
       segment.delay += 3;
+      segment.issues.push("crowd");
       if (!reasons.includes("Allow extra boarding time at crowded platforms"))
         reasons.push("Allow extra boarding time at crowded platforms");
     }
+    if (
+      s.mode === "walk" &&
+      !s.sheltered &&
+      conditions.weather.walkStatus !== "valid"
+    ) {
+      segment.issues.push(conditions.weather.rain ? "rain" : "heat");
+      segment.delay += Math.ceil(
+        s.minutes * (conditions.weather.walkStatus === "invalid" ? 0.5 : 0.2),
+      );
+      if (conditions.weather.walkStatus === "invalid") {
+        blocked = true;
+        warnings.push(
+          "An exposed walking section is unsafe in the current weather. Use a mapped sheltered alternative or wait for conditions to improve.",
+        );
+      }
+    }
     if (conditions.weather.rain) {
-      if (s.mode === "walk" && !s.sheltered)
-        segment.delay += Math.ceil(s.minutes * 0.3);
       if (s.mode === "bus") segment.delay += Math.ceil(s.minutes * 0.15);
-      if (s.mode === "cycle") {
+      if (s.mode === "cycle" && conditions.weather.cycleStatus !== "valid") {
         blocked = true;
         warnings.push("Cycling is excluded during this heavy-rain scenario.");
       }
@@ -151,7 +218,7 @@ export function applyConditions(
   );
   const uncertainty =
     Math.max(4, Math.ceil(duration * 0.14)) +
-    (conditions.weather.rain ? 4 : 0) +
+    (conditions.weather.walkStatus !== "valid" ? 4 : 0) +
     (segments.some((s) => s.affected) ? 8 : 0);
   const walkMinutes = segments
     .filter((s) => s.mode === "walk")
@@ -168,7 +235,9 @@ export function applyConditions(
           ? 5
           : 0
       : 0) +
-    (request.preferences.sheltered ? exposed * 0.5 : 0) +
+    (request.preferences.sheltered || conditions.weather.walkStatus !== "valid"
+      ? exposed * 0.8
+      : 0) +
     (request.preferences.stepFree ? walkMinutes * 0.6 : 0) +
     (blocked ? 10000 : 0);
   if (request.preferences.stepFree)
@@ -253,62 +322,27 @@ export function localJourneys(
       request.destination.lon,
     ];
   const all = [...net.stations.values()];
-  const accessLeg = (
-    from: [number, number],
-    to: [number, number],
-    fromName: string,
-    toName: string,
-  ) => {
-    const mapped = walkSegment(from, to, fromName, toName, request.preferences);
-    if (mapped) return mapped;
-    const metres = distance(from, to);
-    // A place returned by search can be just outside the bundled pedestrian
-    // extract. Keep access to a nearby stop usable, but make the approximation
-    // explicit rather than presenting it as a verified walking path.
-    if (metres > Math.max(request.preferences.maxWalk, 2500)) return null;
-    return {
-      id: `walk-${fromName}-${toName}`,
-      mode: "walk" as const,
-      line: "walk",
-      from: fromName,
-      to: toName,
-      minutes: Math.ceil(metres / request.preferences.walkingSpeed),
-      distance: metres,
-      geometry: [from, to],
-      stops: [],
-      crowd: "unknown" as const,
-      affected: false,
-      delay: 0,
-      sheltered: false,
-      accessibility: "unknown" as const,
-      instructions: `Walk about ${Math.round(metres)} m to ${toName}. This access leg is estimated because the local walking map does not cover the full connection.`,
-      source: "Estimated station access outside bundled walking map",
-    };
-  };
   function nearby(c: [number, number]) {
-    return ["rail", "bus"].flatMap((mode) => {
-      const candidates = all
+    return ["rail", "bus"].flatMap((mode) =>
+      all
         .filter(
-          (s) => s.mode === mode,
+          (s) =>
+            s.mode === mode &&
+            distance(c, s.coord) < request.preferences.maxWalk,
         )
         .sort((a, b) => distance(c, a.coord) - distance(c, b.coord))
-        .filter((s) => distance(c, s.coord) < request.preferences.maxWalk)
-        .slice(0, mode === "rail" ? 5 : 3);
-      if (candidates.length) return candidates;
-      const closest = all
-        .filter((s) => s.mode === mode)
-        .sort((a, b) => distance(c, a.coord) - distance(c, b.coord))[0];
-      return closest && distance(c, closest.coord) <= 2500 ? [closest] : [];
-    });
+        .slice(0, mode === "rail" ? 5 : 3),
+    );
   }
   const starts = nearby(origin)
     .map((s) => ({
       s,
-      leg: accessLeg(
+      leg: walkSegment(
         origin,
         s.coord,
         request.origin.name,
         s.name,
+        request.preferences,
       ),
     }))
     .filter((x) => x.leg !== null);
@@ -316,11 +350,12 @@ export function localJourneys(
     nearby(destination)
       .map((s) => [
         s.id,
-        accessLeg(
+        walkSegment(
           s.coord,
           destination,
           s.name,
           request.destination.name,
+          request.preferences,
         ),
       ])
       .filter((x) => x[1] !== null) as [string, Segment][],
@@ -414,6 +449,7 @@ export function localJourneys(
           id: "",
           mode: edge.mode,
           line: edge.line,
+          direction: edge.direction,
           from: from.name,
           to: to.name,
           minutes: edge.minutes,
@@ -511,10 +547,25 @@ export function localJourneys(
 }
 export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
   const conditions = await getConditions(request);
+  // Weather may make a user's ordinary preference a safety requirement for
+  // this plan. The saved preference remains unchanged; this only affects the
+  // route calculation for the current journey.
+  const routingRequest: PlanRequest = {
+    ...request,
+    preferences: {
+      ...request.preferences,
+      sheltered:
+        request.preferences.sheltered ||
+        conditions.weather.walkStatus !== "valid",
+      cycling:
+        request.preferences.cycling &&
+        conditions.weather.cycleStatus === "valid",
+    },
+  };
   let base: Journey[] = [];
   if (request.dataMode === "live")
     try {
-      base = await oneMapJourneys(request, journeyFromSegments);
+      base = await oneMapJourneys(routingRequest, journeyFromSegments);
     } catch {
       conditions.feeds.push({
         name: "OneMap routing",
@@ -544,9 +595,10 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
     if (
       impacted ||
       request.preferences.cycling ||
-      request.preferences.stepFree
+      request.preferences.stepFree ||
+      conditions.weather.walkStatus !== "valid"
     ) {
-      base.push(...localJourneys(request, conditions));
+      base.push(...localJourneys(routingRequest, conditions));
       base = [
         ...new Map(base.map((journey) => [journey.id, journey])).values(),
       ];
@@ -555,7 +607,7 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
         base = base.filter((journey) => !journey.source.includes("OneMap"));
       }
     }
-  } else base = localJourneys(request, conditions);
+  } else base = localJourneys(routingRequest, conditions);
   if (!base.length)
     throw new Error(
       "No usable route found in this map extract. Try the supported Singapore places, increase the walking limit, or connect OneMap for wider coverage.",

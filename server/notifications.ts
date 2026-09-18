@@ -20,6 +20,7 @@ export async function saveRoutine(
   token: string,
   request: PlanRequest,
   subscription: webpush.PushSubscription,
+  timeSensitive: string,
 ) {
   if (!pushConfigured())
     throw new Error("Background reminders are not configured on this server.");
@@ -29,6 +30,7 @@ export async function saveRoutine(
     .set({
       request,
       subscription,
+      timeSensitive,
       createdAt: Timestamp.now(),
       expiresAt: Timestamp.fromMillis(Date.now() + 30 * 86400000),
       lastFingerprint: "",
@@ -102,6 +104,10 @@ export async function sendReminders() {
           : undefined,
       };
       const plan = await planJourney(request);
+      const disruptionDelay = Math.max(
+        0,
+        plan.original.duration - plan.original.baselineDuration,
+      );
       const planned = plan.conditions.notices.filter(
         (n) =>
           (n.kind === "planned" || n.kind === "lift") &&
@@ -110,8 +116,9 @@ export async function sendReminders() {
       );
       const matters =
         (beforeDeparture &&
-          (plan.original.duration - plan.original.baselineDuration >=
-            saved.preferences.alertThreshold ||
+          ((item.timeSensitive && disruptionDelay > 15) ||
+            plan.original.duration - plan.original.baselineDuration >=
+              saved.preferences.alertThreshold ||
             plan.original.blocked ||
             plan.recommended.blocked)) ||
         (dayBefore && planned.length > 0);
@@ -125,8 +132,10 @@ export async function sendReminders() {
         JSON.stringify({
           title: dayBefore
             ? "A heads-up for tomorrow"
-            : "Your commute needs a small change",
-          body: `${saved.dataMode === "demo" ? "DEMO: " : ""}${plan.advice}`,
+            : item.timeSensitive && disruptionDelay > 15
+              ? "Leave earlier or change route"
+              : "Your commute needs a small change",
+          body: `${saved.dataMode === "demo" ? "DEMO: " : ""}${item.timeSensitive && disruptionDelay > 15 ? `Your ${item.timeSensitive} common route is delayed by ${disruptionDelay} min. ` : ""}${plan.advice}`,
           url: "/",
         }),
       );
