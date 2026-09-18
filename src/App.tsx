@@ -1148,7 +1148,9 @@ export default function App() {
         {tab === "today" && (
           <>
             <div
-              className={`journey-layout ${sheetDragging ? "sheet-dragging" : ""}`}
+              className={`journey-layout sheet-${
+                ["expanded", "middle", "collapsed"][sheetSnap]
+              } ${sheetDragging ? "sheet-dragging" : ""}`}
               style={
                 sheetMapHeight === null
                   ? undefined
