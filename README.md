@@ -12,7 +12,7 @@ The app opens in clearly labelled **Demo experience** mode with an injected EWL 
 
 1. Read Rachel’s recommendation at the top. Change the demo scenario to compare normal service, disruption, crowds, rain, closure or lift maintenance.
 2. Compare the original and revised route on the OSM map. Swipe route cards for time, crowd and walking trade-offs. Open **Full details** for directions and limitations.
-3. Save the commute and start the step-by-step journey. Progress is manual; the app does not track GPS.
+3. Tap **Use simulated location** to preview the labelled demo position, then start the step-by-step journey. In Live mode, **Use my location** requests browser permission and the active journey can show foreground location until it is closed. Progress remains manual; there is no background tracking.
 4. Open the companion, consent to sending route context, ask why this route or describe your preferences. Review changes before applying them. Tap the speaker to listen.
 5. **Data & sources → Live feeds** switches to LTA, OneMap and NEA. Each feed reports its own freshness or failure; live failures never silently inject demo data.
 
@@ -59,11 +59,12 @@ This enables APIs, creates scoped service accounts, imports nonempty `.env` cred
 ## What is real, estimated, and experimental
 
 - OSM geometry, graph search, first/last walking legs, the live official-feed adapters and the OneMap itinerary integration are implemented. OSM fallback travel times are estimates, not official timetables.
-- Gemini on Vertex AI explains and selects among computed routes and interviews preferences; Cloud Text-to-Speech reads replies. Routes are computed outside the model, returned IDs are checked, and preference changes require confirmation. A labelled local guide remains available if AI fails.
+- Gemini on Vertex AI explains and selects among computed routes and interviews preferences; Cloud Text-to-Speech reads replies. Bounded function calls turn chat input into validated preference proposals or supplied-route recommendations. Routes are computed outside the model, returned IDs are checked, and preference changes require confirmation. A labelled local guide remains available if AI fails.
 - The disruption **risk index is rule-based**, not a trained AI predictor or calibrated probability. No historical accuracy claim is made. A lack of signals does not mean disruption is impossible.
 - Step-free mode excludes mapped stairs and known station lift outages, but station access, unmapped obstacles and shelter are **not fully verified**. Do not treat this prototype as certified accessible navigation. Rachel is the primary validated persona.
 - The bundled transit extract covers rail and selected bus routes, not every bus in Singapore. OneMap provides broader live coverage. Planned road-work notices are informational without verified route geometry. Unstructured advisories are shown verbatim, not automatically turned into closures.
 - Background alerts require opt-in browser permission and compatible installed-web-app support. Saved routines repeat daily and expire after 30 days. Delivery is not guaranteed when a device or platform restricts push.
+- Foreground browser location is opt-in. Demo mode uses a labelled deterministic position without requesting device permission; live failures remain visible and never become simulated data. Live tracking stops when the active journey closes.
 
 ## Engineering notes
 

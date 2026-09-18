@@ -1,4 +1,4 @@
-const CACHE = "weliketrains-v1";
+const CACHE = "weliketrains-v2";
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {

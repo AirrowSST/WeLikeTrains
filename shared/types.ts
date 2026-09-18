@@ -194,3 +194,7 @@ export interface ChatResponse {
   preferences?: Partial<Preferences>;
   recommendedRouteId?: string;
 }
+export interface ChatTurn {
+  role: "user" | "assistant";
+  text: string;
+}

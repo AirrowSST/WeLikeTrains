@@ -20,6 +20,7 @@ import {
 } from "./notifications";
 
 export const app = express();
+const skipTestRateLimit = () => process.env.DISABLE_RATE_LIMITS === "true";
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
 app.use(compression());
@@ -49,6 +50,7 @@ app.use(
     limit: 90,
     standardHeaders: "draft-8",
     legacyHeaders: false,
+    skip: skipTestRateLimit,
   }),
 );
 app.use("/api", (req, res, next) => {
@@ -85,7 +87,8 @@ app.get("/api/config", (_req, res) =>
       vertex:
         !!process.env.VERTEX_API_KEY ||
         !!process.env.K_SERVICE ||
-        !!process.env.GOOGLE_APPLICATION_CREDENTIALS,
+        !!process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+        process.env.ENABLE_VERTEX_LOCAL === "true",
       tts: process.env.ENABLE_CLOUD_TTS === "true",
       push: pushConfigured(),
     },
@@ -111,12 +114,21 @@ app.get("/api/buses/:stop", async (req, res) =>
 );
 app.post(
   "/api/chat",
-  rateLimit({ windowMs: 60000, limit: 12 }),
+  rateLimit({ windowMs: 60000, limit: 12, skip: skipTestRateLimit }),
   async (req, res) => {
     const body = z
       .object({
         message: z.string().min(1).max(1500),
         request: planSchema.optional(),
+        history: z
+          .array(
+            z.object({
+              role: z.enum(["user", "assistant"]),
+              text: z.string().min(1).max(1800),
+            }),
+          )
+          .max(8)
+          .default([]),
         cloudConsent: z.boolean().default(false),
       })
       .parse(req.body);
@@ -129,12 +141,12 @@ app.post(
       return;
     }
     const plan = body.request ? await planJourney(body.request) : undefined;
-    res.json(await chat(body.message, plan));
+    res.json(await chat(body.message, plan, body.history));
   },
 );
 app.post(
   "/api/speech",
-  rateLimit({ windowMs: 60000, limit: 12 }),
+  rateLimit({ windowMs: 60000, limit: 12, skip: skipTestRateLimit }),
   async (req, res) => {
     const body = z
       .object({ text: z.string().min(1).max(1800) })

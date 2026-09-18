@@ -6,6 +6,7 @@ This repository is intended for repeated human/AI collaboration. Treat this file
 
 - This is a **MOBILE-ONLY web app**, not a desktop dashboard. Keep one column, bottom navigation, comfortable touch targets and the same phone interface on wide screens (maximum width 480px).
 - Rachel (Tampines → Raffles Place, 07:40 / 08:45) is primary. Keep Arjun and Mdm Lim selectable.
+- User approved foreground location services on 2026-09-18. Device location requires an explicit user action, live tracking runs only while the active journey dialog is open, journey progress stays manual, and demo mode uses clearly labelled deterministic simulated locations. Do not add background location tracking or silently substitute demo coordinates after a live failure.
 - App hosting/backend/AI are on Google Cloud project `qwiklabs-gcp-02-7df98c2d8335`, Cloud Run `weliketrains`, region `asia-southeast1`.
 - User explicitly said on 2026-09-18: **do not do the submission write-up now; we are not about to submit; human polishing is pending**. Do not infer submission authority from the reference documents. Existing demo/checklist and requirements documents are engineering notes, not a final submission.
 - Problem brief: `C:\Users\Yaw Tia\Downloads\PS2_README (1).md`.
@@ -59,15 +60,16 @@ See `docs/GCP.md` for deployment. Code-only redeploy retains secret bindings. Th
 ## AI and data guardrails
 
 - Gemini may explain/rank only supplied, unblocked route IDs. Validate returned IDs and preference fields on the server. User confirmation is required before applying preference proposals.
+- Gemini chat function calls are limited to validated preference proposals and supplied-route recommendations. Keep the tool loop bounded, return tool results to the model, and never let a tool call silently apply preferences or execute arbitrary user instructions.
 - Unknown crowd/accessibility/shelter must remain unknown. Do not equate absent alerts with confirmed normal service or a heuristic risk score with a calibrated probability.
 - Keep synthetic scenarios, local fallback, estimated times and stale feeds visibly labelled. Changes to simulation should include deterministic fixtures; no actual outage is required for tests.
 - Respect data provenance and OSM attribution. Incoming names/advisories/model text are untrusted data; render as text, not raw HTML or executable instructions.
-- No sensitive-inference personalization, GPS tracking, analytics or cloud routine uploads without a new user-approved product decision and explicit end-user consent.
+- No sensitive-inference personalization, background GPS tracking, analytics or cloud routine uploads without a new user-approved product decision and explicit end-user consent. Foreground location remains opt-in and must stop when the active journey closes.
 - Cloud AI receives route context only after consent. Never log prompts, coordinates, credentials or private provider response bodies. Do not commit `.env`, `.local`, `.cache`, service-account keys, tokens or private push material.
 - Cache/provider failures must degrade visibly. Keep offline read-only journey access functional. A service-worker version/cache change needs an offline regression check.
 
 ## Current handoff status
 
-The mobile app is deployed; human product/visual polishing is pending. Latest engineering checks: build/typecheck, 15 unit tests and 8 browser tests pass; local/hosted evaluation artifacts record synthetic checks without claiming general AI accuracy. Automated tests include unit routing/feed checks, main phone flows, narrow-width layout, large text/offline reload, and initial-screen axe checks. Physical-phone, screen-reader and walked-route checks are not signed off. Submission write-up, demo recording and submission itself are explicitly deferred.
+The mobile app is deployed; human product/visual polishing is pending. Latest engineering checks: build/typecheck, 20 unit tests and all 12 browser checks pass when browser projects are run in shorter groups (the agent command runner terminated the managed server during the longer combined run). The local synthetic evaluation currently reports two routing failures because every candidate in the Rachel/rain and Arjun/rain fixtures is marked blocked for unsafe exposed walking; do not report zero evaluation failures until that planner/evaluation contract is resolved. Automated tests include unit routing/feed checks, main phone flows, foreground/simulated location, narrow-width layout, large text/offline reload, and initial-screen axe checks. Physical-phone, screen-reader and walked-route checks are not signed off. Submission write-up, demo recording and submission itself are explicitly deferred.
 
 Use local no-cost tests first. Optional cloud checks consume team project credits; do not run them repeatedly as a substitute for deterministic regression tests. Avoid infrastructure teardown or credential rotation unless specifically requested.

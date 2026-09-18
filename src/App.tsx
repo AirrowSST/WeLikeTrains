@@ -27,6 +27,7 @@ import {
   Info,
   Leaf,
   LoaderCircle,
+  LocateFixed,
   MapPin,
   MessageCircle,
   Navigation,
@@ -71,6 +72,15 @@ import {
   sgTime,
 } from "../shared/catalog";
 import JourneyMap from "./Map";
+import {
+  demoJourneyFix,
+  demoLocationFix,
+  deviceLocationFix,
+  isSupportedLocation,
+  locationErrorMessage,
+  locationPlace,
+  type LocationFix,
+} from "./location";
 
 type Tab = "today" | "commutes" | "updates";
 type ModalName =
@@ -380,6 +390,13 @@ export default function App() {
     leaveAt: string;
     targetTime: string;
   } | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<LocationFix | null>(
+    null,
+  );
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [locationError, setLocationError] = useState("");
+  const [trackingLocation, setTrackingLocation] = useState(false);
+  const [persona, setPersona] = useState<Persona>("rachel");
   const [savedRoutine, setSavedRoutine] = useState(!!saved.current);
   const [demoPersona, setDemoPersona] = useState<Persona>("rachel");
   const [demoScenario, setDemoScenario] = useState<Scenario>("disruption");
@@ -389,7 +406,7 @@ export default function App() {
   const activeRequest = useRef<AbortController | null>(null);
   const normalRequest = useRef<PlanRequest | null>(null);
   const lastProactiveWarning = useRef("");
-  const profile = profiles.find((p) => p.id === "lim")!;
+  const locationWatch = useRef<number | null>(null);
   const selected = plan
     ? ([plan.recommended, ...plan.alternatives, plan.original].find(
         (j) => j.id === selectedId,
@@ -457,6 +474,124 @@ export default function App() {
       if (activeRequest.current === control) setLoading(false);
     }
   }, []);
+  const updateRequestAndPlan = (value: Partial<PlanRequest>) => {
+    const next = { ...request, ...value };
+    setRequest(next);
+    void runPlan(next);
+  };
+  const stopLocationTracking = useCallback(() => {
+    if (locationWatch.current !== null && "geolocation" in navigator) {
+      navigator.geolocation.clearWatch(locationWatch.current);
+      locationWatch.current = null;
+    }
+    setTrackingLocation(false);
+  }, []);
+  const clearLocation = useCallback(() => {
+    stopLocationTracking();
+    setCurrentLocation(null);
+    setLocationBusy(false);
+    setLocationError("");
+  }, [stopLocationTracking]);
+  const failLocation = (message: string) => {
+    stopLocationTracking();
+    setLocationBusy(false);
+    setLocationError(message);
+  };
+  const acceptDeviceLocation = (
+    position: GeolocationPosition,
+    useAsOrigin: boolean,
+  ): boolean => {
+    const fix = deviceLocationFix(position);
+    if (!isSupportedLocation(fix)) {
+      failLocation(
+        "Your device location is outside the supported Singapore routing area. Choose an origin manually.",
+      );
+      return false;
+    }
+    setCurrentLocation(fix);
+    setLocationBusy(false);
+    setLocationError("");
+    if (useAsOrigin) {
+      const next = { ...request, origin: locationPlace(fix) };
+      setRequest(next);
+      void runPlan(next);
+    }
+    return true;
+  };
+  const useCurrentLocation = () => {
+    setLocationError("");
+    if (request.dataMode === "demo") {
+      const savedOrigin =
+        normalRequest.current?.origin ??
+        saved.current?.request.origin ??
+        makeRequest().origin;
+      const base =
+        request.origin.id === "demo-current-location"
+          ? savedOrigin
+          : request.origin;
+      const fix = demoLocationFix(base);
+      const next = { ...request, origin: locationPlace(fix) };
+      setCurrentLocation(fix);
+      setRequest(next);
+      void runPlan(next);
+      return;
+    }
+    if (!window.isSecureContext) {
+      failLocation(
+        "Device location requires HTTPS. Open the secure hosted app or choose an origin manually.",
+      );
+      return;
+    }
+    if (!("geolocation" in navigator)) {
+      failLocation(
+        "This browser does not support location services. Choose an origin manually.",
+      );
+      return;
+    }
+    setLocationBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => acceptDeviceLocation(position, true),
+      (error) => failLocation(locationErrorMessage(error)),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
+    );
+  };
+  const startLocationTracking = () => {
+    if (!selected) return;
+    setLocationError("");
+    if (request.dataMode === "demo") {
+      const fix = demoJourneyFix(selected.segments, journeyStep);
+      if (fix) setCurrentLocation(fix);
+      setTrackingLocation(true);
+      return;
+    }
+    if (!window.isSecureContext || !("geolocation" in navigator)) {
+      failLocation(
+        "Live location needs browser location support on a secure HTTPS connection.",
+      );
+      return;
+    }
+    stopLocationTracking();
+    setLocationBusy(true);
+    locationWatch.current = navigator.geolocation.watchPosition(
+      (position) => {
+        if (acceptDeviceLocation(position, false)) setTrackingLocation(true);
+      },
+      (error) => failLocation(locationErrorMessage(error)),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+    );
+  };
+  const setJourneyProgress = (step: number) => {
+    setJourneyStep(step);
+    if (request.dataMode === "demo" && selected) {
+      const fix = demoJourneyFix(selected.segments, step);
+      if (fix) setCurrentLocation(fix);
+    }
+  };
+  const closeJourney = () => {
+    stopLocationTracking();
+    setStarted(false);
+    setModal(null);
+  };
   useEffect(() => {
     fetch("/api/config")
       .then((r) => r.json())
@@ -471,6 +606,7 @@ export default function App() {
       window.removeEventListener("online", yes);
       window.removeEventListener("offline", no);
       activeRequest.current?.abort();
+      stopLocationTracking();
     };
   }, []);
   useEffect(() => {
@@ -607,12 +743,14 @@ export default function App() {
   }, [plan]);
   const startDemo = () => {
     if (request.dataMode === "live") normalRequest.current = request;
+    clearLocation();
     const value = makeRequest(demoPersona, "demo", demoScenario);
     setRequest(value);
     setModal(null);
     void runPlan(value);
   };
   const exitDemo = () => {
+    clearLocation();
     const stored =
       normalRequest.current ?? saved.current?.request ?? makeRequest();
     const value: PlanRequest = {
@@ -623,6 +761,18 @@ export default function App() {
         ...stored.preferences,
         ...hardPreferences,
       },
+    };
+    normalRequest.current = null;
+    setRequest(value);
+    void runPlan(value);
+  };
+  const choosePersona = (id: Persona) => {
+    clearLocation();
+    setPersona(id);
+    const next = makeRequest(id, request.dataMode, request.scenario);
+    const value: PlanRequest = {
+      ...next,
+      preferences: { ...next.preferences, ...hardPreferences },
     };
     setRequest(value);
     setModal(null);
@@ -861,17 +1011,21 @@ export default function App() {
                         label="FROM"
                         marker="A"
                         value={request.origin}
-                        onChange={(p) => updateRequest({ origin: p })}
+                        onChange={(p) => {
+                          clearLocation();
+                          updateRequestAndPlan({ origin: p });
+                        }}
                       />
                       <button
                         type="button"
                         className="swap-button"
-                        onClick={() =>
-                          updateRequest({
+                        onClick={() => {
+                          clearLocation();
+                          updateRequestAndPlan({
                             origin: request.destination,
                             destination: request.origin,
-                          })
-                        }
+                          });
+                        }}
                         aria-label="Swap origin and destination"
                       >
                         <ArrowDownUp size={16} />
@@ -883,6 +1037,40 @@ export default function App() {
                         onChange={(p) => updateRequest({ destination: p })}
                       />
                     </div>
+                    <div className="location-control">
+                      <button
+                        type="button"
+                        className="location-button"
+                        onClick={useCurrentLocation}
+                        disabled={locationBusy}
+                      >
+                        {locationBusy ? (
+                          <LoaderCircle className="spin" size={16} />
+                        ) : (
+                          <LocateFixed size={16} />
+                        )}
+                        {locationBusy
+                          ? "Finding your location…"
+                          : request.dataMode === "demo"
+                            ? "Use simulated location"
+                            : "Use my location"}
+                      </button>
+                      {currentLocation && (
+                        <span className="location-status" role="status">
+                          <span
+                            className={`status-dot ${currentLocation.source === "demo" ? "amber" : ""}`}
+                          />
+                          {currentLocation.source === "demo"
+                            ? "Simulated location active"
+                            : `Device location · ±${Math.round(currentLocation.accuracy)} m`}
+                        </span>
+                      )}
+                    </div>
+                    {locationError && (
+                      <p className="location-error" role="alert">
+                        <TriangleAlert size={14} /> {locationError}
+                      </p>
+                    )}
                     <div className="time-fields time-sequence">
                       <label>
                         <Clock3 size={20} />
@@ -1149,7 +1337,11 @@ export default function App() {
                     <ArrowRight size={21} />
                   </button>
                 </section>
-                <JourneyMap plan={plan} selected={selected} />
+                <JourneyMap
+                  plan={plan}
+                  selected={selected}
+                  location={currentLocation}
+                />
                 <div className="journey-insights">
                   <div>
                     <span className="insight-icon">
@@ -1252,7 +1444,9 @@ export default function App() {
                         disabled={selected.blocked}
                         onClick={() => {
                           setStarted(true);
-                          setJourneyStep(0);
+                          setJourneyProgress(0);
+                          if (request.dataMode === "demo")
+                            setTrackingLocation(true);
                           setModal("journey");
                         }}
                       >
@@ -1578,13 +1772,34 @@ export default function App() {
         </Modal>
       )}
       {modal === "profile" && (
-        <Modal title="Profile 1" onClose={() => setModal(null)}>
+        <Modal title="Your commute preferences" onClose={() => setModal(null)}>
           <div className="modal-body">
             <p className="muted">
-              Your regular route and time are learned after three matching
-              workdays. Changes you make here are kept as your preferences and
-              are never replaced by habit learning.
+              Choose a commuter profile, then fine-tune the preferences for this
+              journey. Changes you make here are kept on this device.
             </p>
+            <h3>Commuter profile</h3>
+            <div className="persona-options">
+              {profiles.map((candidate) => (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  onClick={() => choosePersona(candidate.id)}
+                  className={
+                    persona === candidate.id ? "persona active" : "persona"
+                  }
+                >
+                  <span className="persona-avatar">
+                    {candidate.id === "lim" ? "ML" : candidate.name[0]}
+                  </span>
+                  <span>
+                    <strong>{candidate.name}</strong>
+                    <small>{candidate.label}</small>
+                  </span>
+                  {persona === candidate.id && <Check size={18} />}
+                </button>
+              ))}
+            </div>
             <h3>Preferences</h3>
             {(
               [
@@ -1805,7 +2020,10 @@ export default function App() {
           <div className="modal-body">
             <p>
               Normal mode requests LTA DataMall and NEA feeds concurrently and
-              marks every signal with its source and availability.
+              marks every signal with its source and availability. Demo
+              scenarios use actual OpenStreetMap routes with simulated
+              disruptions, crowds, weather and works. Demo location is labelled;
+              live location is requested only when you tap a location control.
             </p>
             <h3>Maps & route estimates</h3>
             <p>
@@ -1835,7 +2053,8 @@ export default function App() {
               for up to 30 days. Chat is processed only after consent; our app
               does not store chat history. Optional reminders store your route
               and push subscription in Google Cloud for 30 days. No background
-              location tracking or analytics.
+              location tracking or analytics. Live tracking stops when you close
+              the active journey.
             </p>
             <h3>Connected services</h3>
             {Object.entries(config?.integrations ?? {}).map(([name, ready]) => (
@@ -1863,7 +2082,8 @@ export default function App() {
               <h3>Tell us where your day takes you.</h3>
               <p>
                 Choose your origin, destination, departure and arrival deadline.
-                Profile 1 learns repeated weekday routes on this device.
+                You can select a commuter profile or explicitly use your current
+                location. Demo mode supplies a labelled simulation.
               </p>
             </div>
             <div>
@@ -1898,7 +2118,7 @@ export default function App() {
               ? "You’ve made it."
               : "One step at a time"
           }
-          onClose={() => setModal(null)}
+          onClose={closeJourney}
         >
           <div className="modal-body active-journey">
             <span className="tag">
@@ -1923,9 +2143,47 @@ export default function App() {
                   {Math.ceil(selected.segments[journeyStep].minutes)} min ·{" "}
                   {Math.round(selected.segments[journeyStep].distance)} m
                 </div>
+                <div className="journey-location" aria-live="polite">
+                  <span>
+                    <LocateFixed size={16} />
+                    {trackingLocation
+                      ? request.dataMode === "demo"
+                        ? "Simulated position follows each confirmed step"
+                        : currentLocation
+                          ? `Live location on · ±${Math.round(currentLocation.accuracy)} m`
+                          : "Finding your live location…"
+                      : currentLocation
+                        ? "Last location shown on the map"
+                        : "Location is off"}
+                  </span>
+                  {trackingLocation ? (
+                    <button
+                      className="text-button"
+                      onClick={stopLocationTracking}
+                    >
+                      Stop location
+                    </button>
+                  ) : (
+                    <button
+                      className="text-button"
+                      onClick={startLocationTracking}
+                      disabled={locationBusy}
+                    >
+                      {request.dataMode === "demo"
+                        ? "Restart simulation"
+                        : "Start live location"}
+                    </button>
+                  )}
+                </div>
+                {locationError && (
+                  <p className="location-error" role="alert">
+                    <TriangleAlert size={14} /> {locationError}
+                  </p>
+                )}
                 <p className="privacy-note">
-                  Manual progress. This app does not track your location. Access
-                  and timing remain estimates.
+                  Progress stays manual. Location is used only in this app and
+                  stops when this journey closes. Access and timing remain
+                  estimates.
                 </p>
                 <div className="journey-progress">
                   {selected.segments.map((_, i) => (
@@ -1936,13 +2194,13 @@ export default function App() {
                   <button
                     className="secondary-button"
                     disabled={!journeyStep}
-                    onClick={() => setJourneyStep(journeyStep - 1)}
+                    onClick={() => setJourneyProgress(journeyStep - 1)}
                   >
                     <ArrowLeft size={16} /> Back
                   </button>
                   <button
                     className="primary-button"
-                    onClick={() => setJourneyStep(journeyStep + 1)}
+                    onClick={() => setJourneyProgress(journeyStep + 1)}
                   >
                     I’m here <ArrowRight size={16} />
                   </button>
@@ -1965,7 +2223,7 @@ export default function App() {
                   className="primary-button full"
                   onClick={() => {
                     saveCommute();
-                    setModal(null);
+                    closeJourney();
                   }}
                 >
                   Save this commute <Heart size={17} />
@@ -2027,6 +2285,10 @@ function Companion({
         body: JSON.stringify({
           message: text,
           request: plan?.request ?? request,
+          history: messages
+            .filter((entry) => entry.role === "user" || entry.provider)
+            .slice(-8)
+            .map((entry) => ({ role: entry.role, text: entry.text })),
           cloudConsent: consent,
         }),
       });
@@ -2194,8 +2456,8 @@ function Companion({
           />
           <span>
             I agree to send this message and route context to the companion,
-            including Google Vertex AI when connected. We don’t store chat
-            history.
+            including Google Vertex AI when connected. Recent messages are sent
+            for conversational context, but we don’t store chat history.
           </span>
         </label>
         <form

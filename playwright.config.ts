@@ -18,5 +18,6 @@ export default defineConfig({
     url: "http://localhost:8080/api/health",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
+    env: { DISABLE_RATE_LIMITS: "true", NODE_ENV: "e2e" },
   },
 });

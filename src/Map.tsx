@@ -1,27 +1,34 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
-import { LocateFixed, Navigation } from "lucide-react";
+import { Layers, LocateFixed, Navigation } from "lucide-react";
 import type { Journey, PlanResponse } from "../shared/types";
 import { lineColors } from "../shared/catalog";
+import type { LocationFix } from "./location";
 
 let basemapPromise: Promise<any> | undefined;
 export default function JourneyMap({
   plan,
   selected,
+  location,
 }: {
   plan: PlanResponse | null;
   selected: Journey | null;
+  location: LocationFix | null;
 }) {
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const routes = useRef<L.LayerGroup | null>(null);
+  const position = useRef<L.LayerGroup | null>(null);
   const [mapError, setMapError] = useState(false);
   useEffect(() => {
     if (!element.current) return;
     const m = L.map(element.current, {
       zoomControl: false,
       attributionControl: true,
-      preferCanvas: true,
+      // The bundled basemap keeps its explicit canvas renderer below; route
+      // overlays use SVG so Leaflet cannot run a queued canvas redraw after
+      // this tab unmounts on some mobile Chromium builds.
+      preferCanvas: false,
       scrollWheelZoom: false,
     }).setView([1.325, 103.882], 12);
     map.current = m;
@@ -97,6 +104,7 @@ export default function JourneyMap({
       }).addTo(m),
     );
     routes.current = L.layerGroup().addTo(m);
+    position.current = L.layerGroup().addTo(m);
     const observer = new ResizeObserver(() => m.invalidateSize());
     observer.observe(element.current);
     return () => {
@@ -201,10 +209,41 @@ export default function JourneyMap({
       });
     }
   }, [plan, selected]);
+  useEffect(() => {
+    const group = position.current;
+    if (!group) return;
+    group.clearLayers();
+    if (!location) return;
+    const coord: [number, number] = [location.lat, location.lon];
+    if (location.source === "device" && location.accuracy > 0)
+      L.circle(coord, {
+        radius: location.accuracy,
+        color: "#2479a9",
+        fillColor: "#77bce0",
+        fillOpacity: 0.12,
+        weight: 1,
+        interactive: false,
+      }).addTo(group);
+    L.marker(coord, {
+      keyboard: false,
+      icon: L.divIcon({
+        className: `current-location-marker ${location.source}`,
+        html: "<span></span>",
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      }),
+    })
+      .bindTooltip(
+        location.source === "demo"
+          ? "Simulated demo location"
+          : `Live device location · about ${Math.round(location.accuracy)} m accuracy`,
+      )
+      .addTo(group);
+  }, [location]);
   const recenter = () => {
-    const points = (selected ?? plan?.recommended)?.segments.flatMap(
-      (s) => s.geometry,
-    );
+    const points =
+      (selected ?? plan?.recommended)?.segments.flatMap((s) => s.geometry) ?? [];
+    if (location) points.push([location.lat, location.lon]);
     if (points?.length)
       map.current?.fitBounds(L.latLngBounds(points), {
         padding: [55, 70],
@@ -217,7 +256,7 @@ export default function JourneyMap({
         ref={element}
         className="journey-map"
         role="region"
-        aria-label="OpenStreetMap showing your selected route, walking legs and affected portions of the original route"
+        aria-label={`OpenStreetMap showing your selected route, walking legs and affected portions of the original route${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
       />
       <div className="map-top">
         <span className="map-label">
@@ -231,6 +270,23 @@ export default function JourneyMap({
           <LocateFixed size={19} />
         </button>
       </div>
+      <div className="map-legend">
+        <span>
+          <i className="legend-line" /> Selected route
+        </span>
+        <span>
+          <i className="legend-line affected" /> Affected
+        </span>
+        {location && (
+          <span>
+            <i className={`legend-location ${location.source}`} />
+            {location.source === "demo" ? "Simulated" : "You"}
+          </span>
+        )}
+      </div>
+      <span className="map-extract">
+        <Layers size={12} /> Offline OSM map
+      </span>
       {mapError && (
         <div className="map-error">
           Map extract unavailable. Your journey steps are still below.

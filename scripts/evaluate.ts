@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { planJourney } from "../server/planner";
-import { chat, extractPreferences } from "../server/providers";
+import { extractPreferences, localChat } from "../server/providers";
 import { places, profiles } from "../shared/catalog";
 import type {
   Persona,
@@ -48,7 +48,7 @@ for (const fixture of cases) {
         if (!r.ok) throw new Error(`Chat HTTP ${r.status}`);
         return r.json();
       })
-    : await chat(message, plan);
+    : localChat(message, plan);
   const routes = [plan.recommended, ...plan.alternatives];
   const checks = {
     demoLabel: plan.conditions.mode === "demo",

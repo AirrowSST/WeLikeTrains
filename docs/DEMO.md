@@ -10,7 +10,7 @@ Engineering QA notes only. The user has deferred the submission write-up and rec
 4. Select **EWL disruption**. Explicitly say: “This is an injected test disruption, not a claim that trains are disrupted now.” The original EWL path remains on the map, its affected portion is distinguished, and the DTL alternative appears. Read the actionable recommendation and arrival-buffer advice. Swipe between cards to compare walking/time/crowd trade-offs.
 5. Open **Network updates** to show the simulated affected stations, free-bus/shuttle mitigation and next-day maintenance. Select **Planned closure** to show closure avoidance before travel, not just a status label.
 6. Open the companion and read the consent text. Ask “Why this route? Is the risk a probability?” Show the response provider label. Explain the risk is rule-based. Ask “I avoid crowds and need sheltered walks”, review the proposal and apply it. Read a response aloud; do not claim microphone/speech-recognition support.
-7. Save the commute. Start the journey and manually advance one step. Explain no GPS is collected. With the app previously loaded, turn on airplane mode and reload. Confirm the map/steps remain and the offline/stale warning is prominent. Turn airplane mode off afterwards.
+7. Tap **Use simulated location** and confirm the origin, status and amber map marker all say the position is simulated. Start the journey and manually advance one step; the simulated marker follows the confirmed step. Explain that Live mode requests browser location only after a tap, foreground tracking stops when the journey closes, and steps never auto-complete. With the app previously loaded, turn on airplane mode and reload. Confirm the map/steps remain and the offline/stale warning is prominent. Turn airplane mode off afterwards.
 8. Switch **Data & sources → Live feeds**. Show real advisory messages, feed freshness, crowd readings and OneMap routing. A quiet live disruption feed is normal; do not relabel the synthetic event as live.
 
 ## Additional profiles
@@ -18,6 +18,7 @@ Engineering QA notes only. The user has deferred the submission write-up and rec
 - Arjun: choose his profile; compare comfort preferences and cycling availability in dry vs rain scenarios. Bicycles are parked before transit. The nearest-station walk can legitimately outrank cycling; do not claim every trip should include a bicycle.
 - Mdm Lim: choose the profile, enable large text and select Lift maintenance. Show the known affected station avoided and the explicit warning that step-free access remains unverified. The app is not certified accessible navigation.
 - Reminders: on a compatible phone, explain cloud storage and lock-screen privacy, then optionally enable push in Saved commutes. Do not grant permission on behalf of a judge. iOS and browser installation requirements should be checked on the target device; in-app advice works without push.
+- Location: on a compatible phone over HTTPS, switch to Live mode, tap **Use my location**, grant permission yourself, and confirm the blue device marker and accuracy label. Start/stop foreground tracking in the journey dialog and confirm closing it stops tracking. Do not grant permission on behalf of a judge or claim a physical-phone result until performed.
 
 ## Physical-phone checklist — not yet signed off
 

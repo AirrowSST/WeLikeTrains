@@ -525,6 +525,51 @@ input {
 .place-results button small {
   max-width: 220px;
 }
+.location-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-top: 10px;
+}
+.location-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  border: 1px solid #cbd8c1;
+  border-radius: 7px;
+  padding: 8px 11px;
+  background: #f5f8ef;
+  color: #42684b;
+  font-size: 12px;
+  font-weight: 600;
+}
+.location-button:disabled {
+  opacity: 0.7;
+}
+.location-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #65755e;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.location-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 9px;
+  color: #934c31;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.location-error svg {
+  flex: none;
+  margin-top: 1px;
+}
 .searching {
   padding: 12px;
   font-size: 11px;
@@ -976,6 +1021,26 @@ input {
 .map-pin.destination > span {
   color: #315633;
 }
+.current-location-marker {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  background: #2479a9;
+  box-shadow: 0 0 0 3px #2479a944, 0 2px 7px #173b4e55;
+  display: grid;
+  place-items: center;
+}
+.current-location-marker.demo {
+  background: #b2873c;
+  box-shadow: 0 0 0 3px #b2873c44, 0 2px 7px #60471f55;
+}
+.current-location-marker > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+}
 .map-legend {
   position: absolute;
   bottom: 28px;
@@ -1009,6 +1074,19 @@ input {
 }
 .legend-line.affected {
   border-color: #c55c40;
+}
+.legend-location {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid white;
+  background: #2479a9;
+  box-shadow: 0 0 0 1px #2479a9;
+}
+.legend-location.demo {
+  background: #b2873c;
+  box-shadow: 0 0 0 1px #b2873c;
 }
 .legend-toggle {
   background: none;
@@ -2119,6 +2197,34 @@ input {
   font-size: 13px;
   color: #83986e;
   margin: 20px 0;
+}
+.journey-location {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #d9e4cf;
+  border-radius: 8px;
+  background: #f5f8ef;
+  padding: 9px 11px;
+  margin: 16px 0 4px;
+  text-align: left;
+}
+.journey-location > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #58704f;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.journey-location svg {
+  flex: none;
+}
+.journey-location .text-button {
+  flex: none;
+  min-height: 40px;
+  color: #3f704e;
 }
 .journey-progress {
   display: flex;
@@ -3482,17 +3588,19 @@ body {
   line-height: 44px !important;
 }
 
-/* Primary sections stay at the top; identity and account controls stay at the bottom. */
+/* Mobile navigation stays at the bottom; identity and account controls form the top bar. */
 .site-header {
-  position: sticky;
-  top: 0;
+  position: fixed;
+  left: 50%;
+  bottom: 0;
   z-index: 980;
-  width: 100%;
-  height: 72px;
+  transform: translateX(-50%);
+  width: min(100%, 480px);
+  height: calc(70px + env(safe-area-inset-bottom));
   padding: 0;
   background: #fafcf7;
-  border-top: 0;
-  border-bottom: 1px solid #dfe8d7;
+  border-top: 1px solid #dfe8d7;
+  border-bottom: 0;
 }
 .site-header nav {
   position: static;
@@ -3500,7 +3608,7 @@ body {
   transform: none;
   width: 100%;
   height: 100%;
-  padding: 0 8px;
+  padding: 0 8px env(safe-area-inset-bottom);
   border: 0;
   background: transparent;
   justify-content: space-around;
@@ -3522,24 +3630,22 @@ body {
   font-weight: 800;
 }
 .site-header .nav-item.active::before {
-  top: auto;
-  bottom: 0;
+  top: 0;
+  bottom: auto;
 }
 .bottom-controls {
-  position: fixed;
-  left: 50%;
-  bottom: 0;
+  position: sticky;
+  top: 0;
   z-index: 980;
-  transform: translateX(-50%);
-  width: min(100%, 480px);
-  min-height: calc(70px + env(safe-area-inset-bottom));
-  padding: 9px 16px calc(9px + env(safe-area-inset-bottom));
+  width: 100%;
+  min-height: 70px;
+  padding: 9px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   background: #fafcf7;
-  border-top: 1px solid #dfe8d7;
+  border-bottom: 1px solid #dfe8d7;
 }
 .bottom-controls .brand {
   font-size: 18px;

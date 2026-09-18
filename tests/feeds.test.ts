@@ -6,7 +6,12 @@ import {
   parseBuses,
   demoConditions,
 } from "../server/feeds";
-import { extractPreferences, decodePolyline } from "../server/providers";
+import {
+  extractPreferences,
+  decodePolyline,
+  resolveChatToolCalls,
+} from "../server/providers";
+import type { PlanResponse } from "../shared/types";
 import { noticeActive } from "../server/planner";
 import { planSchema } from "../server/validation";
 describe("official data contracts", () => {
@@ -128,6 +133,52 @@ describe("official data contracts", () => {
     expect(extractPreferences("No cycling please")).toMatchObject({
       cycling: false,
     });
+  });
+  it("validates chat tool calls before proposing app actions", () => {
+    const plan = {
+      recommended: {
+        id: "dtl",
+        title: "Take DTL",
+        blocked: false,
+        range: [57, 69],
+        walkMinutes: 23,
+      },
+      alternatives: [
+        {
+          id: "blocked-ewl",
+          title: "Blocked EWL",
+          blocked: true,
+          range: [50, 60],
+          walkMinutes: 10,
+        },
+      ],
+    } as PlanResponse;
+    const accepted = resolveChatToolCalls(
+      [
+        {
+          name: "propose_preferences",
+          args: { avoidCrowds: true, maxWalk: 800 },
+        },
+        { name: "recommend_route", args: { routeId: "dtl" } },
+      ],
+      plan,
+    );
+    expect(accepted.preferences).toEqual({ avoidCrowds: true, maxWalk: 800 });
+    expect(accepted.recommendedRouteId).toBe("dtl");
+    expect(accepted.responses).toHaveLength(2);
+
+    const rejected = resolveChatToolCalls(
+      [
+        { name: "propose_preferences", args: { maxWalk: 50 } },
+        { name: "recommend_route", args: { routeId: "blocked-ewl" } },
+      ],
+      plan,
+    );
+    expect(rejected.preferences).toBeUndefined();
+    expect(rejected.recommendedRouteId).toBeUndefined();
+    expect(
+      rejected.responses.every((response) => response.response?.error),
+    ).toBe(true);
   });
   it("decodes routing geometry with signed coordinate deltas", () => {
     expect(decodePolyline("_p~iF~ps|U_ulLnnqC_mqNvxq`@")).toEqual([

@@ -15,10 +15,10 @@ concurrency:
 jobs:
   check:
     name: Verify before deployment
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -31,12 +31,12 @@ jobs:
   deploy:
     name: Deploy Cloud Run revision
     needs: check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: production
       url: https://weliketrains-191711317812.asia-southeast1.run.app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
