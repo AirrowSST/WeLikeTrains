@@ -215,6 +215,19 @@ test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
     })),
   ).toEqual([]);
 });
+test("bell shows only service-disruption alerts", async ({ page }) => {
+  await useDeterministicPlans(page);
+  await page.goto("/");
+  await page.getByLabel("Disruption simulator").selectOption("disruption");
+  await expect(startJourneyButton(page)).toBeEnabled();
+
+  await page.getByRole("button", { name: "View disruption alerts" }).click();
+  const dialog = page.getByRole("dialog", { name: "Service disruptions" });
+  await expect(dialog).toContainText("Signalling fault on the East West Line");
+  await expect(dialog).toContainText("DISRUPTION");
+  await expect(dialog).not.toContainText("Know what you’re looking at.");
+  await expect(dialog).not.toContainText("Heavy rain along your journey");
+});
 test("resizes the mobile journey sheet by drag and keyboard", async ({
   page,
 }) => {

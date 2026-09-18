@@ -90,6 +90,7 @@ type ModalName =
   | "journey"
   | "help"
   | "proactive"
+  | "alerts"
   | null;
 interface Saved {
   profile: "profile-1";
@@ -1043,6 +1044,13 @@ export default function App() {
   const visibleRouteChoices = showAllRoutes
     ? routeChoices
     : routeChoices.slice(0, 2);
+  // The bell is intentionally narrower than the full Disruptions tab. It is
+  // reserved for service interruptions (including scheduled closures), not
+  // weather, crowds, accessibility notices, or feed diagnostics.
+  const disruptionAlerts =
+    plan?.conditions.notices.filter(
+      (notice) => notice.kind === "disruption" || notice.kind === "planned",
+    ) ?? [];
   return (
     <div className="app-shell">
       <a href="#main" className="skip-link">
@@ -1097,11 +1105,11 @@ export default function App() {
           </button>
           <button
             className="icon-button"
-            onClick={() => setTab("updates")}
-            aria-label="View commute alerts"
+            onClick={() => setModal("alerts")}
+            aria-label="View disruption alerts"
           >
             <Bell size={21} />
-            <i className="notification-dot" />
+            {disruptionAlerts.length > 0 && <i className="notification-dot" />}
           </button>
           <button
             className="avatar"
@@ -1954,6 +1962,54 @@ export default function App() {
             <button className="text-button" onClick={() => setModal(null)}>
               Dismiss
             </button>
+          </div>
+        </Modal>
+      )}
+      {modal === "alerts" && (
+        <Modal title="Service disruptions" onClose={() => setModal(null)}>
+          <div className="modal-body disruption-alerts">
+            {disruptionAlerts.length ? (
+              disruptionAlerts.map((notice) => (
+                <article
+                  key={notice.id}
+                  className={`notice-card ${notice.severity}`}
+                >
+                  <span className="notice-icon">
+                    <TriangleAlert />
+                  </span>
+                  <div>
+                    <div className="notice-meta">
+                      <span className="tag">
+                        {notice.kind === "planned"
+                          ? "PLANNED DISRUPTION"
+                          : "DISRUPTION"}
+                      </span>
+                      {notice.line && <b>{notice.line}</b>}
+                      {plan?.conditions.mode === "demo" && (
+                        <span className="demo-tag">SIMULATED</span>
+                      )}
+                    </div>
+                    <h3>{notice.title}</h3>
+                    <p>{notice.description}</p>
+                    <small>
+                      {new Date(notice.startsAt).toLocaleString("en-SG", {
+                        timeZone: "Asia/Singapore",
+                      })}{" "}
+                      · {notice.source}
+                    </small>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className="empty-state">
+                <CheckCheck size={30} />
+                <h3>No service disruptions in the available feed</h3>
+                <p>
+                  Wayce does not predict disruptions. An unavailable feed does
+                  not mean normal service.
+                </p>
+              </div>
+            )}
           </div>
         </Modal>
       )}
