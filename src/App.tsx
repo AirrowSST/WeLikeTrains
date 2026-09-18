@@ -20,7 +20,6 @@ import {
   ChevronRight,
   Clock3,
   CloudSun,
-  DoorOpen,
   Footprints,
   Heart,
   HelpCircle,
@@ -29,7 +28,6 @@ import {
   Leaf,
   LoaderCircle,
   LocateFixed,
-  MapPin,
   MessageCircle,
   Navigation,
   Plus,
@@ -155,7 +153,7 @@ function TimeScrollPicker({
   value,
   onChange,
 }: {
-  label: "LEAVE" | "ARRIVE";
+  label: "Leave" | "Arrive";
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -199,14 +197,8 @@ function TimeScrollPicker({
         aria-label={`${label.toLowerCase()} time`}
         onClick={openPicker}
       >
-        <span className="time-picker-heading">
-          <Clock3 size={20} aria-hidden="true" />
-          <strong className="time-label">{label}</strong>
-        </span>
-        <span className="time-picker-value">
-          {displayTime}
-          <ChevronDown size={19} aria-hidden="true" />
-        </span>
+        <strong className="time-label">{label}</strong>
+        <span className="time-picker-value">{displayTime}</span>
       </button>
     </div>
   );
@@ -312,12 +304,12 @@ function PlacePicker({
   label,
   value,
   onChange,
-  marker,
+  fieldKey,
 }: {
   label: string;
   value: Place;
   onChange: (p: Place) => void;
-  marker: string;
+  fieldKey: "A" | "B";
 }) {
   const [query, setQuery] = useState(value.name);
   const [editing, setEditing] = useState(false);
@@ -355,20 +347,14 @@ function PlacePicker({
   }, [query, editing]);
   return (
     <div className="place-field" ref={container}>
-      <span
-        className={`field-marker ${marker === "B" ? "filled" : ""}`}
-        aria-hidden="true"
-      >
-        {marker === "A" ? <DoorOpen size={17} /> : <MapPin size={17} />}
-      </span>
       <div>
-        <label htmlFor={`place-${marker}`}>{label}</label>
+        <label htmlFor={`place-${fieldKey}`}>{label}</label>
         <input
-          id={`place-${marker}`}
+          id={`place-${fieldKey}`}
           autoComplete="off"
           role="combobox"
           aria-expanded={editing}
-          aria-controls={`places-${marker}`}
+          aria-controls={`places-${fieldKey}`}
           value={query}
           onFocus={() => {
             setEditing(true);
@@ -398,7 +384,7 @@ function PlacePicker({
         <small>{value.subtitle}</small>
       </div>
       {editing && (
-        <ul className="place-results" id={`places-${marker}`} role="listbox">
+        <ul className="place-results" id={`places-${fieldKey}`} role="listbox">
           {busy && <li className="searching">Finding places…</li>}
           {results.map((p) => (
             <li key={p.id} role="option" aria-selected={p.id === value.id}>
@@ -410,7 +396,6 @@ function PlacePicker({
                   setEditing(false);
                 }}
               >
-                <MapPin size={16} />
                 <span>
                   {p.name}
                   <small>{p.subtitle}</small>
@@ -474,8 +459,8 @@ export default function App() {
   const [demoPersona, setDemoPersona] = useState<Persona>("lim");
   const [demoScenario, setDemoScenario] = useState<Scenario>("disruption");
   const [sheetSnap, setSheetSnap] = useState(1);
-  const [sheetMapHeight, setSheetMapHeight] = useState<number>(() =>
-    journeySheetHeights()[1],
+  const [sheetMapHeight, setSheetMapHeight] = useState<number>(
+    () => journeySheetHeights()[1],
   );
   const [sheetDragging, setSheetDragging] = useState(false);
   const [hardPreferences, setHardPreferences] = useState<Partial<Preferences>>(
@@ -537,7 +522,15 @@ export default function App() {
     setSheetSnap(nextSnap);
     setSheetMapHeight(journeySheetHeights()[nextSnap]);
   };
-  const startSheetDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const startSheetDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    const interactiveTarget = (event.target as HTMLElement).closest(
+      "button, a, input, select, textarea",
+    );
+    if (
+      event.button !== 0 ||
+      (interactiveTarget && interactiveTarget !== event.currentTarget)
+    )
+      return;
     const map = document.querySelector<HTMLElement>(".map-wrap");
     if (!map) return;
     sheetDrag.current = {
@@ -549,7 +542,7 @@ export default function App() {
     event.currentTarget.setPointerCapture(event.pointerId);
     setSheetDragging(true);
   };
-  const moveJourneySheet = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const moveJourneySheet = (event: ReactPointerEvent<HTMLElement>) => {
     const drag = sheetDrag.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     const delta = event.clientY - drag.startY;
@@ -559,7 +552,7 @@ export default function App() {
       Math.min(heights[2], Math.max(heights[0], drag.startHeight + delta)),
     );
   };
-  const finishSheetDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const finishSheetDrag = (event: ReactPointerEvent<HTMLElement>) => {
     const drag = sheetDrag.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     const heights = journeySheetHeights();
@@ -1197,14 +1190,21 @@ export default function App() {
                   >
                     <span aria-hidden="true" />
                   </button>
-                  <div className="section-title">
+                  <div
+                    className="section-title sheet-drag-surface"
+                    title="Drag to resize the journey panel"
+                    onPointerDown={startSheetDrag}
+                    onPointerMove={moveJourneySheet}
+                    onPointerUp={finishSheetDrag}
+                    onPointerCancel={finishSheetDrag}
+                  >
                     <h2>Navigate</h2>
                     <button
-                      className="icon-button compact"
+                      className="planner-preferences-trigger"
                       onClick={() => setModal("profile")}
                       aria-label="Journey preferences"
                     >
-                      <Settings2 size={18} />
+                      Preferences
                     </button>
                   </div>
                   <form
@@ -1218,37 +1218,23 @@ export default function App() {
                       <div className="place-inputs">
                         <PlacePicker
                           label="FROM"
-                          marker="A"
+                          fieldKey="A"
                           value={request.origin}
                           onChange={(p) => {
                             clearLocation();
                             updateRequestAndPlan({ origin: p });
                           }}
                         />
-                        <button
-                          type="button"
-                          className="swap-button"
-                          onClick={() => {
-                            clearLocation();
-                            updateRequestAndPlan({
-                              origin: request.destination,
-                              destination: request.origin,
-                            });
-                          }}
-                          aria-label="Swap origin and destination"
-                        >
-                          <ArrowDownUp size={16} />
-                        </button>
                         <PlacePicker
                           label="TO"
-                          marker="B"
+                          fieldKey="B"
                           value={request.destination}
                           onChange={(p) => updateRequest({ destination: p })}
                         />
                       </div>
                       <div className="time-fields time-sequence">
                         <TimeScrollPicker
-                          label="LEAVE"
+                          label="Leave"
                           value={sgTime(request.departure)}
                           onChange={(value) =>
                             updateRequest({
@@ -1256,14 +1242,8 @@ export default function App() {
                             })
                           }
                         />
-                        <span
-                          className="time-sequence-arrow"
-                          aria-hidden="true"
-                        >
-                          <ArrowRight size={17} />
-                        </span>
                         <TimeScrollPicker
-                          label="ARRIVE"
+                          label="Arrive"
                           value={
                             request.arriveBy
                               ? sgTime(request.arriveBy)
@@ -1284,11 +1264,6 @@ export default function App() {
                         onClick={useCurrentLocation}
                         disabled={locationBusy}
                       >
-                        {locationBusy ? (
-                          <LoaderCircle className="spin" size={16} />
-                        ) : (
-                          <LocateFixed size={16} />
-                        )}
                         {locationBusy
                           ? "Finding your location…"
                           : request.dataMode === "demo"
@@ -1339,7 +1314,6 @@ export default function App() {
                       onClick={() => setModal("profile")}
                       aria-label={`Journey preferences: ${preferenceSummary.length ? preferenceSummary.join(", ") : "No extra preferences"}`}
                     >
-                      <Settings2 size={18} aria-hidden="true" />
                       <span>
                         <strong>Journey preferences</strong>
                         <small>
@@ -1348,7 +1322,6 @@ export default function App() {
                             : "Choose walking, access, crowd and cycling options"}
                         </small>
                       </span>
-                      <ChevronRight size={17} aria-hidden="true" />
                     </button>
                   </div>
                   <button
@@ -1357,13 +1330,7 @@ export default function App() {
                     className="primary-button plan-button"
                     disabled={loading || !online}
                   >
-                    {loading ? (
-                      <LoaderCircle className="spin" size={18} />
-                    ) : (
-                      <Route size={18} />
-                    )}{" "}
                     {loading ? "Finding your way…" : "Find my best route"}
-                    <ArrowRight size={17} />
                   </button>
                 </section>
                 <div className="routes-heading">

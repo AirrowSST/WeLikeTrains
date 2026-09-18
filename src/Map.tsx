@@ -8,6 +8,12 @@ import type { LocationFix } from "./location";
 
 let basemapPromise: Promise<any> | undefined;
 
+const singaporeBounds = L.latLngBounds([1.144, 103.535], [1.494, 104.502]);
+const oneMapTiles =
+  "https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png";
+const oneMapAttribution =
+  '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" alt="" style="height:16px;width:16px;vertical-align:text-bottom" />&nbsp;<a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a>&nbsp;&copy;&nbsp;contributors&nbsp;|&nbsp;<a href="https://www.sla.gov.sg/" target="_blank" rel="noopener noreferrer">Singapore Land Authority</a>';
+
 const mapIcons: Record<Mode | "landmark" | "rain", string> = {
   walk: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 5Zm-2.2 4.1 2.4 2.2 1.5 4.1 2.2 5.2h2.6l-2.4-6.4-1.2-4.4 2.4 1.4 1.5 2.6 2-1.1-1.9-3.4-4.4-2.6c-.8-.5-1.8-.7-2.7-.4l-4.1 1.4-2.4 4.1 2 1.2 2.5-3.9Zm.3 4-2.2 3.1L5 20.2l1.7 1.9 4.3-3.8 2-2.7-1.9-2Z"/></svg>`,
   rail: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2" width="14" height="15" rx="4"/><path d="M8 6h8M8 11h8M8 17l-3 5m11-5 3 5M8 20h8"/></svg>`,
@@ -54,6 +60,9 @@ export default function JourneyMap({
   const routes = useRef<L.LayerGroup | null>(null);
   const position = useRef<L.LayerGroup | null>(null);
   const [mapError, setMapError] = useState(false);
+  const [mapDetail, setMapDetail] = useState<
+    "loading" | "detailed" | "offline"
+  >("loading");
   useEffect(() => {
     if (!element.current) return;
     const m = L.map(element.current, {
@@ -64,6 +73,9 @@ export default function JourneyMap({
       // this tab unmounts on some mobile Chromium builds.
       preferCanvas: false,
       scrollWheelZoom: false,
+      maxBounds: singaporeBounds,
+      maxBoundsViscosity: 0.85,
+      minZoom: 11,
     }).setView([1.325, 103.882], 12);
     map.current = m;
     L.control.zoom({ position: "bottomright" }).addTo(m);
@@ -74,6 +86,30 @@ export default function JourneyMap({
     m.createPane("local-basemap");
     m.getPane("local-basemap")!.style.zIndex = "190";
     element.current.setAttribute("data-map-source", "bundled-osm");
+    let loadedTileCount = 0;
+    let failedTileCount = 0;
+    const detailedTiles = L.tileLayer(oneMapTiles, {
+      detectRetina: true,
+      minZoom: 11,
+      maxZoom: 19,
+      maxNativeZoom: 19,
+      bounds: singaporeBounds,
+      className: "onemap-tiles",
+      attribution: oneMapAttribution,
+    }).addTo(m);
+    detailedTiles.on("tileload", () => {
+      loadedTileCount += 1;
+      setMapError(false);
+      setMapDetail("detailed");
+      element.current?.setAttribute("data-map-source", "onemap");
+    });
+    detailedTiles.on("tileerror", () => {
+      failedTileCount += 1;
+      if (!loadedTileCount && failedTileCount >= 2) {
+        setMapDetail("offline");
+        element.current?.setAttribute("data-map-source", "bundled-osm");
+      }
+    });
     let alive = true;
     basemapPromise ??= fetch("/data/basemap.json").then((r) => {
       if (!r.ok) throw new Error("Map unavailable");
@@ -125,7 +161,7 @@ export default function JourneyMap({
         element.current?.setAttribute("data-ready", "true");
       })
       .catch(() => {
-        if (alive) setMapError(true);
+        if (alive && !loadedTileCount) setMapError(true);
       });
     const landmarks: [string, number, number][] = [
       ["Our Tampines Hub", 1.3529, 103.9405],
@@ -376,7 +412,7 @@ export default function JourneyMap({
         ref={element}
         className="journey-map"
         role="region"
-        aria-label={`OpenStreetMap showing your selected route, walking legs and affected portions of the original route${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
+        aria-label={`${mapDetail === "detailed" ? "OneMap" : "Bundled OpenStreetMap"} showing your selected route, walking legs and affected portions of the original route${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
       />
       <div className="map-top">
         <span className="map-label">
@@ -405,7 +441,12 @@ export default function JourneyMap({
         )}
       </div>
       <span className="map-extract">
-        <Layers size={12} /> Bundled OSM map
+        <Layers size={12} />
+        {mapDetail === "detailed"
+          ? "OneMap · online"
+          : mapDetail === "offline"
+            ? "Bundled OSM · offline fallback"
+            : "Loading detailed map…"}
       </span>
       <div className="map-mode-key" aria-label="Map route legend">
         {visibleModes.map((mode) => (

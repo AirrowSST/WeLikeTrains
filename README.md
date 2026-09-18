@@ -11,14 +11,14 @@ Rachel’s Tampines → Raffles Place commute is the primary end-to-end journey.
 The app opens in clearly labelled **Demo experience** mode with an injected EWL signalling disruption. The places and OSM routes are real; demo incidents, crowd levels and delays are synthetic, not a claim about current service. No account or API key is required to judge this path.
 
 1. Read Rachel’s recommendation at the top. Change the demo scenario to compare normal service, disruption, crowds, rain, closure or lift maintenance.
-2. Compare the original and revised route on the OSM map. Swipe route cards for time, crowd and walking trade-offs. Open **Full details** for directions and limitations.
+2. Compare the original and revised route on the detailed OneMap basemap. Swipe route cards for time, crowd and walking trade-offs. Open **Full details** for directions and limitations. When OneMap is unavailable, the map visibly falls back to the bundled OSM extract.
 3. Tap **Use simulated location** to preview the labelled demo position, then start the step-by-step journey. In Live mode, **Use my location** requests browser permission and the active journey can show foreground location until it is closed. Progress remains manual; there is no background tracking.
 4. Open the companion, consent to sending route context, ask why this route or describe your preferences. Review changes before applying them. Tap the speaker to listen.
-5. **Data & sources → Live feeds** switches to LTA and NEA conditions while map display, place search and routing stay on the bundled OSM snapshot. Each feed reports its own freshness or failure; live failures never silently inject demo data.
+5. **Data & sources → Live feeds** switches to LTA and NEA conditions while place search and routing stay on the bundled OSM snapshot. Each feed reports its own freshness or failure; live failures never silently inject demo data.
 
 ## Run from a clean machine
 
-Requires Node.js **22.12+** and npm. The OSM map, station index and routing graph are committed; no third-party map, geocoding or routing service is contacted at runtime.
+Requires Node.js **22.12+** and npm. The station index, routing graph and offline OSM basemap are committed. When online, the app loads official OneMap Default tiles for detailed map display; search and routing never depend on OneMap or another public provider.
 
 ```sh
 git clone https://github.com/AirrowSST/WeLikeTrains.git
@@ -72,7 +72,7 @@ This enables APIs, creates scoped service accounts, imports nonempty `.env` cred
 
 ## What is real, estimated, and experimental
 
-- OSM geometry, local station search, graph search, first/last walking legs and the live official condition-feed adapters are implemented. The map and routes are served with the application; travel times are estimates, not official timetables.
+- OSM geometry, local station search, graph search, first/last walking legs and the live official condition-feed adapters are implemented. Official OneMap tiles provide the detailed online visual basemap, with committed OSM vectors as the offline fallback. Travel times are estimates, not official timetables.
 - Gemini on Vertex AI explains and selects among computed routes and interviews preferences; Cloud Text-to-Speech reads replies. Bounded function calls turn chat input into validated preference proposals or supplied-route recommendations. Routes are computed outside the model, returned IDs are checked, and preference changes require confirmation. A labelled local guide remains available if AI fails.
 - The disruption **risk index is rule-based**, not a trained AI predictor or calibrated probability. No historical accuracy claim is made. A lack of signals does not mean disruption is impossible.
 - Step-free mode excludes mapped stairs and known station lift outages, but station access, unmapped obstacles and shelter are **not fully verified**. Do not treat this prototype as certified accessible navigation. Rachel is the primary validated persona.
@@ -89,4 +89,4 @@ This enables APIs, creates scoped service accounts, imports nonempty `.env` cred
 
 The organiser's submission instructions are available to the team at `C:\Users\Yaw Tia\Downloads\README.md`. **Do not prepare the submission write-up or submit this project yet:** the user has explicitly deferred that work pending human polishing. See [agent handoff](AGENTS.md). The referenced supplementary station polygons were not supplied or used; their CRS was not guessed. A physical-phone field test remains to be completed by the team.
 
-OSM-derived data: **© OpenStreetMap contributors**, [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Attribution remains visible on the map and in route details. No public OSM tiles or runtime Overpass queries are used.
+OSM-derived data: **© OpenStreetMap contributors**, [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Attribution remains visible on the map and in route details. No public OSM tiles or runtime Overpass queries are used. Online visual tiles are provided by **OneMap © contributors | Singapore Land Authority** with the required in-map attribution.

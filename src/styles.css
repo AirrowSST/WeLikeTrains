@@ -404,12 +404,7 @@ input {
   padding: 1px 13px;
 }
 .place-inputs:before {
-  content: "";
-  border-left: 1px dashed #b9c5b3;
-  position: absolute;
-  top: 45px;
-  left: 23px;
-  height: 39px;
+  content: none;
 }
 .place-field {
   display: flex;
@@ -4405,7 +4400,7 @@ body {
   margin-top: 0;
   padding: 9px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 30px minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch;
   gap: 5px;
   border-top: 1px solid #dce8df;
@@ -4495,9 +4490,11 @@ body {
 }
 .time-picker-card .time-label {
   color: #2c624a;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.2;
   text-align: center;
 }
 .time-fields .time-picker-card > .time-picker-heading {
@@ -4665,58 +4662,216 @@ body {
 }
 
 /* Final phone composition overrides (kept last so wide viewports retain the same mobile UI). */
-  .app-shell main { padding: 0 0 calc(86px + env(safe-area-inset-bottom)); }
-  .journey-layout { display: flex; flex-direction: column; gap: 0; }
-  .planner-column, .journey-content { display: contents; }
-  .map-wrap { order: 0; height: var(--mobile-map-height, clamp(340px, 51dvh, 510px)); min-height: 240px; max-height: 70dvh; margin: 0; border: 0; border-radius: 0 0 28px 28px; box-shadow: 0 8px 24px #1d49301c; transition: height 220ms ease; }
-  .sheet-dragging .map-wrap { transition: none; }
-  .planner-card { order: 1; position: relative; z-index: 4; margin: -28px 0 0; padding: 21px 18px 18px; border: 0; border-radius: 28px 28px 0 0; background: #fff; box-shadow: 0 -5px 25px #1d49301a; }
-  .planner-card::before { display: none; }
-  .sheet-drag-handle { position: absolute; z-index: 5; top: 0; left: 0; width: 100%; height: 24px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 28px 28px 0 0; background: transparent; cursor: ns-resize; touch-action: none; }
-  .sheet-drag-handle > span { width: 42px; height: 4px; border-radius: 5px; background: #c8d5cd; transition: width 160ms ease, background 160ms ease; }
-  .sheet-drag-handle:hover > span,
-  .sheet-drag-handle:focus-visible > span,
-  .sheet-dragging .sheet-drag-handle > span { width: 52px; background: #79a58d; }
-  .sheet-drag-handle:focus-visible { outline: 3px solid #a9cdb9; outline-offset: -3px; }
-  .planner-card .section-title { margin: 4px 0 10px; }
-  .planner-card .section-title h2 { margin-left: 0; font-size: 20px; }
-  .journey-layout.sheet-collapsed .planner-card {
-    height: 62px;
-    min-height: 62px;
-    padding-bottom: 8px;
-    overflow: hidden;
-  }
-  .journey-layout.sheet-collapsed
-    .planner-card
-    > :not(.sheet-drag-handle):not(.section-title) {
-    display: none;
-  }
-  .journey-layout.sheet-collapsed .planner-card .section-title {
-    height: 33px;
-    margin: 4px 0 0;
-  }
-  .journey-layout.sheet-collapsed
-    .planner-card
-    .section-title
-    .icon-button {
-    display: none;
-  }
-  .place-inputs { width: 100%; margin: 0; border-radius: 15px; box-shadow: none; }
-  .place-field { min-height: 61px; }
-  .place-field:first-child { border-bottom: 1px solid #e6eee8; }
-  .place-field > div { padding-inline: 52px; }
-  .place-field label { right: 12px; width: auto; font-size: 10px; }
-  .field-marker { transform: translateX(12px); }
-  .swap-button { right: 10px; width: 34px; height: 34px; min-width: 34px; }
-  .planner-secondary-controls { display: none; }
-  .plan-button { width: 100%; min-height: 54px; margin-top: 12px; border-radius: 15px; border-color: #007536; background: #007f3a; color: #fff; box-shadow: 0 7px 15px #00a84b2e; font-size: 17px; }
-  .recommendation { order: 2; margin: 0; padding: 14px 18px; min-height: 0; border: 0; border-radius: 0; background: #f2fbf5; }
-  .routes-heading { order: 3; }
-  .route-options { order: 4; padding: 12px 16px 0; background: #fff; }
-  .route-card { border: 0; border-bottom: 1px solid #edf1ed; border-radius: 0; box-shadow: none; }
-  .route-card.selected { border-color: #00b14f; border-radius: 14px; box-shadow: inset 0 0 0 1px #00b14f; }
-  .recommended-label { color: #006c32; }
-  .route-summary .duration { color: #142c24; font-size: 28px; }
+.app-shell main {
+  padding: 0 0 calc(86px + env(safe-area-inset-bottom));
+}
+.journey-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.planner-column,
+.journey-content {
+  display: contents;
+}
+.map-wrap {
+  order: 0;
+  height: var(--mobile-map-height, clamp(340px, 51dvh, 510px));
+  min-height: 240px;
+  max-height: 70dvh;
+  margin: 0;
+  border: 0;
+  border-radius: 0 0 28px 28px;
+  box-shadow: 0 8px 24px #1d49301c;
+  transition: height 220ms ease;
+}
+.sheet-dragging .map-wrap {
+  transition: none;
+}
+.planner-card {
+  order: 1;
+  position: relative;
+  z-index: 4;
+  margin: -28px 0 0;
+  padding: 21px 18px 18px;
+  border: 0;
+  border-radius: 28px 28px 0 0;
+  background: #fff;
+  box-shadow: 0 -5px 25px #1d49301a;
+}
+.planner-card::before {
+  display: none;
+}
+.sheet-drag-handle {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 24px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 28px 28px 0 0;
+  background: transparent;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.sheet-drag-handle > span {
+  width: 42px;
+  height: 4px;
+  border-radius: 5px;
+  background: #c8d5cd;
+  transition:
+    width 160ms ease,
+    background 160ms ease;
+}
+.sheet-drag-handle:hover > span,
+.sheet-drag-handle:focus-visible > span,
+.sheet-dragging .sheet-drag-handle > span {
+  width: 52px;
+  background: #79a58d;
+}
+.sheet-drag-handle:focus-visible {
+  outline: 3px solid #a9cdb9;
+  outline-offset: -3px;
+}
+.planner-card .sheet-drag-surface {
+  min-height: 42px;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+.planner-card .sheet-drag-surface .icon-button {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.planner-preferences-trigger {
+  min-height: 44px;
+  padding: 8px 4px;
+  border: 0;
+  background: transparent;
+  color: #42684b;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.planner-preferences-trigger:hover,
+.planner-preferences-trigger:focus-visible {
+  color: #006c32;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.planner-card .section-title {
+  margin: 4px 0 10px;
+}
+.planner-card .section-title h2 {
+  margin-left: 0;
+  font-size: 20px;
+}
+.journey-layout.sheet-collapsed .planner-card {
+  height: 62px;
+  min-height: 62px;
+  padding-bottom: 8px;
+  overflow: hidden;
+}
+.journey-layout.sheet-collapsed
+  .planner-card
+  > :not(.sheet-drag-handle):not(.section-title) {
+  display: none;
+}
+.journey-layout.sheet-collapsed .planner-card .section-title {
+  height: 33px;
+  margin: 4px 0 0;
+}
+.journey-layout.sheet-collapsed .planner-card .section-title .icon-button,
+.journey-layout.sheet-collapsed
+  .planner-card
+  .section-title
+  .planner-preferences-trigger {
+  display: none;
+}
+.place-inputs {
+  width: 100%;
+  margin: 0;
+  border-radius: 15px;
+  box-shadow: none;
+}
+.place-field {
+  min-height: 61px;
+}
+.place-field:first-child {
+  border-bottom: 1px solid #e6eee8;
+}
+.place-field > div {
+  padding-inline: 44px;
+}
+.place-field label {
+  right: 12px;
+  width: auto;
+  font-size: 10px;
+}
+.field-marker {
+  transform: translateX(12px);
+}
+.swap-button {
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+}
+.planner-secondary-controls {
+  display: none;
+}
+.plan-button {
+  width: 100%;
+  min-height: 54px;
+  margin-top: 12px;
+  border-radius: 15px;
+  border-color: #007536;
+  background: #007f3a;
+  color: #fff;
+  box-shadow: 0 7px 15px #00a84b2e;
+  font-size: 17px;
+}
+.recommendation {
+  order: 2;
+  margin: 0;
+  padding: 14px 18px;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: #f2fbf5;
+}
+.routes-heading {
+  order: 3;
+}
+.route-options {
+  order: 4;
+  padding: 12px 16px 0;
+  background: #fff;
+}
+.route-card {
+  border: 0;
+  border-bottom: 1px solid #edf1ed;
+  border-radius: 0;
+  box-shadow: none;
+}
+.route-card.selected {
+  border-color: #00b14f;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px #00b14f;
+}
+.recommended-label {
+  color: #006c32;
+}
+.route-summary .duration {
+  color: #142c24;
+  font-size: 28px;
+}
 .recommendation-icon {
   width: 36px;
   min-width: 36px;

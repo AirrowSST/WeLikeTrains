@@ -3,7 +3,19 @@ import type { Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import type { PlanResponse } from "../../shared/types";
 
-async function useDeterministicPlans(page: Page) {
+const transparentPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64",
+);
+
+async function useDeterministicPlans(page: Page, loadOneMap = false) {
+  await page.route("https://www.onemap.gov.sg/maps/tiles/**", async (route) => {
+    if (!loadOneMap) {
+      await route.abort();
+      return;
+    }
+    await route.fulfill({ contentType: "image/png", body: transparentPng });
+  });
   const templates = new Map<string, PlanResponse>();
   let latestTemplate: PlanResponse | undefined;
   await page.route("**/api/plan", async (route) => {
@@ -44,7 +56,7 @@ function startJourneyButton(page: Page) {
 test("plans, compares, saves, interviews preferences and shows planned notices", async ({
   page,
 }, info) => {
-  await useDeterministicPlans(page);
+  await useDeterministicPlans(page, true);
   await page.route("**/api/chat", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -94,6 +106,20 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   });
   await expect(preferencesButton).toBeVisible();
   await expect(page.locator(".journey-preferences-button")).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Swap origin and destination" }),
+  ).toHaveCount(0);
+  await expect(page.locator(".planner-card .field-marker")).toHaveCount(0);
+  await expect(page.locator(".planner-card .time-sequence-arrow")).toHaveCount(
+    0,
+  );
+  await expect(page.locator(".planner-card .location-button svg")).toHaveCount(
+    0,
+  );
+  await expect(page.locator(".planner-card .section-title svg")).toHaveCount(0);
+  await expect(page.locator(".planner-card .plan-button svg")).toHaveCount(0);
+  await expect(page.getByText("Leave", { exact: true })).toBeVisible();
+  await expect(page.getByText("Arrive", { exact: true })).toBeVisible();
   await preferencesButton.click();
   await expect(page.getByRole("dialog")).toContainText("Preferences");
   await page.getByRole("button", { name: "Close dialog" }).click();
@@ -103,23 +129,23 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   );
   await expect(page.locator(".journey-map")).toHaveAttribute(
     "data-map-source",
-    "bundled-osm",
+    "onemap",
   );
-  await expect(page.locator(".map-extract")).toContainText("Bundled OSM map");
+  await expect(page.locator(".map-extract")).toContainText("OneMap · online");
   expect(await page.locator(".local-map-road").count()).toBeGreaterThan(100);
   expect(await page.locator(".local-map-water").count()).toBeGreaterThan(0);
   await expect(page.locator(".local-map-road").first()).toHaveAttribute(
     "stroke",
     "#a5b1ab",
   );
-  await expect(page.getByRole("link", { name: "OneMap" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "OneMap" })).toBeVisible();
   expect(
     await page.evaluate(() =>
       performance
         .getEntriesByType("resource")
         .some((entry) => entry.name.includes("onemap.gov.sg")),
     ),
-  ).toBe(false);
+  ).toBe(true);
   await expect(page.locator(".route-mode-marker.walk").first()).toBeVisible();
   await expect(page.locator(".route-mode-marker.rail").first()).toBeVisible();
   await expect(page.locator(".map-mode-key")).toContainText("Walk");
@@ -201,16 +227,17 @@ test("resizes the mobile journey sheet by drag and keyboard", async ({
   await expect(handle).toBeVisible();
   const map = page.locator(".map-wrap");
   const initialHeight = (await map.boundingBox())!.height;
-  const handleBox = await handle.boundingBox();
+  const dragSurface = page.locator(".planner-card .sheet-drag-surface");
+  const dragSurfaceBox = await dragSurface.boundingBox();
 
   await page.mouse.move(
-    handleBox!.x + handleBox!.width / 2,
-    handleBox!.y + handleBox!.height / 2,
+    dragSurfaceBox!.x + dragSurfaceBox!.width / 3,
+    dragSurfaceBox!.y + dragSurfaceBox!.height / 2,
   );
   await page.mouse.down();
   await page.mouse.move(
-    handleBox!.x + handleBox!.width / 2,
-    handleBox!.y - 150,
+    dragSurfaceBox!.x + dragSurfaceBox!.width / 3,
+    dragSurfaceBox!.y - 150,
     { steps: 5 },
   );
   await page.mouse.up();
