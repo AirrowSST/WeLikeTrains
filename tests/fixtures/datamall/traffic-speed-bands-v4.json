@@ -1,0 +1,16 @@
+{
+  "value": [
+    {
+      "LinkID": "103040000",
+      "RoadName": "Pan Island Expressway",
+      "RoadCategory": "A",
+      "SpeedBand": 3,
+      "MinimumSpeed": "30",
+      "MaximumSpeed": "39",
+      "StartLon": "103.9201",
+      "StartLat": "1.3421",
+      "EndLon": "103.9211",
+      "EndLat": "1.3429"
+    }
+  ]
+}

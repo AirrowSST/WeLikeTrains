@@ -1,0 +1,21 @@
+{
+  "value": [
+    {
+      "alertId": "PUB-20260921-001",
+      "dateTime": "2026-09-21T07:30:00+08:00",
+      "msgType": "Alert",
+      "event": "Flash Flood",
+      "responseType": "Avoid",
+      "urgency": "Immediate",
+      "severity": "Severe",
+      "expires": "2026-09-21T09:00:00+08:00",
+      "senderName": "PUB",
+      "headline": "Flash flood at Jalan Boon Lay",
+      "description": "Water is rising across the affected carriageway.",
+      "instruction": "Avoid the affected road and nearby walkways.",
+      "areaDesc": "Jalan Boon Lay",
+      "circle": "1.3312,103.7058 0.2",
+      "status": "Actual"
+    }
+  ]
+}

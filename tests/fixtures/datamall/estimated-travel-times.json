@@ -1,0 +1,12 @@
+{
+  "value": [
+    {
+      "Name": "AYE",
+      "Direction": 1,
+      "FarEndPoint": "Tuas Checkpoint",
+      "StartPoint": "AYE/MCE Interchange",
+      "EndPoint": "Clementi Avenue 6",
+      "EstTime": 5
+    }
+  ]
+}

@@ -1,7 +1,18 @@
 import { describe, it, expect } from "vitest";
 import { places, profiles } from "../shared/catalog";
-import { planJourney, segmentAffected } from "../server/planner";
-import type { Persona, PlanRequest, Scenario } from "../shared/types";
+import {
+  applyConditions,
+  planJourney,
+  segmentAffected,
+} from "../server/planner";
+import type {
+  Conditions,
+  Journey,
+  Persona,
+  PlanRequest,
+  Scenario,
+  Segment,
+} from "../shared/types";
 const request = (
   persona: Persona = "rachel",
   scenario: Scenario = "normal",
@@ -17,12 +28,79 @@ const request = (
     scenario,
   };
 };
+const segment = (
+  id: string,
+  mode: Segment["mode"],
+  minutes: number,
+  overrides: Partial<Segment> = {},
+): Segment => ({
+  id,
+  mode,
+  line: "",
+  from: id,
+  to: `${id}-end`,
+  minutes,
+  distance: 500,
+  geometry: [
+    [1.3, 103.8],
+    [1.31, 103.81],
+  ],
+  stops: [],
+  crowd: "unknown",
+  affected: false,
+  delay: 0,
+  sheltered: true,
+  accessibility: "unknown",
+  instructions: id,
+  source: "test",
+  ...overrides,
+});
+const journey = (segments: Segment[]): Journey => ({
+  id: "timed-conditions",
+  title: "Timed conditions",
+  segments,
+  duration: segments.reduce((total, item) => total + item.minutes, 0),
+  baselineDuration: segments.reduce((total, item) => total + item.minutes, 0),
+  range: [20, 30],
+  arrival: "2026-09-20T23:10:00.000Z",
+  distance: 1500,
+  walkMinutes: 10,
+  transfers: 0,
+  crowd: "unknown",
+  score: 25,
+  reasons: [],
+  warnings: [],
+  source: "test",
+  blocked: false,
+});
+const conditions = (overrides: Partial<Conditions>): Conditions => ({
+  notices: [],
+  crowd: [],
+  buses: [],
+  weather: {
+    forecast: "Clear",
+    rain: false,
+    walkStatus: "valid",
+    cycleStatus: "valid",
+  },
+  traffic: [],
+  feeds: [],
+  updatedAt: "2026-09-20T23:40:00.000Z",
+  mode: "demo",
+  ...overrides,
+});
 describe("real OSM journeys", () => {
   it("plans Rachel door-to-door with walking legs and visible uncertainty", async () => {
     const p = await planJourney(request());
     expect(p.recommended.segments[0].mode).toBe("walk");
     expect(p.recommended.segments.at(-1)?.mode).toBe("walk");
     expect(p.recommended.segments.some((s) => s.line === "EWL")).toBe(true);
+    const rail = p.recommended.segments.find((s) => s.line === "EWL")!;
+    expect(rail.source).toContain("LTA DataMall GTFS Schedule");
+    expect(rail.waitMinutes).not.toBe(4);
+    expect(
+      p.conditions.feeds.find((feed) => feed.name === "LTA train schedule"),
+    ).toMatchObject({ status: "local" });
     expect(p.recommended.duration).toBeGreaterThan(30);
     expect(p.recommended.range[1]).toBeGreaterThan(p.recommended.duration);
     expect(p.recommended.segments.every((s) => s.geometry.length >= 2)).toBe(
@@ -79,7 +157,7 @@ describe("real OSM journeys", () => {
     ).toBe(true);
   });
   it("routes to Civil Defence Academy using bus 172 and an approximate final access connector", async () => {
-    const p = await planJourney({
+    const civilDefenceRequest = {
       ...request(),
       origin: {
         id: "bellewaters",
@@ -95,13 +173,44 @@ describe("real OSM journeys", () => {
         lat: 1.367337763964952,
         lon: 103.6921041432306,
       },
-    });
+    };
+    const p = await planJourney(civilDefenceRequest);
     expect(
       p.recommended.segments.some((segment) => segment.line === "172"),
     ).toBe(true);
     expect(p.recommended.segments.at(-1)?.mode).toBe("walk");
     expect(p.recommended.segments.at(-1)?.instructions).toContain(
       "access connection is approximate",
+    );
+    const busSegment = p.recommended.segments.find(
+      (segment) => segment.line === "172",
+    )!;
+    const withInformationalRoadSpeed = applyConditions(
+      p.recommended,
+      {
+        ...p.conditions,
+        traffic: [
+          {
+            id: "speed-band-fixture",
+            kind: "congestion",
+            severity: "high",
+            description: "Road speed is 30–39 km/h",
+            roadName: "Test road",
+            location: busSegment.geometry[0],
+            delayMinutes: 0,
+            source: "LTA DataMall TrafficSpeedBands v4",
+          },
+        ],
+      },
+      civilDefenceRequest,
+    );
+    expect(
+      withInformationalRoadSpeed.segments.find(
+        (segment) => segment.line === "172",
+      ),
+    ).toMatchObject({ affected: false, delay: 0 });
+    expect(withInformationalRoadSpeed.reasons).not.toContain(
+      "Road speed is 30–39 km/h",
     );
   });
   it("uses the bundled western walking component for a searched NTU address", async () => {
@@ -126,5 +235,120 @@ describe("real OSM journeys", () => {
     expect(p.recommended.segments[0].instructions).not.toContain(
       "short access connection is approximate",
     );
+  });
+});
+
+describe("condition timing", () => {
+  it("selects rail crowding for the time the commuter boards the segment", () => {
+    const timedJourney = journey([
+      segment("access", "walk", 10),
+      segment("rail", "rail", 14, {
+        line: "EWL",
+        stops: ["EW2"],
+        waitMinutes: 4,
+      }),
+    ]);
+    const result = applyConditions(
+      timedJourney,
+      conditions({
+        crowd: [
+          {
+            station: "EW2",
+            line: "EWL",
+            level: "low",
+            start: "2026-09-20T23:30:00.000Z",
+            end: "2026-09-20T23:50:00.000Z",
+            forecast: true,
+          },
+          {
+            station: "EW2",
+            line: "EWL",
+            level: "high",
+            start: "2026-09-20T23:50:00.000Z",
+            end: "2026-09-21T00:30:00.000Z",
+            forecast: true,
+          },
+        ],
+      }),
+      request(),
+    );
+
+    expect(result.segments[1]).toMatchObject({ crowd: "high", delay: 3 });
+  });
+
+  it("selects the first bus arriving after the commuter reaches the stop", () => {
+    const timedJourney = journey([
+      segment("access", "walk", 10),
+      segment("bus", "bus", 20, {
+        line: "12",
+        stops: ["75009"],
+        waitMinutes: 4,
+      }),
+    ]);
+    const result = applyConditions(
+      timedJourney,
+      conditions({
+        buses: [
+          {
+            service: "12",
+            stop: "75009",
+            eta: "2026-09-20T23:45:00.000Z",
+            load: "low",
+            wheelchair: true,
+            type: "SD",
+          },
+          {
+            service: "12",
+            stop: "75009",
+            eta: "2026-09-20T23:56:00.000Z",
+            load: "high",
+            wheelchair: true,
+            type: "DD",
+          },
+        ],
+      }),
+      request(),
+    );
+
+    expect(result.segments[1].crowd).toBe("high");
+  });
+
+  it("applies traffic delay only when the reading is spatially relevant", () => {
+    const timedJourney = journey([
+      segment("bus", "bus", 20, {
+        line: "12",
+        stops: ["75009"],
+      }),
+    ]);
+    const result = applyConditions(
+      timedJourney,
+      conditions({
+        traffic: [
+          {
+            id: "distant-incident",
+            kind: "incident",
+            severity: "critical",
+            description: "Incident elsewhere",
+            location: [1.4, 103.95],
+            delayMinutes: 12,
+            source: "test",
+          },
+          {
+            id: "nearby-incident",
+            kind: "incident",
+            severity: "moderate",
+            description: "Incident on this route",
+            location: [1.3, 103.8],
+            delayMinutes: 4,
+            source: "test",
+          },
+        ],
+      }),
+      request(),
+    );
+
+    expect(result.segments[0]).toMatchObject({ affected: true, delay: 4 });
+    expect(result.reasons).toContain("Incident on this route");
+    expect(result.reasons).not.toContain("Incident elsewhere");
   });
 });

@@ -24,6 +24,15 @@ export interface Place {
   lat: number;
   lon: number;
 }
+export interface TransitStop {
+  id: string;
+  name: string;
+  mode: "rail" | "bus";
+  lat: number;
+  lon: number;
+  codes: string[];
+  lines: string[];
+}
 export interface Preferences {
   stepFree: boolean;
   sheltered: boolean;
@@ -154,7 +163,19 @@ export interface TrafficReading {
   severity: "moderate" | "high" | "critical";
   description: string;
   roadName?: string;
+  roadCategory?: string;
   location?: Coord;
+  endLocation?: Coord;
+  linkId?: string;
+  speedBand?: number;
+  minimumSpeed?: number;
+  maximumSpeed?: number;
+  expressway?: string;
+  direction?: string;
+  farEndPoint?: string;
+  startPoint?: string;
+  endPoint?: string;
+  estimatedMinutes?: number;
   delayMinutes: number;
   source: string;
 }

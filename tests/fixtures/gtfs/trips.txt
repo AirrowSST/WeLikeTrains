@@ -1,0 +1,7 @@
+route_id,service_id,trip_id,trip_headsign,direction_id
+EWL,WKD,EWL-missed,Tuas Link,0
+EWL,WKD,EWL-catchable,Tuas Link,0
+EWL,FRI,EWL-after-midnight,Tuas Link,0
+EWL,SPECIAL,EWL-special,Tuas Link,0
+NSL,WKD,NSL-too-early,Jurong East,0
+NSL,WKD,NSL-catchable,Jurong East,0

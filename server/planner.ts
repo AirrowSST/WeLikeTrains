@@ -18,6 +18,12 @@ import {
   type TransitEdge,
 } from "./network";
 import { getConditions, getBusArrivals } from "./feeds";
+import {
+  evaluateRailSegments,
+  loadRailScheduleSnapshot,
+  LTA_OPEN_DATA_LICENCE,
+  type RailScheduleSnapshot,
+} from "./rail-schedule";
 
 export function noticeActive(n: Notice, departure: string, duration = 120) {
   const start = Date.parse(n.startsAt),
@@ -66,6 +72,9 @@ function crowdAt(
   );
   return worstCrowd(rows.map((r) => r.level));
 }
+function atJourneyMinute(departure: string, elapsedMinutes: number) {
+  return new Date(Date.parse(departure) + elapsedMinutes * 60000).toISOString();
+}
 export function applyConditions(
   journey: Journey,
   conditions: Conditions,
@@ -73,29 +82,37 @@ export function applyConditions(
 ): Journey {
   const seenDelay = new Set<string>();
   let blocked = false;
+  let elapsedMinutes = 0;
   const reasons: string[] = [];
   const warnings = [...journey.warnings];
   const segments = journey.segments.map((s) => {
+    const boardingAt = atJourneyMinute(
+      request.departure,
+      elapsedMinutes + (s.waitMinutes ?? 0),
+    );
     const segment = {
       ...s,
       geometry: s.geometry.map((c) => [...c] as [number, number]),
     };
     segment.crowd =
       s.mode === "rail"
-        ? crowdAt(conditions, s.stops, s.line, request.departure)
+        ? crowdAt(conditions, s.stops, s.line, boardingAt)
         : s.crowd;
     segment.delay = 0;
     segment.affected = false;
     segment.affectedGeometry = [];
     segment.issues = segment.sheltered && s.mode === "walk" ? ["shelter"] : [];
     if (s.mode === "bus") {
-      const bus = conditions.buses.find(
-        (b) =>
-          b.service === s.line &&
-          s.stops.includes(b.stop) &&
-          Date.parse(b.eta) >= Date.parse(request.departure) &&
-          Date.parse(b.eta) - Date.parse(request.departure) < 30 * 60000,
-      );
+      const boardingTime = Date.parse(boardingAt);
+      const bus = conditions.buses
+        .filter(
+          (b) =>
+            b.service === s.line &&
+            s.stops.includes(b.stop) &&
+            Date.parse(b.eta) >= boardingTime &&
+            Date.parse(b.eta) - boardingTime < 30 * 60000,
+        )
+        .sort((a, b) => Date.parse(a.eta) - Date.parse(b.eta))[0];
       if (bus) {
         segment.crowd = bus.load;
         if (request.preferences.stepFree && !bus.wheelchair)
@@ -158,6 +175,7 @@ export function applyConditions(
     if (s.mode === "bus") {
       for (const traffic of conditions.traffic) {
         if (
+          traffic.delayMinutes <= 0 ||
           !traffic.location ||
           !s.geometry.some((point) => distance(point, traffic.location!) < 250)
         )
@@ -209,6 +227,7 @@ export function applyConditions(
       }
     }
     segment.minutes = s.minutes + segment.delay;
+    elapsedMinutes += segment.minutes;
     return segment;
   });
   const duration = Math.ceil(segments.reduce((sum, s) => sum + s.minutes, 0));
@@ -307,9 +326,55 @@ function journeyFromSegments(
     blocked: false,
   };
 }
+
+function applyRailSchedule(
+  journey: Journey,
+  request: PlanRequest,
+  snapshot: RailScheduleSnapshot | undefined,
+) {
+  if (!journey.segments.some((segment) => segment.mode === "rail")) return journey;
+  const timing = evaluateRailSegments(
+    journey.segments,
+    request.departure,
+    snapshot,
+    request.preferences.stepFree
+      ? { stationAccessMinutes: 4, interchangeMinutes: 5 }
+      : { stationAccessMinutes: 2, interchangeMinutes: 3 },
+  );
+  const duration = Math.ceil(
+    timing.segments.reduce((total, segment) => total + segment.minutes, 0),
+  );
+  const warnings = journey.warnings.filter(
+    (warning) =>
+      warning !==
+      "Timings use distance, estimated speed, dwell and waiting allowances; they are not a published timetable.",
+  );
+  if (timing.scheduledSegments)
+    warnings.push(
+      "Rail departures and ride times use the dated LTA GTFS Schedule. Walking, station access and live-condition effects remain estimates.",
+    );
+  if (timing.fallbackSegments)
+    warnings.push(
+      "Scheduled timing was unavailable for at least one rail leg, so that leg uses the local distance estimate.",
+    );
+  return {
+    ...journey,
+    segments: timing.segments,
+    duration,
+    baselineDuration: duration,
+    range: [Math.max(1, duration - 3), duration + 8] as [number, number],
+    score: duration,
+    warnings,
+    source: timing.scheduledSegments
+      ? "OpenStreetMap route geometry · LTA DataMall GTFS Schedule · estimated access and walking"
+      : journey.source,
+  };
+}
+
 export function localJourneys(
   request: PlanRequest,
   conditions: Conditions,
+  railSchedule = loadRailScheduleSnapshot(),
 ): Journey[] {
   const hour = (new Date(request.departure).getUTCHours() + 8) % 24;
   const minute = new Date(request.departure).getUTCMinutes();
@@ -480,7 +545,12 @@ export function localJourneys(
           continue;
         const changed = state.line !== edge.line;
         const wait = changed ? (state.line ? 5 : 4) : 0;
-        const crowd = crowdAt(conditions, codes, edge.line, request.departure);
+        const crowd = crowdAt(
+          conditions,
+          codes,
+          edge.line,
+          atJourneyMinute(request.departure, state.cost + wait),
+        );
         const penalty =
           impacted.reduce(
             (s, n) => s + (n.kind === "disruption" ? n.delayMinutes : 0),
@@ -542,7 +612,9 @@ export function localJourneys(
     if (goal) found.push(goal.journey);
   }
   const unique = [...new Map(found.map((j) => [j.id, j])).values()];
-  return unique;
+  return unique.map((journey) =>
+    applyRailSchedule(journey, request, railSchedule),
+  );
 }
 export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
   const conditions = await getConditions(request);
@@ -568,7 +640,26 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
     detail:
       "Hosted with Wayce; route geometry is local and travel times are estimates",
   });
-  let base = localJourneys(routingRequest, conditions);
+  const railSchedule = loadRailScheduleSnapshot();
+  const departureDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Singapore",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(request.departure));
+  const scheduleCovered =
+    !!railSchedule &&
+    departureDate >= railSchedule.validFrom &&
+    departureDate <= railSchedule.validUntil;
+  conditions.feeds.unshift({
+    name: "LTA train schedule",
+    status: railSchedule ? (scheduleCovered ? "local" : "stale") : "unavailable",
+    updatedAt: railSchedule?.accessedAt,
+    detail: railSchedule
+      ? `Committed schedule covers ${railSchedule.validFrom} to ${railSchedule.validUntil}. Singapore Open Data Licence v1.0: ${LTA_OPEN_DATA_LICENCE}`
+      : "No committed train schedule is available; rail timing uses the labelled local estimate",
+  });
+  let base = localJourneys(routingRequest, conditions, railSchedule);
   // The bundled extract can miss a usable station when the user's normal
   // walking preference is conservative. Retry with the supported upper
   // bound before reporting that no route exists; this does not mutate the
@@ -580,6 +671,7 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
         preferences: { ...routingRequest.preferences, maxWalk: 3500 },
       },
       conditions,
+      railSchedule,
     );
   }
   if (!base.length)

@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-09-18T22:30:34.087Z",
+  "source": "https://datamall2.mytransport.sg/ltaodataservice/GTFSScheduleTrain",
+  "licence": "https://datamall.lta.gov.sg/content/datamall/en/SingaporeOpenDataLicence.html",
+  "licenceNotice": "Contains information from LTA DataMall GTFS Schedule (Train), accessed on 2026-09-19, made available under the Singapore Open Data Licence version 1.0.",
+  "derivedFile": "train-schedule.json.gz",
+  "sha256": "40974b9c436a807a7ce8873c7fbf4f57fde53212d3af0a5d5cd872fdb794a27f",
+  "validFrom": "2026-01-01",
+  "validUntil": "2026-12-31",
+  "serviceCount": 12,
+  "tripCount": 17576,
+  "refresh": "Explicit maintenance only: npm run data:gtfs"
+}

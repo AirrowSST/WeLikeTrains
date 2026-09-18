@@ -1,0 +1,9 @@
+stop_id,stop_code,stop_name,location_type,parent_station
+EW2,,Tampines,1,
+EW2_B,EW2,Tampines Platform B,0,EW2
+EW14,,Raffles Place,1,
+EW14_B,EW14,Raffles Place Platform B,0,EW14
+NS26,,Raffles Place,1,
+NS26_A,NS26,Raffles Place Platform A,0,NS26
+NS22,,Orchard,1,
+NS22_A,NS22,Orchard Platform A,0,NS22

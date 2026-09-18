@@ -11,6 +11,11 @@ import type {
 import { canonicalLine, crowdValue } from "../shared/catalog";
 
 type Obj = Record<string, any>;
+export const LTA_ENDPOINTS = {
+  floodAlerts: "PubFloodAlerts",
+  trafficSpeedBands: "v4/TrafficSpeedBands",
+  estimatedTravelTimes: "EstTravelTimes",
+} as const;
 const cache = new Map<string, { value: unknown; at: number }>();
 const pending = new Map<string, Promise<{ value: unknown; at: number }>>();
 export async function cachedFetch(
@@ -197,6 +202,100 @@ export function parseTraffic(raw: Obj): TrafficReading[] {
     };
   });
 }
+const coordinateOf = (
+  latitude: unknown,
+  longitude: unknown,
+): [number, number] | undefined => {
+  const lat = numberAt(latitude);
+  const lon = numberAt(longitude);
+  return lat !== undefined && lon !== undefined ? [lat, lon] : undefined;
+};
+export function parseTrafficSpeedBands(raw: Obj): TrafficReading[] {
+  return toList(raw.value ?? raw)
+    .slice(0, 120)
+    .map((row, index) => {
+      const linkId = String(row.LinkID ?? index);
+      const roadName = String(row.RoadName ?? "Unnamed road").trim();
+      const speedBand = numberAt(row.SpeedBand);
+      const minimumSpeed = numberAt(row.MinimumSpeed);
+      const maximumSpeed = numberAt(row.MaximumSpeed);
+      const speedText =
+        minimumSpeed !== undefined && maximumSpeed !== undefined
+          ? `${minimumSpeed}–${maximumSpeed} km/h`
+          : speedBand !== undefined
+            ? `speed band ${speedBand}`
+            : "speed unavailable";
+      return {
+        id: `speed-band-${linkId}`,
+        kind: "congestion" as const,
+        severity:
+          maximumSpeed !== undefined && maximumSpeed < 20
+            ? ("critical" as const)
+            : maximumSpeed !== undefined && maximumSpeed < 40
+              ? ("high" as const)
+              : ("moderate" as const),
+        description: `${roadName}: ${speedText}`,
+        roadName,
+        roadCategory: row.RoadCategory ? String(row.RoadCategory) : undefined,
+        location: coordinateOf(row.StartLat, row.StartLon),
+        endLocation: coordinateOf(row.EndLat, row.EndLon),
+        linkId,
+        speedBand,
+        minimumSpeed,
+        maximumSpeed,
+        // Stage 0 records road speed only. It must not be treated as bus delay
+        // until a later route-match and bus-speed correction is calibrated.
+        delayMinutes: 0,
+        source: "LTA DataMall TrafficSpeedBands v4",
+      };
+    });
+}
+export function parseEstimatedTravelTimes(raw: Obj): TrafficReading[] {
+  return toList(raw.value ?? raw)
+    .slice(0, 120)
+    .map((row, index) => {
+      const expressway = String(row.Name ?? "Expressway").trim();
+      const direction = String(row.Direction ?? "").trim();
+      const farEndPoint = String(row.FarEndPoint ?? "").trim();
+      const startPoint = String(row.StartPoint ?? "").trim();
+      const endPoint = String(row.EndPoint ?? "").trim();
+      const estimatedMinutes = numberAt(row.EstTime);
+      const section = [startPoint, endPoint].filter(Boolean).join(" to ");
+      const destination = farEndPoint ? ` towards ${farEndPoint}` : "";
+      const timing =
+        estimatedMinutes !== undefined
+          ? `: ${estimatedMinutes} min`
+          : ": time unavailable";
+      return {
+        id: `expressway-${expressway}-${direction || index}-${startPoint}-${endPoint}`,
+        kind: "expressway" as const,
+        severity: "moderate" as const,
+        description: `${expressway}${destination}${section ? `, ${section}` : ""}${timing}`,
+        roadName: expressway,
+        expressway,
+        direction: direction || undefined,
+        farEndPoint: farEndPoint || undefined,
+        startPoint: startPoint || undefined,
+        endPoint: endPoint || undefined,
+        estimatedMinutes,
+        // EstTime is a whole-section ETA, not an additive delay.
+        delayMinutes: 0,
+        source: "LTA DataMall EstTravelTimes",
+      };
+    });
+}
+const floodLocationOf = (row: Obj) => {
+  const [latitude, longitude] = String(row.circle ?? "")
+    .trim()
+    .split(/[\s,]+/);
+  return coordinateOf(latitude, longitude) ?? locationOf(row);
+};
+const floodSeverityOf = (severity: unknown): Notice["severity"] => {
+  const value = String(severity ?? "").toLowerCase();
+  if (value === "extreme" || value === "severe") return "critical";
+  if (value === "moderate") return "warning";
+  return "info";
+};
 export function parseFloodAlerts(
   raw: Obj,
   now = new Date().toISOString(),
@@ -204,26 +303,40 @@ export function parseFloodAlerts(
   return toList(raw.value ?? raw)
     .slice(0, 80)
     .map((row, index) => {
-      const location = locationOf(row);
+      const location = floodLocationOf(row);
       const place = String(
-        row.Location ?? row.RoadName ?? row.Description ?? "Reported location",
+        row.areaDesc ??
+          row.Location ??
+          row.RoadName ??
+          row.description ??
+          row.Description ??
+          "Reported location",
       );
+      const description = [
+        row.description ?? row.Message ?? row.Description,
+        row.instruction,
+      ]
+        .filter(Boolean)
+        .map(String)
+        .filter(
+          (value, itemIndex, values) => values.indexOf(value) === itemIndex,
+        )
+        .join(" ");
       return {
-        id: `pub-flood-${index}-${place}`,
-        title: `Flood alert: ${place}`,
-        description: String(
-          row.Message ??
-            row.Description ??
-            "Avoid the affected road and nearby walkways.",
-        ),
+        id: `pub-flood-${row.alertId ?? `${index}-${place}`}`,
+        title: String(row.headline ?? row.event ?? `Flood alert: ${place}`),
+        description:
+          description || "Avoid the affected road and nearby walkways.",
         stations: [],
-        severity: "critical" as const,
+        severity: row.severity
+          ? floodSeverityOf(row.severity)
+          : ("critical" as const),
         kind: "flood" as const,
-        startsAt: row.StartDate ?? row.StartTime ?? now,
-        endsAt: row.EndDate ?? row.EndTime,
+        startsAt: row.dateTime ?? row.StartDate ?? row.StartTime ?? now,
+        endsAt: row.expires ?? row.EndDate ?? row.EndTime,
         delayMinutes: 0,
         location,
-        roadName: roadNameOf(row) || undefined,
+        roadName: String(row.areaDesc ?? roadNameOf(row)).trim() || undefined,
         source: "PUB Flood Alerts via LTA DataMall",
       };
     });
@@ -625,23 +738,20 @@ export async function getConditions(
           source: "LTA RoadWorks; informational until geospatially matched",
         });
     }),
-    lta("FloodAlerts", "PUB flood alerts", 60000, (r) =>
+    lta(LTA_ENDPOINTS.floodAlerts, "PUB flood alerts", 60000, (r) =>
       conditions.notices.push(...parseFloodAlerts(r, conditions.updatedAt)),
     ),
     lta("TrafficIncidents", "Traffic incidents", 60000, (r) =>
       conditions.traffic.push(...parseTraffic(r)),
     ),
-    lta("TrafficSpeedBands", "Traffic speeds", 60000, (r) =>
-      conditions.traffic.push(...parseTraffic(r)),
+    lta(LTA_ENDPOINTS.trafficSpeedBands, "Traffic speeds", 60000, (r) =>
+      conditions.traffic.push(...parseTrafficSpeedBands(r)),
     ),
-    lta("EstimatedTravelTimes", "Expressway travel times", 60000, (r) =>
-      conditions.traffic.push(
-        ...parseTraffic(r).map((reading) => ({
-          ...reading,
-          kind: "expressway" as const,
-          delayMinutes: Math.max(reading.delayMinutes, 5),
-        })),
-      ),
+    lta(
+      LTA_ENDPOINTS.estimatedTravelTimes,
+      "Expressway travel times",
+      60000,
+      (r) => conditions.traffic.push(...parseEstimatedTravelTimes(r)),
     ),
     (async () => {
       try {
