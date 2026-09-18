@@ -17,10 +17,31 @@ import { getNetwork } from "./network";
 import { z } from "zod";
 
 export async function searchPlaces(query: string): Promise<Place[]> {
-  const needle = query.trim().toLowerCase();
-  const catalog = places.map((place) => ({ place, priority: 0 }));
+  const normalize = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  const needle = normalize(query);
+  if (!needle) return places;
+  const needleWords = needle.split(" ");
+  const matchRank = (place: Place) => {
+    const name = normalize(place.name);
+    const subtitle = normalize(place.subtitle);
+    const nameWords = name.split(" ");
+    const allWords = `${name} ${subtitle}`.split(" ");
+    const wordsMatch = (words: string[]) =>
+      needleWords.every((part) => words.some((word) => word.startsWith(part)));
+    if (name === needle) return 0;
+    if (name.startsWith(needle)) return 1;
+    if (wordsMatch(nameWords)) return 2;
+    if (subtitle === needle || subtitle.startsWith(needle)) return 3;
+    if (wordsMatch(allWords)) return 4;
+    return Number.POSITIVE_INFINITY;
+  };
+  const catalog = places.map((place) => ({ place, sourceRank: 0 }));
   const stations = [...getNetwork().stations.values()].map((station) => ({
-    priority: 1,
+    sourceRank: station.mode === "rail" ? 1 : 2,
     place: {
       id: `osm-station-${station.id}`,
       name: station.name,
@@ -31,20 +52,24 @@ export async function searchPlaces(query: string): Promise<Place[]> {
   }));
   const seen = new Set<string>();
   return [...catalog, ...stations]
-    .filter(({ place }) => {
+    .map((candidate) => ({
+      ...candidate,
+      matchRank: matchRank(candidate.place),
+    }))
+    .filter(({ place, matchRank }) => {
+      if (!Number.isFinite(matchRank)) return false;
       const key = `${place.name.toLowerCase()}|${place.lat.toFixed(5)}|${place.lon.toFixed(5)}`;
       if (seen.has(key)) return false;
       seen.add(key);
-      return (
-        !needle ||
-        `${place.name} ${place.subtitle}`.toLowerCase().includes(needle)
-      );
+      return true;
     })
     .sort(
       (a, b) =>
-        a.priority - b.priority || a.place.name.localeCompare(b.place.name),
+        a.matchRank - b.matchRank ||
+        a.sourceRank - b.sourceRank ||
+        a.place.name.localeCompare(b.place.name),
     )
-    .slice(0, 8)
+    .slice(0, 12)
     .map(({ place }) => place);
 }
 
