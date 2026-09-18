@@ -74,4 +74,30 @@ describe("real OSM journeys", () => {
       p.recommended.warnings.some((w) => w.includes("not fully verified")),
     ).toBe(true);
   });
+  it("routes to Civil Defence Academy using bus 172 and an approximate final access connector", async () => {
+    const p = await planJourney({
+      ...request(),
+      origin: {
+        id: "bellewaters",
+        name: "Bellewaters",
+        subtitle: "25 Anchorvale Crescent",
+        lat: 1.399854865356343,
+        lon: 103.8912902982522,
+      },
+      destination: {
+        id: "civil-defence-academy",
+        name: "Civil Defence Academy",
+        subtitle: "101 Jalan Bahar",
+        lat: 1.367337763964952,
+        lon: 103.6921041432306,
+      },
+    });
+    expect(p.recommended.segments.some((segment) => segment.line === "172")).toBe(
+      true,
+    );
+    expect(p.recommended.segments.at(-1)?.mode).toBe("walk");
+    expect(p.recommended.segments.at(-1)?.instructions).toContain(
+      "access connection is approximate",
+    );
+  });
 });

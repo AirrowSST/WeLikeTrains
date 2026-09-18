@@ -406,7 +406,22 @@ export function walkSegment(
   preferences: Preferences,
   cycle = false,
 ): Segment | null {
-  const path = walkingPath(from, to, preferences, cycle);
+  let path = walkingPath(from, to, preferences, cycle);
+  if (!path && !cycle) {
+    const connectorDistance = distance(from, to);
+    // OSM occasionally maps a destination entrance and its adjacent stop as
+    // separate, unjoined features. Permit only a short first/last connector
+    // and label it approximate instead of rejecting an otherwise usable trip.
+    if (connectorDistance <= Math.min(450, preferences.maxWalk)) {
+      path = {
+        geometry: [from, to],
+        distance: connectorDistance,
+        sheltered: false,
+        verified: false,
+        instructions: `Walk about ${Math.round(connectorDistance)} m from ${fromName} to ${toName}. This short access connection is approximate; confirm the entrance and crossing on arrival.`,
+      };
+    }
+  }
   if (!path || path.distance > preferences.maxWalk * (cycle ? 3 : 1))
     return null;
   return {

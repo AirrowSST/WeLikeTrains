@@ -322,6 +322,14 @@ function PlacePicker({
   useEffect(() => setQuery(value.name), [value]);
   useEffect(() => {
     if (!editing) return;
+    const normalized = query.trim().toLowerCase();
+    const localResults = normalized
+      ? places.filter((p) =>
+          `${p.name} ${p.subtitle}`.toLowerCase().includes(normalized),
+        )
+      : places;
+    setResults(localResults);
+    setBusy(false);
     const control = new AbortController();
     const timer = setTimeout(() => {
       setBusy(true);
@@ -332,13 +340,7 @@ function PlacePicker({
         .then((v) => {
           if (Array.isArray(v)) setResults(v);
         })
-        .catch(() =>
-          setResults(
-            places.filter((p) =>
-              p.name.toLowerCase().includes(query.toLowerCase()),
-            ),
-          ),
-        )
+        .catch(() => setResults(localResults))
         .finally(() => setBusy(false));
     }, 250);
     return () => {
@@ -413,7 +415,7 @@ function PlacePicker({
           ))}
           {!busy && !results.length && (
             <li className="searching">
-              No match. Wider address search needs OneMap.
+              No match. Try a station, landmark, or full Singapore address.
             </li>
           )}
         </ul>
@@ -486,6 +488,12 @@ export default function App() {
         (j) => j.id === selectedId,
       ) ?? plan.recommended)
     : null;
+  const preferenceSummary = [
+    request.preferences.sheltered && "Sheltered walks",
+    request.preferences.stepFree && "Avoid stairs",
+    request.preferences.avoidCrowds && "Quieter rides",
+    request.preferences.cycling && "Cycling",
+  ].filter(Boolean) as string[];
   const tomorrow = dateValue(new Date(Date.now() + 86400000).toISOString());
   const relevantPlannedNotice =
     dateValue(request.departure) === tomorrow
@@ -538,12 +546,17 @@ export default function App() {
       setSelectedId(null);
       persist(PLAN_KEY, data);
     } catch (e: any) {
-      if (e.name !== "AbortError")
+      if (e.name !== "AbortError") {
+        if (navigator.onLine) {
+          setPlan(null);
+          setSelectedId(null);
+        }
         setError(
           navigator.onLine
             ? e.message
             : "You’re offline. Your last saved journey is shown; conditions may have changed.",
         );
+      }
     } finally {
       if (activeRequest.current === control) setLoading(false);
     }
@@ -1076,6 +1089,7 @@ export default function App() {
                     </button>
                   </div>
                   <form
+                    id="journey-planner"
                     onSubmit={(e) => {
                       e.preventDefault();
                       void runPlan(request);
@@ -1171,20 +1185,8 @@ export default function App() {
                         }
                       />
                     </div>
-                    <button
-                      className="primary-button plan-button"
-                      disabled={loading || !online}
-                    >
-                      {loading ? (
-                        <LoaderCircle className="spin" size={18} />
-                      ) : (
-                        <Route size={18} />
-                      )}{" "}
-                      {loading ? "Loading directions…" : "Start directions"}
-                      <ArrowRight size={17} />
-                    </button>
                   </form>
-                  <div className="preference-chips">
+                  <div className="planner-secondary-controls">
                     <div className="travel-date-field">
                       <CalendarDays size={14} />
                       <label>
@@ -1206,27 +1208,37 @@ export default function App() {
                       </label>
                     </div>
                     <button
-                      className="wheelchair-chip"
+                      type="button"
+                      className="journey-preferences-button"
                       onClick={() => setModal("profile")}
+                      aria-label={`Journey preferences: ${preferenceSummary.length ? preferenceSummary.join(", ") : "No extra preferences"}`}
                     >
-                      {request.preferences.stepFree ? (
-                        <Accessibility size={13} />
-                      ) : (
-                        <Umbrella size={13} />
-                      )}{" "}
-                      {request.preferences.stepFree
-                        ? "Wheelchair"
-                        : request.preferences.sheltered
-                          ? "Sheltered walks"
-                          : "Your preferences"}
-                    </button>
-                    <button
-                      className="crowds-chip"
-                      onClick={() => setModal("profile")}
-                    >
-                      <ChevronDown size={14} /> Crowds
+                      <Settings2 size={18} aria-hidden="true" />
+                      <span>
+                        <strong>Journey preferences</strong>
+                        <small>
+                          {preferenceSummary.length
+                            ? preferenceSummary.join(" · ")
+                            : "Choose walking, access, crowd and cycling options"}
+                        </small>
+                      </span>
+                      <ChevronRight size={17} aria-hidden="true" />
                     </button>
                   </div>
+                  <button
+                    type="submit"
+                    form="journey-planner"
+                    className="primary-button plan-button"
+                    disabled={loading || !online}
+                  >
+                    {loading ? (
+                      <LoaderCircle className="spin" size={18} />
+                    ) : (
+                      <Route size={18} />
+                    )}{" "}
+                    {loading ? "Finding your way…" : "Find my best route"}
+                    <ArrowRight size={17} />
+                  </button>
                 </section>
                 <div className="routes-heading">
                   <h2>Routes</h2>

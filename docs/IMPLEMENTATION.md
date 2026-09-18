@@ -18,6 +18,8 @@ The remote was initially empty. The organiser's referenced PS2/data and PS2/refe
 
 ## Engineering verification — 2026-09-18
 
+- The mobile journey map now distinguishes walking, bus, rail and cycling geometry with mode icons, labels and a compact legend; selected endpoints and a small set of Singapore landmarks provide orientation. Weather-affected walking areas use clearly labelled, approximate rain highlights rather than claiming radar-level precision.
+- Official OneMap tiles now provide complete online road, building and place context across Singapore. The committed OSM vectors remain underneath as an offline fallback, and reduced detail is visibly labelled if OneMap tiles fail.
 - Production build and TypeScript pass.
 - 20 unit tests pass, including real OSM Rachel/Arjun/Mdm Lim routes, DTL crowd-code join, location handling and server validation of chat tool calls.
 - All 12 Chromium browser checks pass across phone and wide-screen mobile-only UI when run in project-scoped groups, including foreground/simulated location, 320px no-overflow, main journey/chat/preference/save flows, initial-screen axe and large-text/offline reload. The agent command runner terminated the Playwright-managed server during the longer combined run; the same checks passed in shorter grouped runs.

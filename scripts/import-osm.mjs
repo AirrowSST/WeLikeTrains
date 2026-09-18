@@ -1,11 +1,14 @@
 // Explicit, manually invoked OSM snapshot import. Never called by the app or CI.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 const bbox = "1.23,103.60,1.47,104.04";
+const busRefs = "2|12|17|27|34|36|67|118|172|190|196";
+const primaryWalkBbox = "1.265,103.778,1.417,103.966";
+const westWalkBbox = "1.33,103.675,1.405,103.765";
 const query = `[out:json][timeout:60];(
 relation[route~"^(subway|light_rail|monorail)$"](${bbox});
-relation[route=bus][ref~"^(2|12|17|27|34|36|67|118|190|196)$"](${bbox});
+relation[route=bus][ref~"^(${busRefs})$"](${bbox});
 );out body;>;out body;
-way[highway~"^(footway|path|pedestrian|steps|cycleway|residential|service|unclassified|tertiary|secondary|primary|trunk)$"][access!=private](1.265,103.778,1.417,103.966);out body;>;out skel;
+(way[highway~"^(footway|path|pedestrian|steps|cycleway|residential|service|unclassified|tertiary|secondary|primary|trunk)$"][access!=private](${primaryWalkBbox});way[highway~"^(footway|path|pedestrian|steps|cycleway|residential|service|unclassified|tertiary|secondary|primary|trunk)$"][access!=private](${westWalkBbox}););out body;>;out skel;
 (way[natural=water](${bbox});way[landuse=forest](${bbox});way[leisure=park](${bbox});way[natural=coastline](${bbox}););out geom;`;
 await mkdir(".cache", { recursive: true });
 await mkdir("public/data", { recursive: true });
@@ -16,7 +19,7 @@ try {
 } catch {
   const parts = [
     `[out:json][timeout:25];relation[route~"^(subway|light_rail|monorail)$"](${bbox});out body;>;out body;`,
-    `[out:json][timeout:25];relation[route=bus][ref~"^(2|12|17|27|34|36|67|118|190|196)$"](${bbox});out body;>;out body;`,
+    `[out:json][timeout:25];relation[route=bus][ref~"^(${busRefs})$"](${bbox});out body;>;out body;`,
     ...[
       "1.265,103.778,1.32,103.87",
       "1.32,103.778,1.365,103.87",
@@ -63,6 +66,54 @@ try {
     raw.osm3s = result.osm3s;
   }
   await writeFile(".cache/osm-raw.json", JSON.stringify(raw));
+}
+// Keep the base snapshot stable while allowing small, explicit coverage
+// expansions to be fetched and cached independently. This corridor connects
+// Choa Chu Kang/Boon Lay to Jalan Bahar via service 172.
+const westExpansion = [
+  `[out:json][timeout:25];relation[route=bus][ref="172"](${bbox});out body;>;out body;`,
+  ...[
+    "1.33,103.675,1.3675,103.72",
+    "1.378,103.735,1.392,103.752",
+  ].map(
+    (box) =>
+      `[out:json][timeout:25];way[highway~"^(footway|path|pedestrian|steps|cycleway|residential|service|unclassified|tertiary|secondary|primary|trunk)$"][access!=private](${box});out body;>;out skel;`,
+  ),
+];
+for (const [index, part] of westExpansion.entries()) {
+  let result;
+  try {
+    result = JSON.parse(
+      await readFile(`.cache/osm-west-expansion-${index}.json`, "utf8"),
+    );
+  } catch {
+    console.log(`Fetching bounded western expansion ${index + 1}/${westExpansion.length}…`);
+    const response = await fetch(
+      process.env.OVERPASS_URL || "https://overpass-api.de/api/interpreter",
+      {
+        method: "POST",
+        body: new URLSearchParams({ data: part }),
+        signal: AbortSignal.timeout(60000),
+        headers: {
+          Accept: "application/json",
+          "User-Agent":
+            "WeLikeTrains/1.0 (+https://github.com/AirrowSST/WeLikeTrains)",
+        },
+      },
+    );
+    if (!response.ok)
+      throw new Error(`Overpass HTTP ${response.status}, western expansion ${index}`);
+    result = await response.json();
+    if (result.remark) throw new Error(result.remark);
+    await writeFile(
+      `.cache/osm-west-expansion-${index}.json`,
+      JSON.stringify(result),
+    );
+    if (index < westExpansion.length - 1)
+      await new Promise((resolve) => setTimeout(resolve, 30000));
+  }
+  raw.elements = raw.elements.concat(result.elements);
+  raw.osm3s = result.osm3s ?? raw.osm3s;
 }
 // Stop positions often omit station codes. Join actual station features by name.
 const stationQuery = `[out:json][timeout:25];nwr[railway=station](${bbox});out tags center;`;

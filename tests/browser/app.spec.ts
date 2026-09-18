@@ -67,14 +67,35 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   expect(planner!.y).toBeLessThan(recommendation!.y);
   const navigation = await page.getByRole("navigation").boundingBox();
   expect(navigation!.y).toBeGreaterThan(page.viewportSize()!.height - 100);
+  const preferencesButton = page.getByRole("button", {
+    name: /^Journey preferences:/,
+  });
+  await expect(preferencesButton).toBeVisible();
+  await expect(page.locator(".journey-preferences-button")).toHaveCount(1);
+  await preferencesButton.click();
+  await expect(page.getByRole("dialog")).toContainText("Preferences");
+  await page.getByRole("button", { name: "Close dialog" }).click();
   await expect(page.locator(".journey-map")).toHaveAttribute(
     "data-ready",
     "true",
   );
+  await expect(page.locator(".onemap-tiles").first()).toBeAttached();
+  await expect(page.getByRole("link", { name: "OneMap" })).toBeVisible();
+  await expect(page.locator(".route-mode-marker.walk").first()).toBeVisible();
+  await expect(page.locator(".route-mode-marker.rail").first()).toBeVisible();
+  await expect(page.locator(".map-mode-key")).toContainText("Walk");
+  await expect(page.locator(".map-mode-key")).toContainText("Train");
   await page.screenshot({
     path: `test-results/${info.project.name}-journey.png`,
     fullPage: true,
   });
+  await page.getByLabel("Demo scenario").selectOption("rain");
+  await expect(page.locator(".rain-zone").first()).toBeVisible();
+  await expect(page.locator(".map-mode-key")).toContainText("Rain area");
+  await page.getByLabel("Demo scenario").selectOption("normal");
+  await expect(
+    page.getByText("You’re on the right track.", { exact: true }),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: "Save route", exact: true })
     .click();
@@ -291,6 +312,9 @@ test("supports large text and preserves a previously loaded journey offline", as
       "You’re offline. Your saved map and journey are available. Conditions may have changed.",
     ),
   ).toBeVisible();
+  await expect(page.locator(".map-source-note")).toContainText(
+    "showing offline roads",
+  );
   await expect(
     page.getByRole("button", { name: "Start", exact: true }),
   ).toBeEnabled();

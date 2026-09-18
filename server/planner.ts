@@ -607,7 +607,22 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
         base = base.filter((journey) => !journey.source.includes("OneMap"));
       }
     }
-  } else base = localJourneys(routingRequest, conditions);
+  } else {
+    base = localJourneys(routingRequest, conditions);
+    // The bundled extract can miss a usable station when the user's normal
+    // walking preference is conservative. Retry with the supported upper
+    // bound before reporting that no route exists; this does not mutate the
+    // saved preference or silently invent a route.
+    if (!base.length && routingRequest.preferences.maxWalk < 3500) {
+      base = localJourneys(
+        {
+          ...routingRequest,
+          preferences: { ...routingRequest.preferences, maxWalk: 3500 },
+        },
+        conditions,
+      );
+    }
+  }
   if (!base.length)
     throw new Error(
       "No usable route found in this map extract. Try the supported Singapore places, increase the walking limit, or connect OneMap for wider coverage.",

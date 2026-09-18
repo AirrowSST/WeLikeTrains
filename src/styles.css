@@ -12,8 +12,8 @@
   font-synthesis: none;
   font-weight: 400;
   --green: #184e40;
-  --ink: #233c33;
-  --muted: #78827a;
+  --ink: #233c33d9;
+  --muted: #78827ab8;
   --lime: #e0edaa;
   --line: #e1e6dc;
   --surface: #fff;
@@ -662,7 +662,7 @@ input {
 .plan-button {
   width: 100%;
   justify-content: flex-start;
-  margin-top: 1px;
+  margin-top: 14px;
 }
 .plan-button > svg:last-child {
   margin-left: auto;
@@ -671,19 +671,47 @@ input {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-  margin-top: 12px;
 }
-.preference-chips button,
-.preference-chips > span {
+.journey-preferences {
+  margin-top: 16px;
+  padding: 13px;
+  border: 1px solid #e1e6de;
+  border-radius: 8px;
+  background: #fafbf7;
+}
+.journey-preferences h3 {
+  margin: 0;
+  font-size: 12px;
+  color: #314a39;
+}
+.journey-preferences p {
+  margin: 4px 0 11px;
+  color: #71806b;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.preference-chips button {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   border-radius: 5px;
   background: #f5f7ef;
   color: #758369;
-  font-size: 8px;
-  padding: 5px 6px;
-  min-height: 27px;
+  border: 1px solid #e1e6de;
+  font-size: 10px;
+  padding: 7px 8px;
+  min-height: 31px;
+}
+.preference-chips button.active {
+  background: #e7f0df;
+  border-color: #88a776;
+  color: #315e3a;
+}
+.preferences-more {
+  margin-top: 8px;
+  min-height: 30px;
+  padding: 3px 0;
+  font-size: 10px;
 }
 .routes-heading {
   display: flex;
@@ -943,6 +971,9 @@ input {
   background: #e7ece5 !important;
   z-index: 1;
 }
+.onemap-tiles {
+  filter: saturate(0.68) brightness(1.04) contrast(0.9);
+}
 .leaflet-container {
   font-family: inherit !important;
 }
@@ -988,35 +1019,149 @@ input {
   box-shadow: 0 2px 8px #294b2710;
   color: #63765b;
 }
-.map-place {
+.map-landmark-anchor,
+.route-mode-anchor,
+.map-weather-anchor,
+.map-pin-anchor {
+  background: transparent !important;
+  border: 0 !important;
+}
+.map-landmark,
+.route-mode-marker,
+.map-weather-marker,
+.map-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   white-space: nowrap;
-  color: #7c8c78;
+  border-radius: 999px;
+  box-shadow: 0 2px 9px #1f3c3524;
+  line-height: 1;
+}
+.map-symbol,
+.map-key-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.map-symbol svg,
+.map-key-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.map-symbol svg path:first-child:not(:only-child) {
+  fill: none;
+}
+.map-landmark {
+  max-width: 148px;
+  padding: 0;
+  background: transparent;
+  color: #405348;
+  border: 0;
+  box-shadow: none;
   font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 1.5px;
-  text-shadow: 0 1px 2px white;
-  pointer-events: none;
-  text-align: center;
+}
+.map-landmark .map-symbol {
+  width: 17px;
+  height: 17px;
+  color: #405348;
+  filter: drop-shadow(0 1px 0 #fff) drop-shadow(0 0 2px #fff);
+}
+.map-landmark strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 650;
+  text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff,
+    1px 1px 0 #fff;
+}
+.route-mode-marker {
+  padding: 0;
+  background: transparent !important;
+  border: 0;
+  box-shadow: none;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.15px;
+}
+.route-mode-marker .map-symbol {
+  width: 21px;
+  height: 21px;
+  filter: drop-shadow(0 1px 0 #fff) drop-shadow(0 0 2px #fff);
+}
+.route-mode-marker strong {
+  text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff,
+    1px 1px 0 #fff;
+}
+.route-mode-marker.walk {
+  color: #4c5968;
+}
+.route-mode-marker.rail {
+  color: #235ba8;
+}
+.route-mode-marker.bus {
+  color: #7b3fc6;
+}
+.route-mode-marker.cycle {
+  color: #d06c18;
+}
+.map-weather-marker {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: #17658d;
+  font-size: 9px;
+  font-weight: 700;
+}
+.map-weather-marker .map-symbol {
+  filter: drop-shadow(0 1px 0 #fff) drop-shadow(0 0 2px #fff);
+}
+.map-weather-marker strong {
+  text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff,
+    1px 1px 0 #fff;
+}
+.rain-zone {
+  animation: rain-pulse 2.4s ease-in-out infinite;
+}
+@keyframes rain-pulse {
+  0%,
+  100% {
+    fill-opacity: 0.3;
+    stroke-opacity: 0.75;
+  }
+  50% {
+    fill-opacity: 0.5;
+    stroke-opacity: 1;
+  }
 }
 .map-pin {
-  width: 34px;
-  height: 34px;
-  background: #184e40;
-  border: 3px solid #fff;
-  border-radius: 50% 50% 50% 0;
-  transform: rotate(-45deg);
-  box-shadow: 0 2px 5px #23482b35;
+  padding: 0;
+  background: transparent !important;
+  border: 0;
+  box-shadow: none;
+}
+.map-pin .map-symbol {
+  display: none;
+}
+.map-pin strong {
   display: grid;
   place-items: center;
-}
-.map-pin > span {
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: #173f35;
+  border: 2px solid #fff;
   color: #fff;
-  font-size: 12px;
-  font-weight: 650;
-  transform: rotate(45deg);
+  box-shadow: 0 1px 4px #173f3545;
+  font-size: 10px;
 }
-.map-pin.destination {
-  background: #cadba0;
+.map-pin.destination strong {
+  background: #536f2d;
 }
 .map-pin.destination > span {
   color: #315633;
@@ -1102,11 +1247,85 @@ input {
   left: 18px;
   bottom: 6px;
   z-index: 450;
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  color: #7a8971;
   font-size: 8px;
+  color: #6e7b64;
+}
+
+/* Softer, airy type treatment for the translucent mobile surface. */
+@media (max-width: 700px) {
+  .app-shell {
+    color: #243e35e6;
+  }
+  .app-shell p,
+  .app-shell small,
+  .app-shell label,
+  .app-shell .route-card-footer,
+  .app-shell .arrival,
+  .app-shell .place-field small,
+  .app-shell .recommendation p {
+    color: #52665cbf !important;
+    font-weight: 400;
+  }
+  .app-shell h1,
+  .app-shell h2,
+  .app-shell h3,
+  .app-shell .brand,
+  .app-shell .nav-item.active,
+  .app-shell .primary-button,
+  .app-shell .time-picker-card {
+    font-weight: 600;
+  }
+  .app-shell .place-field input,
+  .app-shell .route-summary .duration {
+    color: #243e35e6;
+    font-weight: 600;
+  }
+}
+.map-mode-key {
+  position: absolute;
+  left: 12px;
+  right: 52px;
+  bottom: 24px;
+  z-index: 450;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: fit-content;
+  padding: 6px 9px;
+  border: 1px solid #dce5db;
+  border-radius: 8px;
+  background: #fffffff0;
+  box-shadow: 0 2px 8px #1f3c3514;
+  pointer-events: none;
+}
+.map-key-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #43564a;
+  box-shadow: none;
+  font-size: 9px;
+  font-weight: 700;
+}
+.map-key-item.walk .map-key-icon {
+  color: #4c5968;
+}
+.map-key-item.rail .map-key-icon {
+  color: #235ba8;
+}
+.map-key-item.bus .map-key-icon {
+  color: #7b3fc6;
+}
+.map-key-item.cycle .map-key-icon {
+  color: #d06c18;
+}
+.map-key-item.rain {
+  color: #17658d;
 }
 .leaflet-control-zoom {
   border: 0 !important;
@@ -1135,6 +1354,21 @@ input {
   padding: 12px;
   z-index: 450;
   font-size: 12px;
+}
+.map-source-note {
+  position: absolute;
+  left: 12px;
+  top: 60px;
+  z-index: 450;
+  max-width: calc(100% - 76px);
+  border: 1px solid #ded7c3;
+  border-radius: 6px;
+  background: #fff9e9e8;
+  padding: 6px 8px;
+  color: #6e654c;
+  font-size: 9px;
+  line-height: 1.35;
+  pointer-events: none;
 }
 .journey-insights {
   display: grid;
@@ -2742,7 +2976,7 @@ input {
   .map-wrap {
     order: 2;
     width: 100%;
-    height: 330px;
+    height: 390px;
     border-radius: 10px;
   }
   .journey-insights {
@@ -3315,7 +3549,7 @@ input {
     font-size: 12px;
   }
   .large-text .map-wrap {
-    height: 320px;
+    height: 370px;
   }
   .large-text .chat-message {
     font-size: 16px;
@@ -3698,6 +3932,179 @@ body {
   width: 44px !important;
   height: 44px !important;
   line-height: 44px !important;
+}
+
+/* Grab-inspired mobile journey surface: map first, controls in a rounded sheet. */
+@media (max-width: 700px) {
+  body {
+    background: #eef3ef;
+  }
+  .app-shell {
+    background: #f8faf8;
+  }
+  .app-shell main {
+    padding: 0 0 calc(86px + env(safe-area-inset-bottom));
+  }
+  .journey-layout {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .planner-column,
+  .journey-content {
+    display: contents;
+  }
+  .map-wrap {
+    order: 0;
+    height: 51dvh;
+    min-height: 340px;
+    max-height: 510px;
+    margin: 0;
+    border: 0;
+    border-radius: 0 0 28px 28px;
+    box-shadow: 0 8px 24px #1d49301c;
+  }
+  .planner-card {
+    order: 1;
+    position: relative;
+    z-index: 4;
+    margin: -28px 0 0;
+    padding: 21px 18px 18px;
+    border: 0;
+    border-radius: 28px 28px 0 0;
+    background: #fff;
+    box-shadow: 0 -5px 25px #1d49301a;
+  }
+  .planner-card::before {
+    content: "";
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    width: 42px;
+    height: 4px;
+    border-radius: 5px;
+    background: #d9e1dc;
+    transform: translateX(-50%);
+  }
+  .planner-card .section-title {
+    margin: 4px 0 10px;
+  }
+  .planner-card .section-title h2 {
+    margin-left: 0;
+    color: #142c24;
+    font-size: 20px;
+  }
+  .place-inputs {
+    width: 100%;
+    margin: 0;
+    border: 1px solid #e2ebe4;
+    border-radius: 15px;
+    box-shadow: none;
+  }
+  .place-field {
+    min-height: 61px;
+  }
+  .place-field:first-child {
+    border-bottom: 1px solid #e6eee8;
+  }
+  .place-field > div {
+    padding-inline: 52px;
+  }
+  .place-field label {
+    right: 12px;
+    width: auto;
+    color: #7a8980;
+    font-size: 10px;
+  }
+  .field-marker {
+    transform: translateX(12px);
+  }
+  .swap-button {
+    right: 10px;
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    border: 1px solid #d6e1d9;
+    background: #f7faf7;
+  }
+  .location-control,
+  .planner-secondary-controls,
+  .time-fields,
+  .planner-card > .section-title + form + .planner-secondary-controls {
+    display: none;
+  }
+  .plan-button {
+    width: 100%;
+    min-height: 54px;
+    margin-top: 12px;
+    border-radius: 15px;
+    background: #00b14f;
+    box-shadow: 0 7px 15px #00a84b2e;
+    font-size: 17px;
+  }
+  .plan-button:hover {
+    background: #009f47;
+  }
+  .recommendation {
+    order: 2;
+    margin: 0;
+    padding: 14px 18px;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    background: #f2fbf5;
+  }
+  .recommendation-icon {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #d9f6e2;
+  }
+  .recommendation h2 {
+    font-size: 15px;
+  }
+  .recommendation p {
+    font-size: 12px;
+  }
+  .route-options,
+  .routes-heading,
+  .load-more-routes,
+  .save-button,
+  .journey-insights,
+  .steps-card {
+    order: 3;
+  }
+  .route-options {
+    padding: 12px 16px 0;
+    background: #fff;
+  }
+  .route-card {
+    border: 0;
+    border-bottom: 1px solid #edf1ed;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .route-card.selected {
+    border-color: #00b14f;
+    border-radius: 14px;
+    box-shadow: inset 0 0 0 1px #00b14f;
+  }
+  .route-card-top {
+    padding-top: 14px;
+  }
+  .recommended-label {
+    color: #009b46;
+  }
+  .route-summary .duration {
+    color: #142c24;
+    font-size: 28px;
+  }
+  .line-pill {
+    background: #eef8f1;
+    border-color: #d8ecdd;
+  }
 }
 
 /* Mobile navigation stays at the bottom; identity and account controls form the top bar. */
@@ -4159,53 +4566,48 @@ body {
   outline: 3px solid #9bbba9;
   outline-offset: -3px;
 }
-.planner-card .preference-chips {
+.planner-secondary-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.1fr) minmax(0, 0.7fr);
-  gap: 4px;
-  flex-wrap: nowrap;
+  gap: 7px;
 }
-.preference-chips .travel-date-field {
-  position: relative;
+.planner-secondary-controls .travel-date-field {
   width: 100%;
   min-width: 0;
-  min-height: 44px;
-  margin: 0;
-  padding: 4px 6px;
-  gap: 4px;
-  justify-content: center;
+  margin: 9px 0 0;
 }
-.preference-chips .travel-date-field > svg {
-  position: absolute;
-  left: 7px;
-}
-.preference-chips .travel-date-field label {
-  min-width: 0;
+.journey-preferences-button {
   width: 100%;
-  justify-content: center;
+  min-height: 52px;
+  padding: 9px 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #dce5db;
+  border-radius: 8px;
+  background: #f8faf5;
+  color: #315e4c;
+  text-align: left;
 }
-.preference-chips .travel-date-field input {
-  width: 118px;
+.journey-preferences-button > span {
   min-width: 0;
-  min-height: 30px;
-  font-size: 14px;
-  font-weight: 700;
-  text-align: center;
+  display: grid;
+  gap: 2px;
 }
-.planner-card .preference-chips button {
-  width: 100%;
-  min-width: 0;
-  padding-inline: 4px;
-  justify-content: center;
+.journey-preferences-button strong {
+  font-size: 12px;
+}
+.journey-preferences-button small {
+  overflow: hidden;
+  color: #71806b;
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.planner-card .preference-chips .wheelchair-chip {
-  font-size: 16px;
-  font-weight: 750;
-}
-.planner-card .preference-chips .crowds-chip {
-  font-size: 14px;
-  font-weight: 700;
+.journey-preferences-button:hover {
+  border-color: #9db69a;
+  background: #f1f6ed;
 }
 .recommendation {
   order: 2;
@@ -4233,6 +4635,34 @@ body {
 }
 .steps-card {
   order: 7;
+}
+
+/* Final mobile composition overrides (kept last so legacy responsive rules cannot undo them). */
+@media (max-width: 700px) {
+  .app-shell main { padding: 0 0 calc(86px + env(safe-area-inset-bottom)); }
+  .journey-layout { display: flex; flex-direction: column; gap: 0; }
+  .planner-column, .journey-content { display: contents; }
+  .map-wrap { order: 0; height: 51dvh; min-height: 340px; max-height: 510px; margin: 0; border: 0; border-radius: 0 0 28px 28px; box-shadow: 0 8px 24px #1d49301c; }
+  .planner-card { order: 1; position: relative; z-index: 4; margin: -28px 0 0; padding: 21px 18px 18px; border: 0; border-radius: 28px 28px 0 0; background: #fff; box-shadow: 0 -5px 25px #1d49301a; }
+  .planner-card::before { content: ""; position: absolute; top: 9px; left: 50%; width: 42px; height: 4px; border-radius: 5px; background: #d9e1dc; transform: translateX(-50%); }
+  .planner-card .section-title { margin: 4px 0 10px; }
+  .planner-card .section-title h2 { margin-left: 0; font-size: 20px; }
+  .place-inputs { width: 100%; margin: 0; border-radius: 15px; box-shadow: none; }
+  .place-field { min-height: 61px; }
+  .place-field:first-child { border-bottom: 1px solid #e6eee8; }
+  .place-field > div { padding-inline: 52px; }
+  .place-field label { right: 12px; width: auto; font-size: 10px; }
+  .field-marker { transform: translateX(12px); }
+  .swap-button { right: 10px; width: 34px; height: 34px; min-width: 34px; }
+  .location-control, .planner-secondary-controls, .time-fields { display: none; }
+  .plan-button { width: 100%; min-height: 54px; margin-top: 12px; border-radius: 15px; background: #00b14f; box-shadow: 0 7px 15px #00a84b2e; font-size: 17px; }
+  .recommendation { order: 2; margin: 0; padding: 14px 18px; min-height: 0; border: 0; border-radius: 0; background: #f2fbf5; }
+  .routes-heading { order: 3; }
+  .route-options { order: 4; padding: 12px 16px 0; background: #fff; }
+  .route-card { border: 0; border-bottom: 1px solid #edf1ed; border-radius: 0; box-shadow: none; }
+  .route-card.selected { border-color: #00b14f; border-radius: 14px; box-shadow: inset 0 0 0 1px #00b14f; }
+  .recommended-label { color: #009b46; }
+  .route-summary .duration { color: #142c24; font-size: 28px; }
 }
 .recommendation-icon {
   width: 36px;

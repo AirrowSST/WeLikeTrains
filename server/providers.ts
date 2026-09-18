@@ -86,10 +86,9 @@ export async function searchPlaces(query: string): Promise<Place[]> {
   );
   if (query.length < 3) return local;
   try {
-    const auth = await oneMapToken();
     const r = await fetch(
       `https://www.onemap.gov.sg/api/common/elastic/search?${new URLSearchParams({ searchVal: query, returnGeom: "Y", getAddrDetails: "Y", pageNum: "1" })}`,
-      { headers: { Authorization: auth }, signal: AbortSignal.timeout(5000) },
+      { signal: AbortSignal.timeout(5000) },
     );
     if (!r.ok) return local;
     const json = await r.json();

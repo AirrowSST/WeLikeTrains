@@ -1,14 +1,27 @@
 {
   "source": "https://overpass-api.de/api/interpreter",
-  "fetchedAt": "2026-09-18T12:13:50.795Z",
-  "dataTimestamp": "2026-09-18T11:37:04Z",
+  "fetchedAt": "2026-09-18T15:10:17.002Z",
+  "dataTimestamp": "2026-09-18T15:08:19Z",
   "license": "https://opendatacommons.org/licenses/odbl/1-0/",
   "attribution": "© OpenStreetMap contributors",
   "bbox": "1.23,103.60,1.47,104.04",
   "query": "[out:json][timeout:60];(\nrelation[route~\"^(subway|light_rail|monorail)$\"](1.23,103.60,1.47,104.04);\nrelation[route=bus][ref~\"^(2|12|17|27|34|36|67|118|190|196)$\"](1.23,103.60,1.47,104.04);\n);out body;>;out body;\nway[highway~\"^(footway|path|pedestrian|steps|cycleway|residential|service|unclassified|tertiary|secondary|primary|trunk)$\"][access!=private](1.265,103.778,1.417,103.966);out body;>;out skel;\n(way[natural=water](1.23,103.60,1.47,104.04);way[landuse=forest](1.23,103.60,1.47,104.04);way[leisure=park](1.23,103.60,1.47,104.04);way[natural=coastline](1.23,103.60,1.47,104.04););out geom;",
   "stationQuery": "[out:json][timeout:25];nwr[railway=station](1.23,103.60,1.47,104.04);out tags center;",
   "queryNote": "Large walking/basemap query is split into seven cached bounded requests; see scripts/import-osm.mjs for exact parts.",
-  "routes": 45,
-  "nodes": 363742,
-  "ways": 117897
+  "routes": 47,
+  "nodes": 400810,
+  "ways": 130352,
+  "expansions": [
+    {
+      "id": "jalan-bahar-172",
+      "source": "https://overpass-api.de/api/interpreter",
+      "bbox": "1.33,103.675,1.405,103.765",
+      "queries": [
+        "[out:json][timeout:60];relation[route=bus][ref=\"172\"](1.23,103.60,1.47,104.04);out body;>;out body;",
+        "[out:json][timeout:60];way[highway~\"^(footway|path|pedestrian|steps|cycleway|residential|service|unclassified|tertiary|secondary|primary|trunk)$\"][access!=private](1.33,103.675,1.3675,103.72);out body;>;out skel;",
+        "[out:json][timeout:60];way[highway~\"^(footway|path|pedestrian|steps|cycleway|residential|service|unclassified|tertiary|secondary|primary|trunk)$\"][access!=private](1.378,103.735,1.392,103.752);out body;>;out skel;"
+      ],
+      "purpose": "Service 172 and mapped walking access for Choa Chu Kang/Boon Lay to Civil Defence Academy"
+    }
+  ]
 }
