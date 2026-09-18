@@ -34,7 +34,7 @@ for (const [index, query] of queries.entries()) {
       headers: {
         Accept: "application/json",
         "User-Agent":
-          "WeLikeTrains/1.0 (+https://github.com/AirrowSST/WeLikeTrains)",
+          "Wayce/1.0 (+https://github.com/AirrowSST/WeLikeTrains)",
       },
     });
     if (!response.ok)

@@ -1,4 +1,4 @@
-# WeLikeTrains
+# Wayce
 
 A **mobile-only Singapore commuter companion**: a useful decision before you leave, not another transport dashboard.
 

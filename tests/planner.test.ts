@@ -100,4 +100,27 @@ describe("real OSM journeys", () => {
       "access connection is approximate",
     );
   });
+  it("uses the bundled western walking component for a searched NTU address", async () => {
+    const p = await planJourney({
+      ...request(),
+      origin: {
+        id: "onemap-ntu",
+        name: "Nanyang Technological University",
+        subtitle: "94 Nanyang Crescent",
+        lat: 1.352949370203277,
+        lon: 103.6892235086704,
+      },
+      destination: places.find((place) => place.id === "raffles-work")!,
+    });
+
+    expect(p.recommended.blocked).toBe(false);
+    expect(p.recommended.segments[0].mode).toBe("walk");
+    expect(p.recommended.segments.some((segment) => segment.line === "172")).toBe(
+      true,
+    );
+    expect(p.recommended.segments[0].geometry.length).toBeGreaterThan(2);
+    expect(p.recommended.segments[0].instructions).not.toContain(
+      "short access connection is approximate",
+    );
+  });
 });

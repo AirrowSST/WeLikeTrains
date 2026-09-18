@@ -16,7 +16,7 @@ function Test-GcloudResource { param([Parameter(ValueFromRemainingArguments=$tru
 $account = & $Gcloud auth list '--filter=status:ACTIVE' '--format=value(account)'
 if (-not $account) { throw 'Sign in first with gcloud auth login, using the account assigned to this project.' }
 Invoke-Gcloud @('projects','describe',$ProjectId,'--format=value(projectId)')
-Write-Host "Deploying WeLikeTrains to project $ProjectId ($Region). Runtime scales to zero and is capped at two instances."
+Write-Host "Deploying Wayce to project $ProjectId ($Region). Runtime scales to zero and is capped at two instances."
 Invoke-Gcloud @('services','enable','run.googleapis.com','cloudbuild.googleapis.com','artifactregistry.googleapis.com','secretmanager.googleapis.com','aiplatform.googleapis.com','texttospeech.googleapis.com','firestore.googleapis.com','cloudscheduler.googleapis.com','--project',$ProjectId,'--quiet')
 $runtime = "weliketrains-runtime@$ProjectId.iam.gserviceaccount.com"
 $builder = "weliketrains-builder@$ProjectId.iam.gserviceaccount.com"
@@ -84,4 +84,4 @@ if ($EnableReminders) {
 }
 $health = Invoke-RestMethod -Uri "$url/api/health"
 if ($health.status -ne 'ok') { throw 'The deployed health check failed.' }
-Write-Host "WeLikeTrains is running at $url"
+Write-Host "Wayce is running at $url"

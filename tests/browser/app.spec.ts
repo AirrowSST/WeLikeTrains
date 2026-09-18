@@ -58,6 +58,19 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
+  await expect(page).toHaveTitle("Wayce — A better way to your everyday");
+  await expect(page.getByRole("link", { name: "Wayce home" })).toContainText(
+    "Wayce",
+  );
+  expect(
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      return {
+        family: getComputedStyle(document.body).fontFamily,
+        loaded: document.fonts.check('16px "Public Sans"'),
+      };
+    }),
+  ).toEqual({ family: '"Public Sans", sans-serif', loaded: true });
   await expect(startJourneyButton(page)).toBeEnabled();
   await expect(page.locator(".demo-toolbar")).toContainText("Live LTA + NEA");
   await expect(
@@ -158,6 +171,39 @@ test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
       nodes: v.nodes.map((n) => n.target),
     })),
   ).toEqual([]);
+});
+test("resizes the mobile journey sheet by drag and keyboard", async ({ page }) => {
+  await useDeterministicPlans(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(
+    startJourneyButton(page),
+  ).toBeEnabled();
+
+  const handle = page.getByRole("button", { name: /Resize journey panel/ });
+  await expect(handle).toBeVisible();
+  const map = page.locator(".map-wrap");
+  const initialHeight = (await map.boundingBox())!.height;
+  const handleBox = await handle.boundingBox();
+
+  await page.mouse.move(
+    handleBox!.x + handleBox!.width / 2,
+    handleBox!.y + handleBox!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    handleBox!.x + handleBox!.width / 2,
+    handleBox!.y - 150,
+    { steps: 5 },
+  );
+  await page.mouse.up();
+
+  await expect(handle).toHaveAttribute("data-sheet-snap", "expanded");
+  expect((await map.boundingBox())!.height).toBeLessThan(initialHeight - 80);
+
+  await handle.press("End");
+  await expect(handle).toHaveAttribute("data-sheet-snap", "collapsed");
+  expect((await map.boundingBox())!.height).toBeGreaterThan(initialHeight + 80);
 });
 test("renders validated route cards when the companion displays routes", async ({
   page,
