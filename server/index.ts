@@ -105,7 +105,6 @@ app.get("/api/config", (_req, res) =>
     dataMode: process.env.DATA_MODE === "live" ? "live" : "demo",
     integrations: {
       lta: !!process.env.LTA_ACCOUNT_KEY,
-      onemap: !!process.env.ONEMAP_TOKEN || !!process.env.ONEMAP_EMAIL,
       vertex:
         !!process.env.VERTEX_API_KEY ||
         !!process.env.K_SERVICE ||

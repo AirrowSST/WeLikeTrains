@@ -8,7 +8,6 @@ import {
 } from "../server/feeds";
 import {
   extractPreferences,
-  decodePolyline,
   localChat,
   resolveChatToolCalls,
 } from "../server/providers";
@@ -211,13 +210,6 @@ describe("official data contracts", () => {
     expect(
       rejected.responses.every((response) => response.response?.error),
     ).toBe(true);
-  });
-  it("decodes routing geometry with signed coordinate deltas", () => {
-    expect(decodePolyline("_p~iF~ps|U_ulLnnqC_mqNvxq`@")).toEqual([
-      [38.5, -120.2],
-      [40.7, -120.95],
-      [43.252, -126.453],
-    ]);
   });
   it("rejects outside-Singapore coordinates and invalid preferences", () => {
     expect(planSchema.safeParse({ origin: { lat: 51, lon: 0 } }).success).toBe(

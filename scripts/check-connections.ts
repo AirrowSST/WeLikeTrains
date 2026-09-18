@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { getConditions } from "../server/feeds";
-import { oneMapToken, searchPlaces } from "../server/providers";
+import { searchPlaces } from "../server/providers";
 import { nextDeparture } from "../shared/catalog";
 const conditions = await getConditions({
   dataMode: "live",
@@ -19,10 +19,5 @@ console.log(
     2,
   ),
 );
-try {
-  await oneMapToken();
-  const places = await searchPlaces("Tampines");
-  console.log("OneMap geocoding results:", places.length);
-} catch {
-  console.log("OneMap authentication unavailable");
-}
+const places = await searchPlaces("Tampines");
+console.log("Bundled place and station results:", places.length);

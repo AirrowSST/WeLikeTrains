@@ -11,14 +11,14 @@ The normal app starts in a local guest space with editable preferences and daily
 The app opens as a standard guest using live-mode source labels. No account or API key is required for local routing. To present deterministic scenarios, open **Options**, enable **Developer mode**, then open the demo presets. The places and OSM routes are real; demo incidents, crowd levels, weather and delays are synthetic, not a claim about current service.
 
 1. Enable Developer mode in Options, load Rachel, and change the simulated network or custom weather controls to compare normal service, disruption, crowds, rain, closure or lift maintenance.
-2. Compare the original and revised route on the OSM map. Swipe route cards for time, crowd and walking trade-offs. Open **Full details** for directions and limitations.
+2. Compare the original and revised route on the detailed OneMap basemap. Swipe route cards for time, crowd and walking trade-offs. Open **Full details** for directions and limitations. When OneMap is unavailable, the map visibly falls back to the bundled OSM extract.
 3. Tap **Use simulated location** to preview the labelled demo position, then start the step-by-step journey. In Live mode, **Use my location** requests browser permission and the active journey can show foreground location until it is closed. Progress remains manual; there is no background tracking.
 4. Open the companion, consent to sending route context, ask why this route or describe your preferences. Review changes before applying them. Tap the speaker to listen.
-5. **Data & sources → Live feeds** switches to LTA, OneMap and NEA. Each feed reports its own freshness or failure; live failures never silently inject demo data.
+5. **Data & sources → Live feeds** switches to LTA and NEA conditions while place search and routing stay on the bundled OSM snapshot. Each feed reports its own freshness or failure; live failures never silently inject demo data.
 
 ## Run from a clean machine
 
-Requires Node.js **22.12+** and npm. The OSM extract is committed; no map download, Google account or paid service is needed for local demo routing.
+Requires Node.js **22.12+** and npm. The station index, routing graph and offline OSM basemap are committed. When online, the app loads official OneMap Default tiles for detailed map display; search and routing never depend on OneMap or another public provider.
 
 ```sh
 git clone https://github.com/AirrowSST/WeLikeTrains.git
@@ -30,7 +30,7 @@ npm start
 
 Open http://localhost:8080. For development, `npm run dev` serves the UI at http://localhost:5173 and the API at port 8080. On a phone, use the deployed HTTPS URL: service workers and background push require a secure origin, unlike an ordinary LAN HTTP address.
 
-Optional: copy `.env.example` to `.env` and fill credentials. Never commit `.env`. Google account sync additionally requires a Google Identity Services web client ID, a server-only session secret and Firestore; see `docs/GCP.md`. The deployed app’s existing transport/AI credentials remain in Google Secret Manager and use an attached Google service account—no downloadable service-account key is needed.
+Optional: copy `.env.example` to `.env` and fill credentials. Never commit `.env`. Google account sync additionally requires a Google Identity Services web client ID, a server-only session secret and Firestore; live conditions use an LTA credential. The deployed app’s AI/speech use an attached Google service account—no downloadable service-account key is needed. Map display, place search and route computation require no provider credentials.
 
 ## Verification
 
@@ -72,11 +72,11 @@ This enables APIs, creates scoped service accounts, imports nonempty `.env` cred
 
 ## What is real, estimated, and experimental
 
-- OSM geometry, graph search, first/last walking legs, the live official-feed adapters and the OneMap itinerary integration are implemented. OSM fallback travel times are estimates, not official timetables.
+- OSM geometry, local station search, graph search, first/last walking legs and the live official condition-feed adapters are implemented. Official OneMap tiles provide the detailed online visual basemap, with committed OSM vectors as the offline fallback. Travel times are estimates, not official timetables.
 - Gemini on Vertex AI explains and selects among computed routes and interviews preferences; Cloud Text-to-Speech reads replies. Bounded function calls turn chat input into validated preference proposals or supplied-route recommendations. Routes are computed outside the model, returned IDs are checked, and preference changes require confirmation. A labelled local guide remains available if AI fails.
 - The disruption **risk index is rule-based**, not a trained AI predictor or calibrated probability. No historical accuracy claim is made. A lack of signals does not mean disruption is impossible.
 - Step-free mode excludes mapped stairs and known station lift outages, but station access, unmapped obstacles and shelter are **not fully verified**. Do not treat this prototype as certified accessible navigation. Rachel is the primary validated persona.
-- The bundled transit extract covers rail and selected bus routes, not every bus in Singapore. OneMap provides broader live coverage. Planned road-work notices are informational without verified route geometry. Unstructured advisories are shown verbatim, not automatically turned into closures.
+- The bundled transit extract covers rail and selected bus routes, not every bus or address in Singapore. Place search covers the curated landmarks and named stops in that extract. Planned road-work notices are informational without verified route geometry. Unstructured advisories are shown verbatim, not automatically turned into closures.
 - Background alerts require opt-in browser permission and compatible installed-web-app support. Saved routines repeat daily and expire after 30 days. Delivery is not guaranteed when a device or platform restricts push.
 - Guest preferences and commutes remain local. Google account sync is optional, uses a server-verified Google identity and persists until the user deletes the account data. Signing out restores the separate guest space. Faux demo accounts never sync or register reminders.
 - Foreground browser location is opt-in. Demo mode uses a labelled deterministic position without requesting device permission; live failures remain visible and never become simulated data. Live tracking stops when the active journey closes.
@@ -90,4 +90,4 @@ This enables APIs, creates scoped service accounts, imports nonempty `.env` cred
 
 The organiser's submission instructions are available to the team at `C:\Users\Yaw Tia\Downloads\README.md`. **Do not prepare the submission write-up or submit this project yet:** the user has explicitly deferred that work pending human polishing. See [agent handoff](AGENTS.md). The referenced supplementary station polygons were not supplied or used; their CRS was not guessed. A physical-phone field test remains to be completed by the team.
 
-OSM-derived data: **© OpenStreetMap contributors**, [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Attribution remains visible on the map and in route details. No public OSM tiles or runtime Overpass queries are used.
+OSM-derived data: **© OpenStreetMap contributors**, [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Attribution remains visible on the map and in route details. No public OSM tiles or runtime Overpass queries are used. Online visual tiles are provided by **OneMap © contributors | Singapore Land Authority** with the required in-map attribution.

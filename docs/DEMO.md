@@ -6,12 +6,12 @@ Engineering QA notes only. The user has deferred the submission write-up and rec
 
 1. Open the HTTPS URL in a **real phone browser**. Confirm the mobile-only bottom navigation and one-column UI starts as Guest. Open **Options**, enable **Developer mode**, choose **Open demo presets**, then load Rachel.
 2. Explain the scope: Our Tampines Hub → One Raffles Place, leaves 07:40, desk by 08:45. These are real Singapore locations, using real OSM geometry.
-3. Select **A regular morning** in Demo experience. The route uses EWL with walking at both ends. Open Full details and explain that OSM fallback timings are estimates.
+3. Select **A regular morning** in Demo experience. The route uses EWL with walking at both ends. Point out the detailed online OneMap label and attribution. Open Full details and explain that timings come from the local OSM routing graph and are estimates.
 4. Select **EWL disruption**. Explicitly say: “This is an injected test disruption, not a claim that trains are disrupted now.” The original EWL path remains on the map, its affected portion is distinguished, and the DTL alternative appears. Read the actionable recommendation and arrival-buffer advice. Swipe between cards to compare walking/time/crowd trade-offs.
 5. Open **Network updates** to show the simulated affected stations, free-bus/shuttle mitigation and next-day maintenance. Select **Planned closure** to show closure avoidance before travel, not just a status label.
 6. Open the companion and read the consent text. Ask “Why this route? Is the risk a probability?” Show the response provider label. Explain the risk is rule-based. Ask “I avoid crowds and need sheltered walks”, review the proposal and apply it. Read a response aloud; do not claim microphone/speech-recognition support.
 7. Tap **Use simulated location** and confirm the origin, status and amber map marker all say the position is simulated. Start the journey and manually advance one step; the simulated marker follows the confirmed step. Explain that Live mode requests browser location only after a tap, foreground tracking stops when the journey closes, and steps never auto-complete. With the app previously loaded, turn on airplane mode and reload. Confirm the map/steps remain and the offline/stale warning is prominent. Turn airplane mode off afterwards.
-8. Switch **Data & sources → Live feeds**. Show real advisory messages, feed freshness, crowd readings and OneMap routing. A quiet live disruption feed is normal; do not relabel the synthetic event as live.
+8. Switch **Data & sources → Live feeds**. Show real advisory messages, feed freshness and crowd readings. Explain that OneMap supplies only the visual basemap while the route geometry and place search remain on the bundled OSM snapshot. A quiet live disruption feed is normal; do not relabel the synthetic event as live.
 
 ## Additional profiles
 

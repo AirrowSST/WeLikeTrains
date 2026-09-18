@@ -62,7 +62,7 @@ if ($EnableAccounts) {
         }
     }
 }
-$secretKeys = @('LTA_ACCOUNT_KEY','ONEMAP_EMAIL','ONEMAP_PASSWORD','ONEMAP_TOKEN','VERTEX_API_KEY','VAPID_PRIVATE_KEY','SESSION_SECRET')
+$secretKeys = @('LTA_ACCOUNT_KEY','VERTEX_API_KEY','VAPID_PRIVATE_KEY','SESSION_SECRET')
 $secretBindings = @()
 $privateDir = Join-Path $repoRoot '.local\deploy'
 New-Item -ItemType Directory -Force -Path $privateDir | Out-Null

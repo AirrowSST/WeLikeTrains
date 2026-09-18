@@ -3,7 +3,8 @@
 Primary journey: Rachel, Tampines to Raffles Place, 07:40 departure / 08:45 deadline. Additional profiles: Arjun (comfort/cycle), Mdm Lim (step-free / low walking speed).
 
 ## Scope
-- Mobile-only PWA: one column, bottom navigation and 480px maximum app width at every viewport; actual OSM graph routing and door-to-door legs; OneMap live itinerary adapter.
+
+- Mobile-only PWA: one column, bottom navigation and 480px maximum app width at every viewport; official OneMap tiles for detailed online display, a committed OSM fallback, and local named-stop search, graph routing and door-to-door legs.
 - Explicit foreground browser location can set the trip origin and display a device-position marker. Active live tracking stops with the journey dialog; manual step confirmation remains authoritative. Demo mode uses deterministic, visibly labelled simulated positions and never requests geolocation permission.
 - Original vs alternative route map, affected segments, text-labelled crowds, uncertainty.
 - Live LTA adapters with canonical lines, independent health/freshness and cached weather; labelled deterministic replay.
@@ -15,20 +16,23 @@ Primary journey: Rachel, Tampines to Raffles Place, 07:40 departure / 08:45 dead
 - Requirements matrix, assumptions, data licences, demo and clean-machine instructions.
 
 ## Constraints discovered
-The remote was initially empty. The organiser's referenced PS2/data and PS2/references remain absent. Submission instructions were subsequently supplied at `C:\Users\Yaw Tia\Downloads\README.md` for future context only; the user explicitly deferred write-up/submission pending human polishing. Google Cloud CLI, authenticated access, Secret Manager integrations and Cloud Run deployment are now configured. OSM data is fetched during explicit maintenance and bundled; no runtime public tile/Overpass dependency.
 
-## Engineering verification — 2026-09-18
+The remote was initially empty. The organiser's referenced PS2/data and PS2/references remain absent. Submission instructions were subsequently supplied at `C:\Users\Yaw Tia\Downloads\README.md` for future context only; the user explicitly deferred write-up/submission pending human polishing. Google Cloud CLI, authenticated access, Secret Manager integrations and Cloud Run deployment are now configured. OSM data is fetched during explicit maintenance and bundled; OneMap is the only runtime public map-tile dependency and the app does not query Overpass at runtime.
 
+## Engineering verification — 2026-09-19
+
+- Online map display uses official OneMap Default tiles across the documented whole-Singapore bounds. The committed OSM vectors remain a visible offline/failure fallback. Place search and route computation use only committed OSM-derived files; OneMap is not used for geocoding, authentication or itineraries. Search coverage is deliberately limited to curated places and named stops in the extract.
 - Pedestrian routing now indexes every substantial connected component in the bundled OSM extract, while matching both ends of a walking leg to the same component. This restores searched western journeys such as NTU to Raffles Place without treating small isolated indoor paths as routable coverage.
 - The product name shown in the interface, install metadata, notifications and companion identity is now Wayce. Public Sans is bundled locally as the single interface typeface, including its italic variable font and OFL licence.
-- The mobile journey sheet below the map can now be dragged between expanded, half-open and collapsed positions. Its visible handle also supports keyboard snapping with Arrow Up/Down and Home/End.
+- The mobile journey sheet below the map can be dragged between expanded, half-open and collapsed positions from either the grab handle or the full Navigate header, which gives touch users a reliable target. The preferences button remains independently clickable, and the visible handle supports keyboard snapping with Arrow Up/Down and Home/End.
+- The Navigate form removes decorative origin, destination, time, location and action icons, uses title-case “Leave” and “Arrive” labels with quieter typography, and omits the redundant origin/destination swap action. Preferences remains available as a labelled text control.
 - The mobile journey map now distinguishes walking, bus, rail and cycling geometry with mode icons, labels and a compact legend; selected endpoints and a small set of Singapore landmarks provide orientation. Weather-affected walking areas use clearly labelled, approximate rain highlights rather than claiming radar-level precision.
-- Official OneMap tiles now provide complete online road, building and place context across Singapore. The committed OSM vectors remain underneath as an offline fallback, and reduced detail is visibly labelled if OneMap tiles fail.
+- The detailed OneMap layer is visibly labelled as online data and carries the required SLA attribution. The compact committed OSM vectors remain underneath it and are visibly labelled when used as the offline fallback.
 - Production build and TypeScript pass.
 - 31 unit tests pass, including deployment guardrails, real OSM Rachel/Arjun/Mdm Lim routes, DTL crowd-code join, location handling, session tamper/expiry handling, demo/account validation boundaries and server validation of chat tool calls.
-- The previous 20 Chromium browser checks pass across phone and wide-screen mobile-only UI when run as separate projects, including the resizable journey sheet, validated chat route cards, guest/faux-account isolation and restoration, custom demo weather, foreground/simulated location, 320px no-overflow, main journey/chat/preference/save flows, axe and large-text/offline reload. A new targeted browser regression also passes for preserving the real guest modification timestamp during Google sign-in.
+- Browser coverage stubs OneMap tiles so tests remain deterministic and no live provider is required. It separately checks the detailed online state and bundled offline fallback alongside local search/routing, account/demo isolation, the resizable one-column layout, chat route cards, foreground/simulated location, 320px no-overflow, axe and offline reload. The previous 20 Chromium checks passed when run as separate projects; a targeted Google sign-in timestamp regression also passed.
 - Local evaluation: nine synthetic journeys plus six preference cases. Two routing checks currently fail because every candidate in the Rachel/rain and Arjun/rain fixtures is marked blocked for unsafe exposed walking; the preference cases pass. Previously recorded cloud evaluation used Vertex AI for all nine journey cases. `docs/evaluation-*.json` contain exact outputs, not a general AI accuracy claim. Model-generated prose still needs human review.
-- Hosted Cloud TTS returned MP3; real LTA/OneMap integrations were exercised. Scheduler completed successfully; anonymous reminder calls return 401 and invalid plan bodies return 400.
+- Hosted Cloud TTS returned MP3 and the real LTA integration was exercised. Scheduler completed successfully; anonymous reminder calls return 401 and invalid plan bodies return 400.
 - Local Vertex function calling was exercised with a combined crowd, walking-limit and route-choice request. Preference arguments and route IDs are validated on the server, and changes remain proposals until the user confirms them.
 - Chat route-list requests use `display_routes`; the server accepts only supplied, unblocked route IDs and the client renders timing, arrival, legs, walking, transfers and crowd information from its computed plan.
 - Physical-phone, spoken-audio listening, lock-screen push delivery and walked-route verification remain human QA tasks. Accessibility route certification, trained disruption probabilities and final submission materials are not claimed.

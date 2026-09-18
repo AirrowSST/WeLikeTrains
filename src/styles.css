@@ -404,12 +404,7 @@ input {
   padding: 1px 13px;
 }
 .place-inputs:before {
-  content: "";
-  border-left: 1px dashed #b9c5b3;
-  position: absolute;
-  top: 45px;
-  left: 23px;
-  height: 39px;
+  content: none;
 }
 .place-field {
   display: flex;
@@ -962,11 +957,8 @@ input {
 .journey-map {
   height: 100%;
   width: 100%;
-  background: #e7ece5 !important;
+  background: #eef1eb !important;
   z-index: 1;
-}
-.onemap-tiles {
-  filter: saturate(0.68) brightness(1.04) contrast(0.9);
 }
 .leaflet-container {
   font-family: inherit !important;
@@ -1270,7 +1262,7 @@ input {
   .app-shell .arrival,
   .app-shell .place-field small,
   .app-shell .recommendation p {
-    color: #52665cbf !important;
+    color: #52665c !important;
     font-weight: 400;
   }
   .app-shell h1,
@@ -2287,6 +2279,10 @@ input {
 .feed-status.demo {
   background: #f6f1e2;
   color: #a79663;
+}
+.feed-status.local {
+  background: #e7f1ec;
+  color: #39735a;
 }
 .feed-status.unavailable,
 .feed-status.stale {
@@ -4121,15 +4117,15 @@ body {
     min-height: 54px;
     margin-top: 12px;
     border-radius: 15px;
-    border: 1px solid #afd0be;
-    background: #cfe6d8;
-    color: #1f503c;
+    border: 1px solid #007536;
+    background: #007f3a;
+    color: #fff;
     box-shadow: 0 7px 15px #5a8f7324;
     font-size: 16px;
     font-weight: 600;
   }
   .plan-button:hover {
-    background: #c1ddcc;
+    background: #006d32;
   }
   .recommendation {
     order: 2;
@@ -4180,7 +4176,7 @@ body {
     padding-top: 14px;
   }
   .recommended-label {
-    color: #009b46;
+    color: #006c32;
   }
   .route-summary .duration {
     color: #142c24;
@@ -4481,7 +4477,7 @@ body {
   margin-top: 0;
   padding: 9px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 30px minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch;
   gap: 5px;
   border-top: 1px solid #dce8df;
@@ -4571,9 +4567,11 @@ body {
 }
 .time-picker-card .time-label {
   color: #2c624a;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.2;
   text-align: center;
 }
 .time-fields .time-picker-card > .time-picker-heading {
@@ -4816,6 +4814,34 @@ body {
   outline: 3px solid #a9cdb9;
   outline-offset: -3px;
 }
+.planner-card .sheet-drag-surface {
+  min-height: 42px;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+.planner-card .sheet-drag-surface .icon-button {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.planner-preferences-trigger {
+  min-height: 44px;
+  padding: 8px 4px;
+  border: 0;
+  background: transparent;
+  color: #42684b;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.planner-preferences-trigger:hover,
+.planner-preferences-trigger:focus-visible {
+  color: #006c32;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .planner-card .section-title {
   margin: 4px 0 10px;
 }
@@ -4838,7 +4864,11 @@ body {
   height: 33px;
   margin: 4px 0 0;
 }
-.journey-layout.sheet-collapsed .planner-card .section-title .icon-button {
+.journey-layout.sheet-collapsed .planner-card .section-title .icon-button,
+.journey-layout.sheet-collapsed
+  .planner-card
+  .section-title
+  .planner-preferences-trigger {
   display: none;
 }
 .place-inputs {
@@ -4854,7 +4884,7 @@ body {
   border-bottom: 1px solid #e6eee8;
 }
 .place-field > div {
-  padding-inline: 52px;
+  padding-inline: 44px;
 }
 .place-field label {
   right: 12px;
@@ -4878,7 +4908,9 @@ body {
   min-height: 54px;
   margin-top: 12px;
   border-radius: 15px;
-  background: #00b14f;
+  border-color: #007536;
+  background: #007f3a;
+  color: #fff;
   box-shadow: 0 7px 15px #00a84b2e;
   font-size: 17px;
 }
@@ -4911,7 +4943,7 @@ body {
   box-shadow: inset 0 0 0 1px #00b14f;
 }
 .recommended-label {
-  color: #009b46;
+  color: #006c32;
 }
 .route-summary .duration {
   color: #142c24;
