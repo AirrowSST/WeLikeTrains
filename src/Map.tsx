@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
-import { Layers, LocateFixed, Navigation } from "lucide-react";
+import { Layers, LocateFixed } from "lucide-react";
 import type { Journey, PlanResponse } from "../shared/types";
 import type { Mode } from "../shared/types";
 import { lineColors } from "../shared/catalog";
@@ -59,6 +59,7 @@ export default function JourneyMap({
   const map = useRef<L.Map | null>(null);
   const routes = useRef<L.LayerGroup | null>(null);
   const position = useRef<L.LayerGroup | null>(null);
+  const centeredOnLocation = useRef(false);
   const [mapError, setMapError] = useState(false);
   const [mapDetail, setMapDetail] = useState<
     "loading" | "detailed" | "offline"
@@ -425,11 +426,19 @@ export default function JourneyMap({
     }
   }, [plan, selected]);
   useEffect(() => {
+    const m = map.current;
     const group = position.current;
-    if (!group) return;
+    if (!m || !group) return;
     group.clearLayers();
-    if (!location) return;
+    if (!location) {
+      centeredOnLocation.current = false;
+      return;
+    }
     const coord: [number, number] = [location.lat, location.lon];
+    if (!centeredOnLocation.current) {
+      m.setView(coord, 15, { animate: false });
+      centeredOnLocation.current = true;
+    }
     if (location.source === "device" && location.accuracy > 0)
       L.circle(coord, {
         radius: location.accuracy,
@@ -480,9 +489,6 @@ export default function JourneyMap({
         aria-label={`${mapDetail === "detailed" ? "OneMap" : "Bundled OpenStreetMap"} showing ${comparing ? "the original route, its affected portion and the revised route" : "your selected route and walking legs"}${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
       />
       <div className="map-top">
-        <span className="map-label">
-          <Navigation size={14} /> Journey map
-        </span>
         <button
           className="icon-button"
           onClick={recenter}

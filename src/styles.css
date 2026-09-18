@@ -982,7 +982,7 @@ input {
   right: 16px;
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 6px;
   pointer-events: none;
   z-index: 450;
