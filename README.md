@@ -48,6 +48,18 @@ npm run evaluate
 
 See [GCP setup and operations](docs/GCP.md). The provisioned project is `qwiklabs-gcp-02-7df98c2d8335`, Cloud Run region `asia-southeast1`.
 
+Deployments are deliberately manual. GitHub Actions workflows have been removed, so no remote workflow verifies or deploys a push or merge. The configured local pre-push hook still runs verification, but it never deploys. When a deployment is explicitly requested, run the guarded local code-deployment script from a clean `main` checkout on the authenticated development device:
+
+```powershell
+pwsh -File scripts/deploy-code.ps1
+```
+
+The script runs the complete local verification suite, checks the Cloud Build upload set for protected files, deploys the source with the existing service identities, and verifies the resulting `/api/health` endpoint. It does not reimport or rotate secrets.
+
+On the original development device, the personal Codex skill `$weliketrains-deploy` wraps this documented workflow for chat-requested deployments. It is a local convenience, not a repository or clean-clone requirement; `scripts/deploy-code.ps1` and `docs/GCP.md` remain authoritative.
+
+The script below is only for first-time infrastructure setup:
+
 ```powershell
 gcloud auth login
 pwsh -File scripts/deploy-gcp.ps1 -ProjectId YOUR_PROJECT_ID -EnableReminders

@@ -10,7 +10,7 @@ Primary journey: Rachel, Tampines to Raffles Place, 07:40 departure / 08:45 dead
 - Planned events, lift outages, rain and crowd forecasts affect route ranking.
 - Grounded Vertex AI assistant with bounded function calls for preference proposals, supplied-route recommendations and validated in-chat route cards, recent conversational context, speech, transparent disruption-risk estimation and reproducible evaluation.
 - Local routine/journey persistence, opt-in background web push with Firestore + Cloud Scheduler.
-- Cloud Run, Secret Manager, least-privilege service accounts, deployment script.
+- Cloud Run, Secret Manager, least-privilege service accounts, first-time infrastructure setup and guarded manual code deployment from the authenticated development device.
 - Requirements matrix, assumptions, data licences, demo and clean-machine instructions.
 
 ## Constraints discovered
@@ -24,14 +24,23 @@ The remote was initially empty. The organiser's referenced PS2/data and PS2/refe
 - The mobile journey map now distinguishes walking, bus, rail and cycling geometry with mode icons, labels and a compact legend; selected endpoints and a small set of Singapore landmarks provide orientation. Weather-affected walking areas use clearly labelled, approximate rain highlights rather than claiming radar-level precision.
 - Official OneMap tiles now provide complete online road, building and place context across Singapore. The committed OSM vectors remain underneath as an offline fallback, and reduced detail is visibly labelled if OneMap tiles fail.
 - Production build and TypeScript pass.
-- 20 unit tests pass, including real OSM Rachel/Arjun/Mdm Lim routes, DTL crowd-code join, location handling and server validation of chat tool calls.
-- All 14 Chromium browser checks pass across phone and wide-screen mobile-only UI when run as separate projects, including validated chat route cards, foreground/simulated location, 320px no-overflow, main journey/chat/preference/save flows, axe and large-text/offline reload.
+- 26 unit tests pass, including deployment guardrails, real OSM Rachel/Arjun/Mdm Lim routes, DTL crowd-code join, location handling and server validation of chat tool calls.
+- All 18 Chromium browser checks pass across phone and wide-screen mobile-only UI when run as separate projects, including the resizable journey sheet, validated chat route cards, foreground/simulated location, 320px no-overflow, main journey/chat/preference/save flows, axe and large-text/offline reload.
 - Local evaluation: nine synthetic journeys plus six preference cases. Two routing checks currently fail because every candidate in the Rachel/rain and Arjun/rain fixtures is marked blocked for unsafe exposed walking; the preference cases pass. Previously recorded cloud evaluation used Vertex AI for all nine journey cases. `docs/evaluation-*.json` contain exact outputs, not a general AI accuracy claim. Model-generated prose still needs human review.
 - Hosted Cloud TTS returned MP3; real LTA/OneMap integrations were exercised. Scheduler completed successfully; anonymous reminder calls return 401 and invalid plan bodies return 400.
 - Local Vertex function calling was exercised with a combined crowd, walking-limit and route-choice request. Preference arguments and route IDs are validated on the server, and changes remain proposals until the user confirms them.
 - Chat route-list requests use `display_routes`; the server accepts only supplied, unblocked route IDs and the client renders timing, arrival, legs, walking, transfers and crowd information from its computed plan.
 - Physical-phone, spoken-audio listening, lock-screen push delivery and walked-route verification remain human QA tasks. Accessibility route certification, trained disruption probabilities and final submission materials are not claimed.
 
+## Deployment status — 2026-09-19
+
+- The user chose manual-only deployment from the authenticated development device. Both GitHub Actions workflows were removed; pushes and merges no longer start remote checks or deploy production. The local pre-push verification hook remains, and deployment requires a new explicit request in chat.
+- `scripts/deploy-code.ps1` is the guarded code-update path: clean `main` source by default, full local verification, protected-file upload inspection, Cloud Run source deployment, ready-revision inspection and application health check.
+- The device-local `$weliketrains-deploy` Codex skill records the same explicit-request workflow, failure diagnosis and post-deployment checks. It delegates routine mutation to the repository script and is optional personal tooling rather than a clean-clone dependency.
+- The container build now skips lifecycle scripts during dependency installation because the package `prepare` hook configures workstation Git hooks and cannot run inside the intentional Git-free build context. Temporary `gha-creds-*.json` files and the unrelated root `temp.txt` are excluded from Cloud Build and Docker contexts.
+- The former GitHub Workload Identity resources may remain unused in the temporary GCP project. They were not torn down as part of this code change.
+- The manual path was exercised after an explicit user request using the dirty-tree override. Regional Cloud Build `12683414-b6bb-41ce-a1af-54ea2f6f8472` succeeded, Cloud Run revision `weliketrains-00011-qzt` received 100% of traffic, `/api/health` returned `ok`, and the canonical public URL returned HTTP 200 with the Wayce page title. This proves the manual deployment path but not repository reproducibility until the deployed local changes are committed.
+
 ## Next session
 
-Read `AGENTS.md`. Human polishing is pending. Do not restart the app architecture, introduce a desktop dashboard or prepare the deferred write-up. Google model access can change: configured Gemini 3.5 returned 429, while Gemini 2.5 Flash worked in this project; the model remains environment-configurable.
+Read `AGENTS.md`. Human polishing is pending. Do not restart the app architecture, introduce a desktop dashboard or prepare the deferred write-up. Do not recreate GitHub Actions or deploy without an explicit user request; use the guarded local deployment script when asked. Google model access can change: configured Gemini 3.5 returned 429, while Gemini 2.5 Flash worked in this project; the model remains environment-configurable.

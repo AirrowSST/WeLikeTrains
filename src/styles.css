@@ -4648,8 +4648,7 @@ body {
   order: 7;
 }
 
-/* Final mobile composition overrides (kept last so legacy responsive rules cannot undo them). */
-@media (max-width: 700px) {
+/* Final phone composition overrides (kept last so wide viewports retain the same mobile UI). */
   .app-shell main { padding: 0 0 calc(86px + env(safe-area-inset-bottom)); }
   .journey-layout { display: flex; flex-direction: column; gap: 0; }
   .planner-column, .journey-content { display: contents; }
@@ -4681,7 +4680,6 @@ body {
   .route-card.selected { border-color: #00b14f; border-radius: 14px; box-shadow: inset 0 0 0 1px #00b14f; }
   .recommended-label { color: #009b46; }
   .route-summary .duration { color: #142c24; font-size: 28px; }
-}
 .recommendation-icon {
   width: 36px;
   min-width: 36px;

@@ -30,13 +30,31 @@ The script explicitly selects the supplied project rather than changing the user
 
 Cloud Run’s attached identity handles Google authentication automatically. For optional **local** Vertex/TTS calls, use `gcloud auth application-default login` and set `ENABLE_VERTEX_LOCAL=true`, `GOOGLE_CLOUD_PROJECT`, and the relevant feature switches. A plain `gcloud auth login` alone is not local application-default authentication. Local demo mode needs neither.
 
+## Manual deployments from the development device
+
+By user decision on 2026-09-19, this repository has no GitHub Actions workflows and no push-to-deploy behavior. No remote workflow verifies a push or changes production; the configured local pre-push hook may still run verification, but it never deploys. Deploy only from the authenticated development device after the user explicitly asks for it in chat:
+
+```powershell
+pwsh -File scripts/deploy-code.ps1
+```
+
+The script refuses non-`main` branches and uncommitted changes by default, runs `npm run verify`, checks the exact Cloud Build upload list for protected credential paths, deploys with the existing runtime and builder identities, then reads the ready revision and checks `/api/health`. `-AllowNonMain` and `-AllowDirty` are explicit escape hatches and should be used only when the user knowingly requests deployment of that source state.
+
+The original development device also has a personal Codex skill at `C:\Users\Yaw Tia\.codex\skills\weliketrains-deploy` (`$weliketrains-deploy`). It preserves the explicit-request rule, invokes the repository script, diagnoses regional Cloud Build failures, prevents automatic paid retries, verifies traffic and the canonical URL, and records results in `docs/IMPLEMENTATION.md`. The skill is not committed and is not required on another machine; this document and the repository script are the portable workflow.
+
+The container build uses `npm ci --ignore-scripts` because the repository's `prepare` lifecycle script configures workstation Git hooks while the intentional Cloud Build context has neither Git nor `.git`. `.gcloudignore` and `.dockerignore` also exclude `gha-creds-*.json` and the unrelated `temp.txt` from uploads and Docker contexts.
+
+Allow roughly **5–7 minutes** for verification, build and rollout under recent conditions. This is an operational estimate, not a guarantee. A deployment is complete only after the script reports the ready revision and successful application health check.
+
+The former GitHub Workload Identity provider and deployer service account may still exist in the temporary GCP project but are unused. They were not deleted because IAM cleanup is a separate infrastructure change; do not reuse them as an implicit deployment path.
+
 ## Deploy code updates without reimporting secrets
 
 ```powershell
 gcloud run deploy weliketrains --source . --project YOUR_PROJECT_ID --region asia-southeast1 --service-account weliketrains-runtime@YOUR_PROJECT_ID.iam.gserviceaccount.com --build-service-account projects/YOUR_PROJECT_ID/serviceAccounts/weliketrains-builder@YOUR_PROJECT_ID.iam.gserviceaccount.com
 ```
 
-Existing environment/secret bindings are retained. `.gcloudignore` and `.dockerignore` exclude local credentials, dependencies, caches and build outputs from the source upload. Do not upload `.env` or the SDK directory.
+Existing environment/secret bindings are retained. `.gcloudignore` and `.dockerignore` exclude known local credentials, dependencies, caches, build outputs, temporary GitHub credential files and the unrelated root `temp.txt`. Do not upload `.env`, the SDK directory, authentication files or unrelated temporary files. Prefer `scripts/deploy-code.ps1` because it verifies the upload list before invoking this command.
 
 ## Models and connection health
 

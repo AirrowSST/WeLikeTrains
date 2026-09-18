@@ -1,7 +1,9 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# The package prepare hook configures local Git hooks. Cloud builds contain
+# neither Git nor .git, so dependency installation must skip workstation hooks.
+RUN npm ci --ignore-scripts
 COPY . .
 RUN npm run build
 

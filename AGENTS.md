@@ -8,6 +8,7 @@ This repository is intended for repeated human/AI collaboration. Treat this file
 - Rachel (Tampines → Raffles Place, 07:40 / 08:45) is primary. Keep Arjun and Mdm Lim selectable.
 - User approved foreground location services on 2026-09-18. Device location requires an explicit user action, live tracking runs only while the active journey dialog is open, journey progress stays manual, and demo mode uses clearly labelled deterministic simulated locations. Do not add background location tracking or silently substitute demo coordinates after a live failure.
 - App hosting/backend/AI are on Google Cloud project `qwiklabs-gcp-02-7df98c2d8335`, Cloud Run `weliketrains`, region `asia-southeast1`.
+- User decided on 2026-09-19 that all GitHub Actions workflows are removed. Verification and production deployment are manual only. Deploy from this authenticated device only after an explicit request in chat, using `scripts/deploy-code.ps1`; never infer deployment authority from a push, commit or completed test run. The device-local Codex skill `$weliketrains-deploy` records this workflow and its authorization boundary, but the repository script and docs remain the portable sources of truth.
 - User explicitly said on 2026-09-18: **do not do the submission write-up now; we are not about to submit; human polishing is pending**. Do not infer submission authority from the reference documents. Existing demo/checklist and requirements documents are engineering notes, not a final submission.
 - Problem brief: `C:\Users\Yaw Tia\Downloads\PS2_README (1).md`.
 - Organiser submission context, supplied for future agents: `C:\Users\Yaw Tia\Downloads\README.md`. Read it when relevant, but do not prepare/write/submit deliverables unless the user later asks.
@@ -26,7 +27,7 @@ This repository is intended for repeated human/AI collaboration. Treat this file
 
 `npm run build`, `npm test`, `npm run test:e2e`, `npm run evaluate`. Build includes TypeScript. Browser tests expect compiled assets and start/reuse port 8080. Development UI is 5173.
 
-See `docs/GCP.md` for deployment. Code-only redeploy retains secret bindings. This is a temporary Qwiklabs project; do not promise permanent hosting. Git remote is `https://github.com/AirrowSST/WeLikeTrains`.
+See `docs/GCP.md` for deployment. Code-only redeploy retains secret bindings. Deployment is manual from this authenticated device and requires an explicit user request; Git pushes never deploy. The configured local pre-push hook still runs verification, but no remote GitHub workflow does. This is a temporary Qwiklabs project; do not promise permanent hosting. Git remote is `https://github.com/AirrowSST/WeLikeTrains`.
 
 ## Default development cycle
 
@@ -55,7 +56,7 @@ See `docs/GCP.md` for deployment. Code-only redeploy retains secret bindings. Th
 | Consented reminders, OIDC and retention | `server/notifications.ts` |
 | Offline assets / notification handling | `public/sw.js` |
 | OSM rebuild and provenance | `scripts/import-osm.mjs`, `data/OSM-PROVENANCE.json` |
-| Cloud infrastructure setup | `scripts/deploy-gcp.ps1`, `Dockerfile`, `docs/GCP.md` |
+| Cloud infrastructure setup and manual code deployment | `scripts/deploy-gcp.ps1`, `scripts/deploy-code.ps1`, `Dockerfile`, `docs/GCP.md` |
 
 ## AI and data guardrails
 
@@ -71,6 +72,6 @@ See `docs/GCP.md` for deployment. Code-only redeploy retains secret bindings. Th
 
 ## Current handoff status
 
-The mobile app is deployed; human product/visual polishing is pending. Latest engineering checks: build/typecheck, 20 unit tests and all 14 browser checks pass when browser projects are run separately. The local synthetic evaluation still reports two routing failures because every candidate in the Rachel/rain and Arjun/rain fixtures is marked blocked for unsafe exposed walking; do not report zero evaluation failures until that planner/evaluation contract is resolved. Automated tests include unit routing/feed checks, main phone flows, validated chat route-card display, foreground/simulated location, narrow-width layout, large text/offline reload, and axe checks. Physical-phone, screen-reader and walked-route checks are not signed off. Submission write-up, demo recording and submission itself are explicitly deferred.
+The mobile app is deployed; human product/visual polishing is pending. Latest engineering checks: build/typecheck, 26 unit tests and all 18 browser checks pass when browser projects are run separately. The local synthetic evaluation still reports two routing failures because every candidate in the Rachel/rain and Arjun/rain fixtures is marked blocked for unsafe exposed walking; do not report zero evaluation failures until that planner/evaluation contract is resolved. Automated tests include deployment guardrails, unit routing/feed checks, main phone flows, validated chat route-card display, foreground/simulated location, narrow-width layout, resizable journey sheet, large text/offline reload, and axe checks. Physical-phone, screen-reader and walked-route checks are not signed off. Submission write-up, demo recording and submission itself are explicitly deferred.
 
 Use local no-cost tests first. Optional cloud checks consume team project credits; do not run them repeatedly as a substitute for deterministic regression tests. Avoid infrastructure teardown or credential rotation unless specifically requested.
