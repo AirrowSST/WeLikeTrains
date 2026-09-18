@@ -482,8 +482,8 @@ export default function JourneyMap({
       icon: L.divIcon({
         className: `current-location-marker ${location.source}`,
         html: "<span></span>",
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
       }),
     })
       .bindTooltip(

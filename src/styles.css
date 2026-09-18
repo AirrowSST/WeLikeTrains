@@ -1182,6 +1182,7 @@ input {
 }
 .current-location-marker {
   position: relative;
+  box-sizing: border-box;
   width: 24px;
   height: 24px;
   border-radius: 50%;
