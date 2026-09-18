@@ -1,6 +1,18 @@
 export type Coord = [number, number]; // latitude, longitude; OSM WGS84
 export type Crowd = "low" | "moderate" | "high" | "unknown";
 export type Mode = "walk" | "rail" | "bus" | "cycle";
+export type SurfaceStatus = "valid" | "limited" | "invalid";
+export type SegmentIssue =
+  | "shelter"
+  | "rain"
+  | "heat"
+  | "flood"
+  | "road-closure"
+  | "accident"
+  | "congestion"
+  | "crowd"
+  | "disruption"
+  | "bridging-bus";
 export type Scenario =
   "normal" | "disruption" | "rain" | "crowded" | "maintenance" | "closure";
 export type Persona = "rachel" | "arjun" | "lim";
@@ -44,6 +56,7 @@ export interface Segment {
   id: string;
   mode: Mode;
   line: string;
+  direction?: string;
   from: string;
   to: string;
   minutes: number;
@@ -60,6 +73,7 @@ export interface Segment {
   waitMinutes?: number;
   hops?: { from: string; to: string; codes: string[]; geometry: Coord[] }[];
   affectedGeometry?: Coord[][];
+  issues?: SegmentIssue[];
 }
 export interface Journey {
   id: string;
@@ -87,13 +101,34 @@ export interface Notice {
   stations: string[];
   stationNames?: string[];
   severity: "info" | "warning" | "critical";
-  kind: "disruption" | "planned" | "lift" | "weather" | "crowd" | "advisory";
+  kind:
+    | "disruption"
+    | "planned"
+    | "lift"
+    | "weather"
+    | "crowd"
+    | "advisory"
+    | "flood"
+    | "traffic"
+    | "bridging";
   startsAt: string;
   endsAt?: string;
   delayMinutes: number;
   freeBus?: string;
   shuttle?: string;
   direction?: string;
+  location?: Coord;
+  roadName?: string;
+  source: string;
+}
+export interface TrafficReading {
+  id: string;
+  kind: "incident" | "congestion" | "expressway" | "road-closure";
+  severity: "moderate" | "high" | "critical";
+  description: string;
+  roadName?: string;
+  location?: Coord;
+  delayMinutes: number;
   source: string;
 }
 export interface FeedStatus {
@@ -122,7 +157,15 @@ export interface Conditions {
   notices: Notice[];
   crowd: CrowdReading[];
   buses: BusArrival[];
-  weather: { forecast: string; rain: boolean; temperature?: number };
+  weather: {
+    forecast: string;
+    rain: boolean;
+    rainfallMm?: number;
+    temperature?: number;
+    walkStatus: SurfaceStatus;
+    cycleStatus: SurfaceStatus;
+  };
+  traffic: TrafficReading[];
   feeds: FeedStatus[];
   updatedAt: string;
   mode: "demo" | "live";

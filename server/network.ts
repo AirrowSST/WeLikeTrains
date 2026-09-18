@@ -358,8 +358,11 @@ function calculateWalkingPath(
         (cycle && !e.cycle)
       )
         continue;
+      // Weather and accessibility routing depend on this being a meaningful
+      // preference: a mapped covered route can be longer, but should win over
+      // a short exposed cut-through when shelter is requested.
       const next =
-        current + e.distance * (preferences.sheltered && !e.covered ? 1.12 : 1);
+        current + e.distance * (preferences.sheltered && !e.covered ? 1.55 : 1);
       if (next < (costs.get(e.to) ?? Infinity)) {
         costs.set(e.to, next);
         prev.set(e.to, { node: id, edge: e });

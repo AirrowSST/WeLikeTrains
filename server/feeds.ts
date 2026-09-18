@@ -6,6 +6,7 @@ import type {
   Notice,
   PlanRequest,
   Scenario,
+  TrafficReading,
 } from "../shared/types";
 import { canonicalLine, crowdValue } from "../shared/catalog";
 
@@ -153,6 +154,103 @@ export function parseBuses(raw: Obj, stop: string): BusArrival[] {
         : [],
     ),
   );
+}
+const numberAt = (value: unknown) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+};
+const locationOf = (row: Obj): [number, number] | undefined => {
+  const lat = numberAt(row.Latitude ?? row.latitude ?? row.Lat ?? row.lat);
+  const lon = numberAt(
+    row.Longitude ?? row.longitude ?? row.Long ?? row.lon ?? row.Lng,
+  );
+  return lat !== undefined && lon !== undefined ? [lat, lon] : undefined;
+};
+const roadNameOf = (row: Obj) =>
+  String(row.RoadName ?? row.Road ?? row.Name ?? row.Expressway ?? "").trim();
+export function parseTraffic(raw: Obj): TrafficReading[] {
+  const rows = toList(raw.value ?? raw);
+  return rows.slice(0, 120).map((row, index) => {
+    const text = String(
+      row.Message ??
+        row.Description ??
+        row.Incident ??
+        row.Type ??
+        "Traffic update",
+    );
+    const type = String(row.Type ?? row.IncidentType ?? "").toLowerCase();
+    const closure = /block|closure|closed|diversion/.test(
+      type + text.toLowerCase(),
+    );
+    const accident = /accident|breakdown|collision/.test(
+      type + text.toLowerCase(),
+    );
+    return {
+      id: `traffic-${index}-${roadNameOf(row) || type || "road"}`,
+      kind: closure ? "road-closure" : accident ? "incident" : "congestion",
+      severity: closure ? "critical" : accident ? "high" : "moderate",
+      description: text,
+      roadName: roadNameOf(row) || undefined,
+      location: locationOf(row),
+      delayMinutes: closure ? 12 : accident ? 8 : 4,
+      source: "LTA DataMall traffic feed",
+    };
+  });
+}
+export function parseFloodAlerts(
+  raw: Obj,
+  now = new Date().toISOString(),
+): Notice[] {
+  return toList(raw.value ?? raw)
+    .slice(0, 80)
+    .map((row, index) => {
+      const location = locationOf(row);
+      const place = String(
+        row.Location ?? row.RoadName ?? row.Description ?? "Reported location",
+      );
+      return {
+        id: `pub-flood-${index}-${place}`,
+        title: `Flood alert: ${place}`,
+        description: String(
+          row.Message ??
+            row.Description ??
+            "Avoid the affected road and nearby walkways.",
+        ),
+        stations: [],
+        severity: "critical" as const,
+        kind: "flood" as const,
+        startsAt: row.StartDate ?? row.StartTime ?? now,
+        endsAt: row.EndDate ?? row.EndTime,
+        delayMinutes: 0,
+        location,
+        roadName: roadNameOf(row) || undefined,
+        source: "PUB Flood Alerts via LTA DataMall",
+      };
+    });
+}
+function nearestReading(raw: Obj, origin: { lat: number; lon: number }) {
+  const candidates: { value: number; lat?: number; lon?: number }[] = [];
+  const visit = (value: any) => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) return value.forEach(visit);
+    const reading = numberAt(value.value ?? value.Value ?? value.reading);
+    const point = locationOf(value);
+    if (reading !== undefined)
+      candidates.push({ value: reading, lat: point?.[0], lon: point?.[1] });
+    Object.values(value).forEach(visit);
+  };
+  visit(raw?.data?.records ?? raw?.data?.items ?? raw);
+  return candidates.sort(
+    (a, b) =>
+      Math.hypot(
+        (a.lat ?? origin.lat) - origin.lat,
+        (a.lon ?? origin.lon) - origin.lon,
+      ) -
+      Math.hypot(
+        (b.lat ?? origin.lat) - origin.lat,
+        (b.lon ?? origin.lon) - origin.lon,
+      ),
+  )[0]?.value;
 }
 export function demoConditions(
   scenario: Scenario,
@@ -305,8 +403,12 @@ export function demoConditions(
       forecast:
         scenario === "rain" ? "Heavy thundery showers" : "Partly cloudy",
       rain: scenario === "rain",
+      rainfallMm: scenario === "rain" ? 8 : 0,
       temperature: 29,
+      walkStatus: scenario === "rain" ? "invalid" : "valid",
+      cycleStatus: scenario === "rain" ? "invalid" : "valid",
     },
+    traffic: [],
     feeds: [
       {
         name: "LTA service alerts",
@@ -354,7 +456,13 @@ export async function getConditions(
     notices: [],
     crowd: [],
     buses: [],
-    weather: { forecast: "Weather unavailable", rain: false },
+    weather: {
+      forecast: "Weather unavailable",
+      rain: false,
+      walkStatus: "valid",
+      cycleStatus: "valid",
+    },
+    traffic: [],
     feeds: [],
     updatedAt: new Date().toISOString(),
     mode: "live",
@@ -475,6 +583,24 @@ export async function getConditions(
           source: "LTA RoadWorks; informational until geospatially matched",
         });
     }),
+    lta("FloodAlerts", "PUB flood alerts", 60000, (r) =>
+      conditions.notices.push(...parseFloodAlerts(r, conditions.updatedAt)),
+    ),
+    lta("TrafficIncidents", "Traffic incidents", 60000, (r) =>
+      conditions.traffic.push(...parseTraffic(r)),
+    ),
+    lta("TrafficSpeedBands", "Traffic speeds", 60000, (r) =>
+      conditions.traffic.push(...parseTraffic(r)),
+    ),
+    lta("EstimatedTravelTimes", "Expressway travel times", 60000, (r) =>
+      conditions.traffic.push(
+        ...parseTraffic(r).map((reading) => ({
+          ...reading,
+          kind: "expressway" as const,
+          delayMinutes: Math.max(reading.delayMinutes, 5),
+        })),
+      ),
+    ),
     (async () => {
       try {
         const horizon = (Date.parse(request.departure) - Date.now()) / 3600000;
@@ -489,6 +615,27 @@ export async function getConditions(
           `https://api-open.data.gov.sg/v2/real-time/api/${endpoint}`,
           600000,
         );
+        const origin = request.origin ?? { lat: 1.35285, lon: 103.9405 };
+        const [rainfall, airTemperature] = await Promise.allSettled([
+          cachedFetch(
+            "weather-rainfall",
+            "https://api-open.data.gov.sg/v2/real-time/api/rainfall",
+            300000,
+          ),
+          cachedFetch(
+            "weather-air-temperature",
+            "https://api-open.data.gov.sg/v2/real-time/api/air-temperature",
+            300000,
+          ),
+        ]);
+        const rainfallMm =
+          rainfall.status === "fulfilled"
+            ? nearestReading(rainfall.value.value, origin)
+            : undefined;
+        const temperature =
+          airTemperature.status === "fulfilled"
+            ? nearestReading(airTemperature.value.value, origin)
+            : undefined;
         const record = r.value?.data?.items?.[0] ?? r.value?.data?.records?.[0];
         const at = Date.parse(request.departure);
         const inWindow = (window: Obj) =>
@@ -499,7 +646,6 @@ export async function getConditions(
         let valid = false;
         let detail = "data.gov.sg official forecast";
         if (endpoint === "two-hr-forecast" && inWindow(record?.valid_period)) {
-          const origin = request.origin ?? { lat: 1.35285, lon: 103.9405 };
           const area = [...r.value.data.area_metadata].sort(
             (a: Obj, b: Obj) =>
               Math.hypot(
@@ -520,7 +666,6 @@ export async function getConditions(
           const period = record?.periods?.find((p: Obj) =>
             inWindow(p.timePeriod),
           );
-          const origin = request.origin ?? { lat: 1.35285, lon: 103.9405 };
           const region =
             origin.lon > 103.89
               ? "east"
@@ -559,12 +704,31 @@ export async function getConditions(
             detail += "; broad daily outlook, not an hour-specific prediction";
           }
         }
+        const rain =
+          valid &&
+          endpoint !== "four-day-outlook" &&
+          /rain|showers|thunder/i.test(text);
+        const heavyRain =
+          (rainfallMm ?? 0) >= 7.2 || /heavy|thunder/i.test(text);
+        const heat =
+          (temperature ?? 0) >= 33 ||
+          ((temperature ?? 0) >= 32 && /fair|sunny|partly cloudy/i.test(text));
         conditions.weather = {
           forecast: text,
-          rain:
-            valid &&
-            endpoint !== "four-day-outlook" &&
-            /rain|showers|thunder/i.test(text),
+          rain,
+          rainfallMm,
+          temperature,
+          walkStatus: heavyRain
+            ? "invalid"
+            : rain || heat
+              ? "limited"
+              : "valid",
+          cycleStatus:
+            heavyRain || (temperature ?? 0) >= 34
+              ? "invalid"
+              : rain || heat
+                ? "limited"
+                : "valid",
         };
         conditions.feeds.push({
           name: `NEA ${endpoint}`,
@@ -574,6 +738,16 @@ export async function getConditions(
             record?.timestamp ??
             new Date(r.at).toISOString(),
           detail,
+        });
+        conditions.feeds.push({
+          name: "NEA rainfall & air temperature",
+          status:
+            rainfall.status === "fulfilled" ||
+            airTemperature.status === "fulfilled"
+              ? "live"
+              : "unavailable",
+          updatedAt: new Date().toISOString(),
+          detail: "Nearest available weather station to the journey origin",
         });
       } catch {
         conditions.feeds.push({

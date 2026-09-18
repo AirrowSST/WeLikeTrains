@@ -72,15 +72,34 @@ import {
 import JourneyMap from "./Map";
 
 type Tab = "today" | "commutes" | "updates";
-type ModalName = "profile" | "chat" | "sources" | "journey" | "help" | null;
+type ModalName =
+  | "profile"
+  | "demo"
+  | "chat"
+  | "sources"
+  | "journey"
+  | "help"
+  | "proactive"
+  | null;
 interface Saved {
-  profile: Persona;
+  profile: "profile-1";
   preferences: Preferences;
   request: PlanRequest;
+  hardPreferences?: Partial<Preferences>;
+  timeSensitive: string;
+  inferred?: boolean;
   savedAt: string;
 }
+interface Activity {
+  originId: string;
+  destinationId: string;
+  timeBand: string;
+  weekday: string;
+  date: string;
+}
 const PROFILE_KEY = "wlt-profile-v1",
-  PLAN_KEY = "wlt-journey-v1";
+  PLAN_KEY = "wlt-journey-v1",
+  ACTIVITY_KEY = "wlt-activity-v1";
 function readSaved<T>(key: string): T | null {
   try {
     const v = JSON.parse(localStorage.getItem(key) ?? "null");
@@ -110,7 +129,14 @@ function dateValue(iso: string) {
     day: "2-digit",
   }).format(new Date(iso));
 }
-function makeRequest(persona: Persona): PlanRequest {
+function makeRequest(
+  persona: Persona = "lim",
+  dataMode: "demo" | "live" = "live",
+  scenario: Scenario = "normal",
+): PlanRequest {
+  // Profile 1 begins with the accessibility-safe defaults formerly used for
+  // the elderly journey. Habit learning can relax these only when the user
+  // has not supplied a manual preference.
   const p = profiles.find((x) => x.id === persona)!;
   const departure = nextDeparture(p.departure);
   return {
@@ -119,8 +145,8 @@ function makeRequest(persona: Persona): PlanRequest {
     departure,
     arriveBy: `${dateValue(departure)}T${p.arriveBy}:00+08:00`,
     preferences: p.preferences,
-    dataMode: "demo",
-    scenario: "disruption",
+    dataMode,
+    scenario,
   };
 }
 const ModeIcon = ({ mode, size = 17 }: { mode: string; size?: number }) =>
@@ -153,16 +179,11 @@ function LinePill({ segment }: { segment: Segment }) {
   );
 }
 function CrowdBadge({ crowd }: { crowd: Journey["crowd"] }) {
+  if (crowd !== "high") return null;
   return (
     <span className={`crowd-badge ${crowd}`}>
       <UsersRound size={14} />
-      {crowd === "low"
-        ? "Room to breathe"
-        : crowd === "moderate"
-          ? "Moderate crowd"
-          : crowd === "high"
-            ? "Very crowded"
-            : "Crowd unknown"}
+      Crowded
     </span>
   );
 }
@@ -224,14 +245,6 @@ function PlacePicker({
   useEffect(() => setQuery(value.name), [value]);
   useEffect(() => {
     if (!editing) return;
-    const normalized = query.trim().toLowerCase();
-    const localResults = normalized
-      ? places.filter((p) =>
-          `${p.name} ${p.subtitle}`.toLowerCase().includes(normalized),
-        )
-      : places;
-    setResults(localResults);
-    setBusy(false);
     const control = new AbortController();
     const timer = setTimeout(() => {
       setBusy(true);
@@ -243,7 +256,11 @@ function PlacePicker({
           if (Array.isArray(v)) setResults(v);
         })
         .catch(() =>
-          setResults(localResults),
+          setResults(
+            places.filter((p) =>
+              p.name.toLowerCase().includes(query.toLowerCase()),
+            ),
+          ),
         )
         .finally(() => setBusy(false));
     }, 250);
@@ -316,7 +333,7 @@ function PlacePicker({
           ))}
           {!busy && !results.length && (
             <li className="searching">
-              No match. Try a station, landmark, or full address.
+              No match. Wider address search needs OneMap.
             </li>
           )}
         </ul>
@@ -327,11 +344,14 @@ function PlacePicker({
 
 export default function App() {
   const saved = useRef(readSaved<Saved>(PROFILE_KEY));
-  const [persona, setPersona] = useState<Persona>(
-    saved.current?.profile ?? "rachel",
-  );
-  const [request, setRequest] = useState<PlanRequest>(
-    saved.current?.request ?? makeRequest("rachel"),
+  const [request, setRequest] = useState<PlanRequest>(() =>
+    saved.current?.request
+      ? {
+          ...saved.current.request,
+          dataMode: "live",
+          scenario: "normal",
+        }
+      : makeRequest(),
   );
   const [plan, setPlan] = useState<PlanResponse | null>(
     readSaved<PlanResponse>(PLAN_KEY),
@@ -350,17 +370,58 @@ export default function App() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [journeyStep, setJourneyStep] = useState(0);
   const [started, setStarted] = useState(false);
+  const [showAllRoutes, setShowAllRoutes] = useState(false);
+  const [proactiveWarning, setProactiveWarning] = useState<{
+    delay: number;
+    leaveAt: string;
+    targetTime: string;
+  } | null>(null);
   const [savedRoutine, setSavedRoutine] = useState(!!saved.current);
+  const [demoPersona, setDemoPersona] = useState<Persona>("rachel");
+  const [demoScenario, setDemoScenario] = useState<Scenario>("disruption");
+  const [hardPreferences, setHardPreferences] = useState<Partial<Preferences>>(
+    saved.current?.hardPreferences ?? {},
+  );
   const activeRequest = useRef<AbortController | null>(null);
-  const profile = profiles.find((p) => p.id === persona)!;
+  const normalRequest = useRef<PlanRequest | null>(null);
+  const lastProactiveWarning = useRef("");
+  const profile = profiles.find((p) => p.id === "lim")!;
   const selected = plan
     ? ([plan.recommended, ...plan.alternatives, plan.original].find(
         (j) => j.id === selectedId,
       ) ?? plan.recommended)
     : null;
+  const tomorrow = dateValue(new Date(Date.now() + 86400000).toISOString());
+  const relevantPlannedNotice =
+    dateValue(request.departure) === tomorrow
+      ? plan?.conditions.notices.find((notice) => {
+          if (notice.kind !== "planned" || !selected) return false;
+          const departure = Date.parse(request.departure);
+          const arrival = departure + selected.duration * 60000;
+          const starts = Date.parse(notice.startsAt);
+          const ends = notice.endsAt ? Date.parse(notice.endsAt) : Infinity;
+          const timeMatches = starts <= arrival && ends >= departure;
+          const routeMatches = selected.segments.some(
+            (segment) =>
+              (!notice.line || notice.line === segment.line) &&
+              (!notice.stations.length ||
+                notice.stations.some((station) =>
+                  segment.stops.includes(station),
+                )),
+          );
+          return timeMatches && routeMatches;
+        })
+      : undefined;
   const notify = (message: string) => setToast(message);
   const updateRequest = (value: Partial<PlanRequest>) =>
     setRequest((previous) => ({ ...previous, ...value }));
+  const updatePreferences = (value: Partial<Preferences>) => {
+    setHardPreferences((previous) => ({ ...previous, ...value }));
+    setRequest((previous) => ({
+      ...previous,
+      preferences: { ...previous.preferences, ...value },
+    }));
+  };
   const runPlan = useCallback(async (value: PlanRequest) => {
     activeRequest.current?.abort();
     const control = new AbortController();
@@ -375,14 +436,14 @@ export default function App() {
         signal: control.signal,
       });
       const data = await response.json();
-      if (activeRequest.current !== control) return;
       if (!response.ok)
         throw new Error(data.error ?? "Unable to plan your journey");
       setPlan(data);
+      setShowAllRoutes(false);
       setSelectedId(null);
       persist(PLAN_KEY, data);
     } catch (e: any) {
-      if (e.name !== "AbortError" && activeRequest.current === control)
+      if (e.name !== "AbortError")
         setError(
           navigator.onLine
             ? e.message
@@ -392,11 +453,6 @@ export default function App() {
       if (activeRequest.current === control) setLoading(false);
     }
   }, []);
-  const updateRequestAndPlan = (value: Partial<PlanRequest>) => {
-    const next = { ...request, ...value };
-    setRequest(next);
-    void runPlan(next);
-  };
   useEffect(() => {
     fetch("/api/config")
       .then((r) => r.json())
@@ -423,6 +479,19 @@ export default function App() {
     persist("wlt-large-text", largeText);
   }, [largeText]);
   useEffect(() => {
+    const commonRoute = saved.current;
+    if (commonRoute && !commonRoute.timeSensitive) {
+      const migrated: Saved = {
+        ...commonRoute,
+        timeSensitive: sgTime(
+          commonRoute.request.arriveBy ?? commonRoute.request.departure,
+        ),
+      };
+      persist(PROFILE_KEY, migrated);
+      saved.current = migrated;
+    }
+  }, []);
+  useEffect(() => {
     const timer = setInterval(() => {
       if (
         navigator.onLine &&
@@ -434,25 +503,139 @@ export default function App() {
     }, 300000);
     return () => clearInterval(timer);
   }, [plan, loading, runPlan]);
-  const choosePersona = (id: Persona) => {
-    setPersona(id);
-    const value = {
-      ...makeRequest(id),
-      dataMode: request.dataMode,
-      scenario: request.scenario,
+  useEffect(() => {
+    if (!plan) return;
+    const departure = new Date(plan.request.departure);
+    const weekday = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Singapore",
+      weekday: "short",
+    }).format(departure);
+    if (weekday === "Sat" || weekday === "Sun") return;
+    const timeBand = `${String(departure.getUTCHours() + 8).padStart(2, "0")}:${String(Math.floor(departure.getUTCMinutes() / 30) * 30).padStart(2, "0")}`;
+    const activity: Activity = {
+      originId: plan.request.origin.id,
+      destinationId: plan.request.destination.id,
+      timeBand,
+      weekday,
+      date: dateValue(plan.request.departure),
+    };
+    const previous = readSaved<Activity[]>(ACTIVITY_KEY) ?? [];
+    const entries = [
+      ...previous.filter(
+        (entry) =>
+          entry.date !== activity.date ||
+          entry.originId !== activity.originId ||
+          entry.destinationId !== activity.destinationId ||
+          entry.timeBand !== activity.timeBand,
+      ),
+      activity,
+    ].filter(
+      (entry) =>
+        Date.now() - Date.parse(`${entry.date}T00:00:00+08:00`) < 35 * 86400000,
+    );
+    persist(ACTIVITY_KEY, entries);
+    const matchingDays = new Set(
+      entries
+        .filter(
+          (entry) =>
+            entry.originId === activity.originId &&
+            entry.destinationId === activity.destinationId &&
+            entry.timeBand === activity.timeBand,
+        )
+        .map((entry) => entry.date),
+    );
+    if (matchingDays.size >= 3) {
+      setSavedRoutine(true);
+      const existing = readSaved<Saved>(PROFILE_KEY);
+      if (!existing || existing.inferred) {
+        const learned: Saved = {
+          profile: "profile-1",
+          preferences: plan.request.preferences,
+          request: plan.request,
+          hardPreferences,
+          timeSensitive: sgTime(
+            plan.request.arriveBy ?? plan.request.departure,
+          ),
+          inferred: true,
+          savedAt: new Date().toISOString(),
+        };
+        persist(PROFILE_KEY, learned);
+        saved.current = learned;
+      }
+    }
+  }, [hardPreferences, plan]);
+  useEffect(() => {
+    const commonRoute = saved.current;
+    if (!plan || !commonRoute?.timeSensitive) return;
+    if (
+      commonRoute.request.origin.id !== plan.request.origin.id ||
+      commonRoute.request.destination.id !== plan.request.destination.id
+    )
+      return;
+    const delay = Math.max(
+      0,
+      plan.original.duration - plan.original.baselineDuration,
+    );
+    if (delay <= 15) return;
+    const routeDate = dateValue(plan.request.departure);
+    let target = Date.parse(
+      `${routeDate}T${commonRoute.timeSensitive}:00+08:00`,
+    );
+    if (!commonRoute.request.arriveBy) {
+      target += plan.original.baselineDuration * 60000;
+    }
+    const requiredDeparture = target - plan.recommended.duration * 60000;
+    const plannedDeparture = Date.parse(plan.request.departure);
+    if (
+      !Number.isFinite(requiredDeparture) ||
+      requiredDeparture >= plannedDeparture
+    )
+      return;
+    const fingerprint = `${routeDate}:${plan.request.origin.id}:${plan.request.destination.id}:${delay}:${plan.recommended.id}`;
+    if (lastProactiveWarning.current === fingerprint) return;
+    lastProactiveWarning.current = fingerprint;
+    setProactiveWarning({
+      delay,
+      leaveAt: new Date(requiredDeparture).toISOString(),
+      targetTime: commonRoute.timeSensitive,
+    });
+    setModal("proactive");
+  }, [plan]);
+  const startDemo = () => {
+    if (request.dataMode === "live") normalRequest.current = request;
+    const value = makeRequest(demoPersona, "demo", demoScenario);
+    setRequest(value);
+    setModal(null);
+    void runPlan(value);
+  };
+  const exitDemo = () => {
+    const stored =
+      normalRequest.current ?? saved.current?.request ?? makeRequest();
+    const value: PlanRequest = {
+      ...stored,
+      dataMode: "live",
+      scenario: "normal",
+      preferences: {
+        ...stored.preferences,
+        ...hardPreferences,
+      },
     };
     setRequest(value);
-    setSavedRoutine(false);
+    setModal(null);
     void runPlan(value);
-    if (id === "lim") setLargeText(true);
   };
   const saveCommute = () => {
-    persist(PROFILE_KEY, {
-      profile: persona,
+    const commonRoute: Saved = {
+      profile: "profile-1",
       preferences: request.preferences,
       request,
+      hardPreferences,
+      timeSensitive: sgTime(request.arriveBy ?? request.departure),
+      inferred: false,
       savedAt: new Date().toISOString(),
-    });
+    };
+    persist(PROFILE_KEY, commonRoute);
+    saved.current = commonRoute;
     setSavedRoutine(true);
     notify("Your commute is saved on this device for 30 days.");
   };
@@ -495,7 +678,12 @@ export default function App() {
           "Content-Type": "application/json",
           "X-Device-Token": token,
         },
-        body: JSON.stringify({ request, subscription, consent: true }),
+        body: JSON.stringify({
+          request,
+          subscription,
+          consent: true,
+          timeSensitive: sgTime(request.arriveBy ?? request.departure),
+        }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       saveCommute();
@@ -543,27 +731,26 @@ export default function App() {
     timeZone: "Asia/Singapore",
   }).format(new Date(request.departure));
   const stale = !!plan && Date.parse(plan.expiresAt) < Date.now();
+  const routeChoices = plan ? [plan.recommended, ...plan.alternatives] : [];
+  const visibleRouteChoices = showAllRoutes
+    ? routeChoices
+    : routeChoices.slice(0, 2);
   return (
     <div className="app-shell">
       <a href="#main" className="skip-link">
         Skip to journey
       </a>
       <header className="site-header">
-        <a className="brand" href="/" aria-label="WeLikeTrains home">
-          <span className="brand-icon">
-            <TrainFront size={23} />
-          </span>
-          <span>
-            WeLike<span className="brand-light">Trains</span>
-            <i />
-          </span>
-        </a>
         <nav aria-label="Main navigation">
           {(
             [
               { id: "today", label: "My journey", icon: Route },
-              { id: "commutes", label: "Saved commutes", icon: Bookmark },
-              { id: "updates", label: "Network updates", icon: Radio },
+              {
+                id: "updates",
+                label: "Disruptions / interruptions",
+                icon: Radio,
+              },
+              { id: "commutes", label: "Common routes", icon: Bookmark },
             ] as const
           ).map((item) => (
             <button
@@ -581,6 +768,17 @@ export default function App() {
             </button>
           ))}
         </nav>
+      </header>
+      <div className="bottom-controls" aria-label="App controls">
+        <a className="brand" href="/" aria-label="WeLikeTrains home">
+          <span className="brand-icon">
+            <TrainFront size={23} />
+          </span>
+          <span>
+            WeLike<span className="brand-light">Trains</span>
+            <i />
+          </span>
+        </a>
         <div className="header-actions">
           <button
             className="icon-button help-button"
@@ -602,10 +800,10 @@ export default function App() {
             onClick={() => setModal("profile")}
             aria-label="Open profile and preferences"
           >
-            {persona === "lim" ? "ML" : profile.name[0]}
+            1
           </button>
         </div>
-      </header>
+      </div>
       {!online && (
         <div className="connection-banner" role="status">
           <WifiOff size={16} /> You’re offline. Your saved map and journey are
@@ -613,108 +811,17 @@ export default function App() {
         </div>
       )}
       <main id="main">
-        <section className="greeting">
-          <div>
-            <div className="eyebrow">
-              <span className="tiny-line" /> A LITTLE FORESIGHT. A BETTER
-              COMMUTE.
+        {tab !== "today" && (
+          <section className="greeting">
+            <div>
+              <h1>
+                {tab === "commutes"
+                  ? "Common routes"
+                  : "Disruptions / interruptions"}
+              </h1>
             </div>
-            <h1>
-              {tab === "today" ? (
-                <>
-                  Your day, on the right track<span>.</span>
-                </>
-              ) : tab === "commutes" ? (
-                <>
-                  Your everyday, remembered<span>.</span>
-                </>
-              ) : (
-                <>
-                  A heads-up for the way ahead<span>.</span>
-                </>
-              )}
-            </h1>
-            <p>
-              {tab === "today"
-                ? `Hello, ${profile.name}. Let’s make the way there a little easier.`
-                : tab === "commutes"
-                  ? "The journeys you know. A companion that knows what matters."
-                  : "What’s happening, what’s coming, and what it means for you."}
-            </p>
-          </div>
-          <div className="today-meta">
-            <span>
-              <CalendarDays size={15} />
-              {dateLabel}
-            </span>
-            <span>
-              <CloudSun size={18} />
-              {plan?.conditions.weather.temperature
-                ? `${plan.conditions.weather.temperature}° · `
-                : ""}
-              {plan?.conditions.weather.forecast ?? "Checking the skies"}
-            </span>
-          </div>
-        </section>
-        <div className="demo-toolbar">
-          <span>
-            <span
-              className={`status-dot ${request.dataMode === "demo" ? "amber" : ""}`}
-            />
-            {request.dataMode === "demo"
-              ? "Demo experience"
-              : "Live connections"}
-            <small>
-              {request.dataMode === "demo"
-                ? "Real OSM routes · simulated conditions"
-                : "Official feeds · availability shown below"}
-            </small>
-          </span>
-          <label className="mode-toggle">
-            <span>Demo</span>
-            <input
-              type="checkbox"
-              role="switch"
-              aria-label="Use demo mode"
-              checked={request.dataMode === "demo"}
-              onChange={(e) =>
-                updateRequestAndPlan({
-                  dataMode: e.target.checked ? "demo" : "live",
-                })
-              }
-            />
-            <span className="mode-toggle-track" aria-hidden="true" />
-          </label>
-          <label className="scenario-select">
-            <span className="sr-only">Demo scenario</span>
-            <select
-              aria-label="Demo scenario"
-              value={request.scenario}
-              disabled={request.dataMode === "live"}
-              onChange={(e) => {
-                const value = {
-                  ...request,
-                  scenario: e.target.value as Scenario,
-                };
-                setRequest(value);
-                void runPlan(value);
-              }}
-            >
-              {scenarios.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={14} />
-          </label>
-          <button
-            className="text-button data-source-button"
-            onClick={() => setModal("sources")}
-          >
-            Data & sources <ArrowRight size={14} />
-          </button>
-        </div>
+          </section>
+        )}
         {error && (
           <div className="error-banner" role="alert">
             <TriangleAlert size={18} />
@@ -730,7 +837,7 @@ export default function App() {
               <aside className="planner-column">
                 <section className="planner-card">
                   <div className="section-title">
-                    <h2>Where are we headed?</h2>
+                    <h2>Navigate</h2>
                     <button
                       className="icon-button compact"
                       onClick={() => setModal("profile")}
@@ -750,13 +857,13 @@ export default function App() {
                         label="FROM"
                         marker="A"
                         value={request.origin}
-                        onChange={(p) => updateRequestAndPlan({ origin: p })}
+                        onChange={(p) => updateRequest({ origin: p })}
                       />
                       <button
                         type="button"
                         className="swap-button"
                         onClick={() =>
-                          updateRequestAndPlan({
+                          updateRequest({
                             origin: request.destination,
                             destination: request.origin,
                           })
@@ -769,9 +876,7 @@ export default function App() {
                         label="TO"
                         marker="B"
                         value={request.destination}
-                        onChange={(p) =>
-                          updateRequestAndPlan({ destination: p })
-                        }
+                        onChange={(p) => updateRequest({ destination: p })}
                       />
                     </div>
                     <div className="time-fields">
@@ -828,7 +933,6 @@ export default function App() {
                           })
                         }
                       />
-                      <span>We’ll keep a buffer.</span>
                     </div>
                     <button
                       className="primary-button plan-button"
@@ -839,7 +943,7 @@ export default function App() {
                       ) : (
                         <Route size={18} />
                       )}{" "}
-                      {loading ? "Finding your way…" : "Find my best route"}
+                      {loading ? "Loading directions…" : "Start directions"}
                       <ArrowRight size={17} />
                     </button>
                   </form>
@@ -865,7 +969,7 @@ export default function App() {
                   </div>
                 </section>
                 <div className="routes-heading">
-                  <h2>Your options</h2>
+                  <h2>Routes</h2>
                   <span>
                     {plan
                       ? `${1 + plan.alternatives.length} routes`
@@ -883,93 +987,105 @@ export default function App() {
                     </div>
                   )}
                   {plan &&
-                    [plan.recommended, ...plan.alternatives].map(
-                      (journey, i) => (
-                        <article
-                          className={`route-card ${selected?.id === journey.id ? "selected" : ""} ${journey.blocked ? "blocked" : ""}`}
-                          key={journey.id}
+                    visibleRouteChoices.map((journey, i) => (
+                      <article
+                        className={`route-card ${selected?.id === journey.id ? "selected" : ""} ${journey.blocked ? "blocked" : ""}`}
+                        key={journey.id}
+                      >
+                        <button
+                          className="route-select"
+                          onClick={() => setSelectedId(journey.id)}
+                          aria-label={`View ${journey.title}, ${journey.duration} minutes`}
+                          aria-pressed={selected?.id === journey.id}
                         >
-                          <button
-                            className="route-select"
-                            onClick={() => setSelectedId(journey.id)}
-                            aria-label={`View ${journey.title}, ${journey.duration} minutes`}
-                            aria-pressed={selected?.id === journey.id}
-                          >
-                            <div className="route-card-top">
+                          <div className="route-card-top">
+                            <span
+                              className={
+                                i === 0
+                                  ? "recommended-label"
+                                  : "alternative-label"
+                              }
+                            >
+                              {i === 0 ? (
+                                <>
+                                  <Sparkles size={12} /> BEST FIT FOR YOU
+                                </>
+                              ) : journey.id === plan.original.id ? (
+                                "YOUR USUAL ROUTE"
+                              ) : (
+                                "ANOTHER WAY THERE"
+                              )}
+                            </span>
+                            <span className="selection-circle">
+                              {selected?.id === journey.id && (
+                                <Check size={11} />
+                              )}
+                            </span>
+                          </div>
+                          <div className="route-summary">
+                            <span className="duration">
+                              {journey.duration}
+                              <small>min</small>
+                            </span>
+                            <span className="arrival">
+                              Arrive {sgTime(journey.arrival)}
+                              <small>
+                                {journey.range[0]}–{journey.range[1]} min
+                                estimated
+                              </small>
+                            </span>
+                          </div>
+                          <div className="route-pills">
+                            {journey.segments.map((s, index) => (
                               <span
-                                className={
-                                  i === 0
-                                    ? "recommended-label"
-                                    : "alternative-label"
-                                }
+                                className="pill-group"
+                                key={`${s.id}-${index}`}
                               >
-                                {i === 0 ? (
-                                  <>
-                                    <Sparkles size={12} /> BEST FIT FOR YOU
-                                  </>
-                                ) : journey.id === plan.original.id ? (
-                                  "YOUR USUAL ROUTE"
-                                ) : (
-                                  "ANOTHER WAY THERE"
+                                <LinePill segment={s} />
+                                {index < journey.segments.length - 1 && (
+                                  <ChevronRight size={11} />
                                 )}
                               </span>
-                              <span className="selection-circle">
-                                {selected?.id === journey.id && (
-                                  <Check size={11} />
-                                )}
-                              </span>
-                            </div>
-                            <div className="route-summary">
-                              <span className="duration">
-                                {journey.duration}
-                                <small>min</small>
-                              </span>
-                              <span className="arrival">
-                                Arrive {sgTime(journey.arrival)}
-                                <small>
-                                  {journey.range[0]}–{journey.range[1]} min
-                                  estimated
-                                </small>
-                              </span>
-                            </div>
-                            <div className="route-pills">
-                              {journey.segments.map((s, index) => (
-                                <span
-                                  className="pill-group"
-                                  key={`${s.id}-${index}`}
-                                >
-                                  <LinePill segment={s} />
-                                  {index < journey.segments.length - 1 && (
-                                    <ChevronRight size={11} />
-                                  )}
-                                </span>
-                              ))}
-                            </div>
-                            <div className="route-card-footer">
-                              <CrowdBadge crowd={journey.crowd} />
-                              <span>
-                                {journey.transfers === 0
-                                  ? "No transfers"
-                                  : `${journey.transfers} transfer${journey.transfers > 1 ? "s" : ""}`}
-                              </span>
-                            </div>
-                            {journey.blocked && (
-                              <span className="route-warning">
-                                <TriangleAlert size={13} /> Affected by closure
-                                or access restriction
-                              </span>
-                            )}
-                            {journey.duration > journey.baselineDuration && (
-                              <span className="route-warning">
-                                +{journey.duration - journey.baselineDuration}{" "}
-                                min from current conditions
-                              </span>
-                            )}
-                          </button>
-                        </article>
-                      ),
-                    )}
+                            ))}
+                          </div>
+                          <div className="route-card-footer">
+                            <CrowdBadge crowd={journey.crowd} />
+                            <span>
+                              {journey.transfers === 0
+                                ? "No transfers"
+                                : `${journey.transfers} transfer${journey.transfers > 1 ? "s" : ""}`}
+                            </span>
+                          </div>
+                          {journey.blocked && (
+                            <span className="route-warning">
+                              <TriangleAlert size={13} /> Affected by closure or
+                              access restriction
+                            </span>
+                          )}
+                          {journey.duration > journey.baselineDuration && (
+                            <span className="route-warning">
+                              +{journey.duration - journey.baselineDuration} min
+                              from current conditions
+                            </span>
+                          )}
+                        </button>
+                      </article>
+                    ))}
                 </div>
+                {routeChoices.length > 2 && (
+                  <button
+                    className="load-more-routes"
+                    type="button"
+                    onClick={() => setShowAllRoutes((value) => !value)}
+                    aria-expanded={showAllRoutes}
+                  >
+                    {showAllRoutes ? "Show fewer routes" : "Load more routes"}
+                    <ChevronDown
+                      size={16}
+                      className={showAllRoutes ? "expanded" : ""}
+                    />
+                  </button>
+                )}
                 <button
                   className={`save-button ${savedRoutine ? "saved" : ""}`}
                   onClick={saveCommute}
@@ -979,8 +1095,7 @@ export default function App() {
                   ) : (
                     <Bookmark size={17} />
                   )}{" "}
-                  {savedRoutine ? "Commute saved" : "Save this commute"}
-                  <span>Make tomorrow easier</span>
+                  {savedRoutine ? "Route saved" : "Save route"}
                 </button>
               </aside>
               <div className="journey-content">
@@ -996,20 +1111,14 @@ export default function App() {
                     )}
                   </div>
                   <div>
-                    <span className="eyebrow">ONE STEP AHEAD</span>
                     <h2>
                       {plan
-                        ? plan.recommended.id !== plan.original.id
-                          ? `A little detour. A better morning.`
-                          : plan.recommended.blocked
-                            ? "Let’s check before you leave."
-                            : "You’re on the right track."
-                        : "A smarter journey is on its way."}
+                        ? plan.recommended.blocked
+                          ? "Route unavailable"
+                          : `Use ${plan.recommended.title}`
+                        : "Finding route"}
                     </h2>
-                    <p>
-                      {plan?.advice ??
-                        "We’re finding a route that works for your day."}
-                    </p>
+                    <p>{plan?.advice ?? "Checking routes and conditions."}</p>
                   </div>
                   <button
                     className="icon-button"
@@ -1023,56 +1132,22 @@ export default function App() {
                 <div className="journey-insights">
                   <div>
                     <span className="insight-icon">
-                      <ShieldCheck size={20} />
-                    </span>
-                    <span>
-                      <small>Journey risk signal</small>
-                      <strong>
-                        {plan?.risk.level === "high"
-                          ? "Extra care today"
-                          : plan?.risk.level === "moderate"
-                            ? "A little buffer helps"
-                            : "Looking steady"}
-                      </strong>
-                    </span>
-                    <button
-                      aria-label="Explain the journey risk"
-                      className="icon-button compact"
-                      onClick={() => setModal("chat")}
-                    >
-                      <Info size={15} />
-                    </button>
-                  </div>
-                  <div>
-                    <span className="insight-icon">
                       <Footprints size={20} />
                     </span>
                     <span>
-                      <small>Total walking time</small>
+                      <small>Door to door</small>
                       <strong>
                         {selected
-                          ? `${Math.ceil(selected.walkMinutes)} min across your journey`
-                          : "Included in your journey"}
+                          ? `${Math.ceil(selected.walkMinutes)} min walking`
+                          : "Walking legs included"}
                       </strong>
-                    </span>
-                  </div>
-                  <div>
-                    <span className="insight-icon">
-                      <Leaf size={20} />
-                    </span>
-                    <span>
-                      <small>A lighter footprint</small>
-                      <strong>Shared journeys matter</strong>
                     </span>
                   </div>
                 </div>
                 {selected && (
                   <section className="steps-card">
                     <div className="section-title">
-                      <div>
-                        <span className="eyebrow">THE WAY THERE</span>
-                        <h2>Your journey, step by step</h2>
-                      </div>
+                      <h2>Directions</h2>
                       <button
                         className="text-button"
                         onClick={() =>
@@ -1110,9 +1185,24 @@ export default function App() {
                                   : `${s.mode === "bus" ? "Bus " : ""}${s.line} to ${s.to}`}
                             </h3>
                             <p>
-                              {s.mode === "walk"
-                                ? `${Math.round(s.distance)} m · ${s.sheltered ? "Sheltered route mapped" : "Shelter may vary along this walk"}`
-                                : `From ${s.from}${s.affected ? " · Service affected" : ""}`}
+                              {s.mode === "walk" ? (
+                                <>
+                                  {Math.round(s.distance)} m{" "}
+                                  {s.sheltered && (
+                                    <span
+                                      className="shelter-mark"
+                                      title="Mapped sheltered walkway"
+                                      aria-label="Mapped sheltered walkway"
+                                    >
+                                      <Umbrella size={13} />
+                                    </span>
+                                  )}
+                                </>
+                              ) : s.mode === "rail" ? (
+                                `${s.direction ?? s.instructions.match(/towards ([^.]+)/i)?.[1] ?? s.to} direction · From ${s.from}${s.affected ? " · Service affected" : ""}`
+                              ) : (
+                                `From ${s.from}${s.affected ? " · Service affected" : ""}`
+                              )}
                             </p>
                             {expanded === selected.id && (
                               <p className="step-detail">{s.instructions}</p>
@@ -1135,11 +1225,7 @@ export default function App() {
                         <p>{selected.source} · © OpenStreetMap contributors</p>
                       </div>
                     )}
-                    <div className="start-journey">
-                      <span>
-                        <ShieldCheck size={16} /> Saved for the moments without
-                        signal
-                      </span>
+                    <div className="start-journey single">
                       <button
                         className="primary-button"
                         disabled={selected.blocked}
@@ -1149,34 +1235,30 @@ export default function App() {
                           setModal("journey");
                         }}
                       >
-                        <Navigation size={16} /> Start my journey{" "}
-                        <ArrowRight size={16} />
+                        <Navigation size={16} /> Start <ArrowRight size={16} />
                       </button>
                     </div>
                   </section>
                 )}
               </div>
             </div>
-            <section className="heads-up-strip">
-              <span className="heads-up-icon">
-                <CalendarDays size={24} />
-              </span>
-              <div>
-                <span className="eyebrow">TOMORROW DESERVES A HEAD START</span>
-                <h3>
-                  {plan?.conditions.notices.find((n) => n.kind === "planned")
-                    ?.title ?? "Keep your next journey in view"}
-                </h3>
-                <p>
-                  {plan?.conditions.mode === "demo"
-                    ? "A simulated planned notice. See what proactive advice looks like before a closure."
-                    : "Check planned works and access notices before your next journey."}
-                </p>
-              </div>
-              <button className="text-button" onClick={() => setTab("updates")}>
-                See planned updates <ArrowRight size={16} />
-              </button>
-            </section>
+            {relevantPlannedNotice && (
+              <section className="heads-up-strip">
+                <span className="heads-up-icon">
+                  <CalendarDays size={24} />
+                </span>
+                <div>
+                  <h3>{relevantPlannedNotice.title}</h3>
+                  <p>{relevantPlannedNotice.description}</p>
+                </div>
+                <button
+                  className="text-button"
+                  onClick={() => setTab("updates")}
+                >
+                  See planned updates <ArrowRight size={16} />
+                </button>
+              </section>
+            )}
           </>
         )}
         {tab === "commutes" && (
@@ -1206,12 +1288,17 @@ export default function App() {
                 {request.destination.name}
               </h2>
               <p>
-                {profile.label} · Leave at {sgTime(request.departure)}
+                Profile 1 · Leave at {sgTime(request.departure)}
                 {request.arriveBy
                   ? ` · Arrive by ${sgTime(request.arriveBy)}`
                   : ""}
               </p>
               <div className="preference-chips">
+                <span>
+                  Time-sensitive ·{" "}
+                  {saved.current?.timeSensitive ??
+                    sgTime(request.arriveBy ?? request.departure)}
+                </span>
                 <span>
                   {request.preferences.stepFree
                     ? "Step-free preference"
@@ -1361,16 +1448,62 @@ export default function App() {
             </div>
           </section>
         )}
-        <footer className="site-footer">
-          <span className="footer-brand">
-            <TrainFront size={16} /> Made for the way you move.
+        <div className="demo-toolbar">
+          <span>
+            <span
+              className={`status-dot ${request.dataMode === "demo" ? "amber" : ""}`}
+            />
+            {request.dataMode === "demo" ? "Demo mode" : "Live LTA + NEA"}
+            <small>
+              {request.dataMode === "demo"
+                ? "Selected profile · simulated incident"
+                : "Concurrent official feeds"}
+            </small>
           </span>
+          {request.dataMode === "demo" && (
+            <>
+              <label className="scenario-select">
+                <span className="sr-only">Demo scenario</span>
+                <select
+                  aria-label="Demo scenario"
+                  value={request.scenario}
+                  onChange={(event) => {
+                    const scenario = event.target.value as Scenario;
+                    setDemoScenario(scenario);
+                    const value = { ...request, scenario };
+                    setRequest(value);
+                    void runPlan(value);
+                  }}
+                >
+                  {scenarios.map((scenario) => (
+                    <option key={scenario.id} value={scenario.id}>
+                      {scenario.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} />
+              </label>
+              <button className="text-button" onClick={exitDemo}>
+                Exit demo
+              </button>
+            </>
+          )}
+          <button
+            className="text-button data-source-button"
+            onClick={() => setModal("sources")}
+          >
+            Data & sources <ArrowRight size={14} />
+          </button>
+        </div>
+        <footer className="site-footer">
           <span>
             {plan
               ? `${stale ? "Last saved" : "Updated"} ${sgTime(plan.generatedAt)} SGT`
               : "Planning your journey"}{" "}
             ·{" "}
             <button onClick={() => setModal("sources")}>Data & privacy</button>
+            {" · "}
+            <button onClick={() => setModal("demo")}>Demo mode</button>
             <span className="footer-credit">© OpenStreetMap contributors</span>
           </span>
         </footer>
@@ -1394,35 +1527,44 @@ export default function App() {
           </button>
         </div>
       )}
-      {modal === "profile" && (
+      {modal === "proactive" && proactiveWarning && (
         <Modal
-          title="A commute that feels like you"
+          title="Leave earlier or change route"
           onClose={() => setModal(null)}
         >
+          <div className="modal-body proactive-warning">
+            <TriangleAlert size={34} />
+            <p>
+              This common route is delayed by {proactiveWarning.delay} minutes.
+              To keep your {proactiveWarning.targetTime} time target, leave by{" "}
+              <strong>{sgTime(proactiveWarning.leaveAt)}</strong> or use the
+              suggested alternative route.
+            </p>
+            <button
+              className="primary-button"
+              onClick={() => {
+                setSelectedId(plan?.recommended.id ?? null);
+                setTab("today");
+                setModal(null);
+              }}
+            >
+              View alternative route <ArrowRight size={16} />
+            </button>
+            <button className="text-button" onClick={() => setModal(null)}>
+              Dismiss
+            </button>
+          </div>
+        </Modal>
+      )}
+      {modal === "profile" && (
+        <Modal title="Profile 1" onClose={() => setModal(null)}>
           <div className="modal-body">
             <p className="muted">
-              Choose a starting point. Make the preferences your own.
+              Your regular route and time are learned after three matching
+              workdays. Changes you make here are kept as your preferences and
+              are never replaced by habit learning.
             </p>
-            <div className="persona-options">
-              {profiles.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => choosePersona(p.id)}
-                  className={persona === p.id ? "persona active" : "persona"}
-                >
-                  <span className="persona-avatar">
-                    {p.id === "lim" ? "ML" : p.name[0]}
-                  </span>
-                  <span>
-                    <strong>{p.name}</strong>
-                    <small>{p.label}</small>
-                  </span>
-                  {persona === p.id && <Check size={18} />}
-                </button>
-              ))}
-            </div>
-            <p className="persona-description">“{profile.description}”</p>
-            <h3>The little things that matter</h3>
+            <h3>Preferences</h3>
             {(
               [
                 {
@@ -1462,14 +1604,11 @@ export default function App() {
                   type="checkbox"
                   checked={request.preferences[p.key]}
                   onChange={(e) =>
-                    updateRequest({
-                      preferences: {
-                        ...request.preferences,
-                        [p.key]: e.target.checked,
-                        ...(p.key === "stepFree"
-                          ? { walkingSpeed: e.target.checked ? 40 : 75 }
-                          : {}),
-                      },
+                    updatePreferences({
+                      [p.key]: e.target.checked,
+                      ...(p.key === "stepFree"
+                        ? { walkingSpeed: e.target.checked ? 40 : 75 }
+                        : {}),
                     })
                   }
                 />
@@ -1497,14 +1636,11 @@ export default function App() {
                   step="100"
                   value={request.preferences.maxWalk}
                   onChange={(e) =>
-                    updateRequest({
-                      preferences: {
-                        ...request.preferences,
-                        maxWalk: Math.min(
-                          3500,
-                          Math.max(200, Number(e.target.value)),
-                        ),
-                      },
+                    updatePreferences({
+                      maxWalk: Math.min(
+                        3500,
+                        Math.max(200, Number(e.target.value)),
+                      ),
                     })
                   }
                 />
@@ -1517,14 +1653,11 @@ export default function App() {
                   max="60"
                   value={request.preferences.alertThreshold}
                   onChange={(e) =>
-                    updateRequest({
-                      preferences: {
-                        ...request.preferences,
-                        alertThreshold: Math.min(
-                          60,
-                          Math.max(3, Number(e.target.value)),
-                        ),
-                      },
+                    updatePreferences({
+                      alertThreshold: Math.min(
+                        60,
+                        Math.max(3, Number(e.target.value)),
+                      ),
                     })
                   }
                 />
@@ -1562,6 +1695,10 @@ export default function App() {
                 ...request,
                 preferences: { ...request.preferences, ...preferences },
               };
+              setHardPreferences((previous) => ({
+                ...previous,
+                ...preferences,
+              }));
               setRequest(value);
               void runPlan(value);
               notify("Preferences applied to your route.");
@@ -1583,38 +1720,71 @@ export default function App() {
           />
         </Modal>
       )}
+      {modal === "demo" && (
+        <Modal title="Demo mode" onClose={() => setModal(null)}>
+          <div className="modal-body">
+            <p className="muted">
+              Choose a presentation profile and a hypothetical network
+              condition. Demo data is clearly separated from live LTA data.
+            </p>
+            <h3>Profile</h3>
+            <div className="persona-options">
+              {profiles.map((candidate) => (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  onClick={() => setDemoPersona(candidate.id)}
+                  className={
+                    demoPersona === candidate.id ? "persona active" : "persona"
+                  }
+                >
+                  <span className="persona-avatar">
+                    {candidate.id === "lim" ? "ML" : candidate.name[0]}
+                  </span>
+                  <span>
+                    <strong>{candidate.name}</strong>
+                    <small>{candidate.label}</small>
+                  </span>
+                  {demoPersona === candidate.id && <Check size={18} />}
+                </button>
+              ))}
+            </div>
+            <h3>Hypothetical situation</h3>
+            <label className="demo-scenario-field">
+              <span>Network condition</span>
+              <select
+                value={demoScenario}
+                onChange={(event) =>
+                  setDemoScenario(event.target.value as Scenario)
+                }
+              >
+                {scenarios.map((scenario) => (
+                  <option value={scenario.id} key={scenario.id}>
+                    {scenario.label} — {scenario.description}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="primary-button full" onClick={startDemo}>
+              Start demo <ArrowRight size={17} />
+            </button>
+            {request.dataMode === "demo" && (
+              <button className="secondary-button full" onClick={exitDemo}>
+                Return to Profile 1 and live data
+              </button>
+            )}
+          </div>
+        </Modal>
+      )}
       {modal === "sources" && (
         <Modal
           title="Good advice starts with honest data"
           onClose={() => setModal(null)}
         >
           <div className="modal-body">
-            <div className="mode-switch">
-              <button
-                className={request.dataMode === "demo" ? "active" : ""}
-                onClick={() => {
-                  const value = { ...request, dataMode: "demo" as const };
-                  setRequest(value);
-                  void runPlan(value);
-                }}
-              >
-                Demo scenarios
-              </button>
-              <button
-                className={request.dataMode === "live" ? "active" : ""}
-                onClick={() => {
-                  const value = { ...request, dataMode: "live" as const };
-                  setRequest(value);
-                  void runPlan(value);
-                }}
-              >
-                Live connections
-              </button>
-            </div>
             <p>
-              Demo scenarios use actual OpenStreetMap routes with simulated
-              disruptions, crowds, weather and works. Live mode uses connected
-              official feeds, and explicitly marks unavailable signals.
+              Normal mode requests LTA DataMall and NEA feeds concurrently and
+              marks every signal with its source and availability.
             </p>
             <h3>Maps & route estimates</h3>
             <p>
@@ -1671,16 +1841,16 @@ export default function App() {
               <span>01</span>
               <h3>Tell us where your day takes you.</h3>
               <p>
-                Choose your doors, departure and arrival deadline. You can
-                select one of three commuter profiles.
+                Choose your origin, destination, departure and arrival deadline.
+                Profile 1 learns repeated weekday routes on this device.
               </p>
             </div>
             <div>
               <span>02</span>
               <h3>See the change before you leave.</h3>
               <p>
-                Try the labelled demo scenarios. Compare the original route with
-                the recommendation and its estimated time range.
+                Route warnings appear only when a live condition affects the
+                selected journey. Demo mode is available at the end of the page.
               </p>
             </div>
             <div>

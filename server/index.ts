@@ -160,6 +160,7 @@ app.post("/api/routine", async (req, res) => {
     .object({
       request: planSchema,
       consent: z.literal(true),
+      timeSensitive: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
       subscription: z.object({
         endpoint: z
           .string()
@@ -187,7 +188,7 @@ app.post("/api/routine", async (req, res) => {
       }),
     })
     .parse(req.body);
-  await saveRoutine(token, body.request, body.subscription);
+  await saveRoutine(token, body.request, body.subscription, body.timeSensitive);
   res.json({ saved: true, retentionDays: 30 });
 });
 app.delete("/api/routine", async (req, res) => {
