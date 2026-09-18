@@ -142,6 +142,8 @@ describe("official data contracts", () => {
         blocked: false,
         range: [57, 69],
         walkMinutes: 23,
+        crowd: "low",
+        transfers: 1,
       },
       alternatives: [
         {
@@ -150,6 +152,8 @@ describe("official data contracts", () => {
           blocked: true,
           range: [50, 60],
           walkMinutes: 10,
+          crowd: "moderate",
+          transfers: 0,
         },
       ],
     } as PlanResponse;
@@ -160,22 +164,29 @@ describe("official data contracts", () => {
           args: { avoidCrowds: true, maxWalk: 800 },
         },
         { name: "recommend_route", args: { routeId: "dtl" } },
+        { name: "display_routes", args: { routeIds: ["dtl"] } },
       ],
       plan,
     );
     expect(accepted.preferences).toEqual({ avoidCrowds: true, maxWalk: 800 });
     expect(accepted.recommendedRouteId).toBe("dtl");
-    expect(accepted.responses).toHaveLength(2);
+    expect(accepted.displayedRouteIds).toEqual(["dtl"]);
+    expect(accepted.responses).toHaveLength(3);
 
     const rejected = resolveChatToolCalls(
       [
         { name: "propose_preferences", args: { maxWalk: 50 } },
         { name: "recommend_route", args: { routeId: "blocked-ewl" } },
+        {
+          name: "display_routes",
+          args: { routeIds: ["dtl", "blocked-ewl"] },
+        },
       ],
       plan,
     );
     expect(rejected.preferences).toBeUndefined();
     expect(rejected.recommendedRouteId).toBeUndefined();
+    expect(rejected.displayedRouteIds).toBeUndefined();
     expect(
       rejected.responses.every((response) => response.response?.error),
     ).toBe(true);

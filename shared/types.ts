@@ -193,6 +193,7 @@ export interface ChatResponse {
   provider: "vertex" | "local";
   preferences?: Partial<Preferences>;
   recommendedRouteId?: string;
+  displayedRouteIds?: string[];
 }
 export interface ChatTurn {
   role: "user" | "assistant";

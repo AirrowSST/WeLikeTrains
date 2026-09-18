@@ -29,6 +29,7 @@ async function useDeterministicPlans(page: Page) {
       }),
     });
   });
+  return () => template;
 }
 test("plans, compares, saves, interviews preferences and shows planned notices", async ({
   page,
@@ -125,6 +126,62 @@ test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
       nodes: v.nodes.map((n) => n.target),
     })),
   ).toEqual([]);
+});
+test("renders validated route cards when the companion displays routes", async ({
+  page,
+}, info) => {
+  const currentPlan = await useDeterministicPlans(page);
+  await page.route("**/api/chat", async (route) => {
+    const plan = currentPlan();
+    if (!plan) throw new Error("Fixture plan was not created.");
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        message: "Here are the available routes from your current plan.",
+        provider: "vertex",
+        displayedRouteIds: [
+          plan.recommended.id,
+          ...plan.alternatives
+            .filter((candidate) => !candidate.blocked)
+            .slice(0, 1)
+            .map((candidate) => candidate.id),
+        ],
+      }),
+    });
+  });
+  await page.goto("/");
+  await expect(
+    page.getByRole("button", { name: "Start directions" }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: "A little help for the journey" })
+    .click();
+  await page.getByRole("checkbox").check();
+  await page
+    .getByRole("button", { name: "Show me my route options" })
+    .click();
+  const routeCards = page.locator(".chat-route-card");
+  await expect(routeCards.first()).toBeVisible();
+  await expect(routeCards.first()).toContainText("min");
+  await expect(routeCards.first()).toContainText("Arrive");
+  await expect(routeCards.first().locator(".line-pill").first()).toBeVisible();
+  await page.screenshot({
+    path: `test-results/${info.project.name}-chat-routes.png`,
+    fullPage: true,
+  });
+  const results = await new AxeBuilder({ page })
+    .include(".chat-route-list")
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  expect(
+    results.violations.map((violation) => ({
+      id: violation.id,
+      nodes: violation.nodes.map((node) => node.target),
+    })),
+  ).toEqual([]);
+  await routeCards.first().click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Selected");
 });
 test("shows labelled simulated location and follows manual demo progress", async ({
   page,

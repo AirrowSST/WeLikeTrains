@@ -2318,6 +2318,93 @@ export default function App() {
   );
 }
 
+function ChatRouteCards({
+  routeIds,
+  recommendedRouteId,
+  plan,
+  onSelectRoute,
+}: {
+  routeIds?: string[];
+  recommendedRouteId?: string;
+  plan: PlanResponse | null;
+  onSelectRoute: (id: string) => void;
+}) {
+  if (!plan || !routeIds?.length) return null;
+  const routes = routeIds
+    .map((id) =>
+      [plan.recommended, ...plan.alternatives].find(
+        (route) => route.id === id && !route.blocked,
+      ),
+    )
+    .filter((route): route is Journey => Boolean(route));
+  if (!routes.length) return null;
+  return (
+    <div className="chat-route-list" aria-label="Route options from companion">
+      {routes.map((route) => (
+        <button
+          type="button"
+          className={`chat-route-card ${route.id === recommendedRouteId ? "recommended" : ""}`}
+          key={route.id}
+          onClick={() => onSelectRoute(route.id)}
+          aria-label={`View ${route.title}, ${route.duration} minutes, arrive ${sgTime(route.arrival)}`}
+        >
+          <span className="chat-route-card-top">
+            <span className="chat-route-label">
+              {route.id === recommendedRouteId ? (
+                <>
+                  <Sparkles size={11} /> Companion pick
+                </>
+              ) : route.id === plan.recommended.id ? (
+                "Best fit"
+              ) : (
+                "Route option"
+              )}
+            </span>
+            <ArrowRight size={16} aria-hidden="true" />
+          </span>
+          <span className="chat-route-title">{route.title}</span>
+          <span className="chat-route-timing">
+            <strong>
+              {route.duration}
+              <small> min</small>
+            </strong>
+            <span>
+              Arrive {sgTime(route.arrival)}
+              <small>
+                {route.range[0]}–{route.range[1]} min estimated
+              </small>
+            </span>
+          </span>
+          <span className="chat-route-lines" aria-label="Journey legs">
+            {route.segments.map((segment, index) => (
+              <span className="pill-group" key={`${segment.id}-${index}`}>
+                <LinePill segment={segment} />
+                {index < route.segments.length - 1 && (
+                  <ChevronRight size={10} aria-hidden="true" />
+                )}
+              </span>
+            ))}
+          </span>
+          <span className="chat-route-meta">
+            <span>
+              <Footprints size={13} /> {Math.ceil(route.walkMinutes)} min walk
+            </span>
+            <span>
+              <ArrowDownUp size={13} />
+              {route.transfers === 0
+                ? "Direct"
+                : `${route.transfers} transfer${route.transfers > 1 ? "s" : ""}`}
+            </span>
+            <span className={`chat-crowd ${route.crowd}`}>
+              <UsersRound size={13} /> {route.crowd} crowd
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Companion({
   plan,
   request,
@@ -2338,6 +2425,7 @@ function Companion({
       preferences?: Partial<Preferences>;
       provider?: string;
       recommendedRouteId?: string;
+      displayedRouteIds?: string[];
       applied?: boolean;
     }[]
   >([
@@ -2383,6 +2471,7 @@ function Companion({
           preferences: data.preferences,
           provider: data.provider,
           recommendedRouteId: data.recommendedRouteId,
+          displayedRouteIds: data.displayedRouteIds,
         },
       ]);
     } catch {
@@ -2496,14 +2585,15 @@ function Companion({
                 </button>
               </div>
             )}
-            {m.recommendedRouteId && (
-              <button
-                className="secondary-button"
-                onClick={() => onSelectRoute(m.recommendedRouteId!)}
-              >
-                View suggested route <ArrowRight size={15} />
-              </button>
-            )}
+            <ChatRouteCards
+              routeIds={
+                m.displayedRouteIds ??
+                (m.recommendedRouteId ? [m.recommendedRouteId] : undefined)
+              }
+              recommendedRouteId={m.recommendedRouteId}
+              plan={plan}
+              onSelectRoute={onSelectRoute}
+            />
           </div>
         ))}
         {busy && (
@@ -2519,8 +2609,8 @@ function Companion({
           <div className="chat-prompts">
             {[
               "Why this route?",
+              "Show me my route options",
               "I prefer quieter, sheltered journeys",
-              "Are there free shuttle buses?",
             ].map((p) => (
               <button key={p} disabled={!consent} onClick={() => send(p)}>
                 {p}

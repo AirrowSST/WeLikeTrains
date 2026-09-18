@@ -2079,6 +2079,118 @@ input {
   min-height: 35px;
   padding: 7px 12px;
 }
+.chat-route-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+  white-space: normal;
+}
+.chat-route-card {
+  width: 100%;
+  min-height: 44px;
+  padding: 13px;
+  border: 1px solid #d8e2ca;
+  border-radius: 10px;
+  background: #fff;
+  color: #405536;
+  text-align: left;
+  box-shadow: 0 5px 16px rgb(50 76 42 / 6%);
+}
+.chat-route-card.recommended {
+  border-color: #91ad77;
+  background: #fbfdf7;
+  box-shadow: 0 0 0 2px rgb(145 173 119 / 12%);
+}
+.chat-route-card-top,
+.chat-route-timing,
+.chat-route-meta,
+.chat-route-label,
+.chat-route-meta > span {
+  display: flex;
+  align-items: center;
+}
+.chat-route-card-top {
+  justify-content: space-between;
+  color: #506a3d;
+}
+.chat-route-label {
+  gap: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.chat-route-title {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  color: #2f4837;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-route-timing {
+  justify-content: space-between;
+  gap: 12px;
+  margin: 11px 0;
+}
+.chat-route-timing > strong {
+  color: #20382c;
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+.chat-route-timing > strong small {
+  color: #52644b;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.chat-route-timing > span {
+  color: #43563b;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: right;
+}
+.chat-route-timing > span small {
+  display: block;
+  margin-top: 3px;
+  color: #596a51;
+  font-size: 8px;
+  font-weight: 400;
+}
+.chat-route-lines {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.chat-route-meta {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid #e8eddf;
+  color: #52664a;
+  font-size: 8px;
+  text-transform: capitalize;
+}
+.chat-route-meta > span {
+  gap: 4px;
+}
+.chat-route-meta .chat-crowd.high {
+  color: #8b432c;
+}
+.chat-route-meta .chat-crowd.unknown {
+  color: #586451;
+}
+.chat-route-meta .chat-crowd.low,
+.chat-route-meta .chat-crowd.moderate {
+  color: #52664a;
+}
 .chat-thinking {
   display: flex;
   gap: 8px;
