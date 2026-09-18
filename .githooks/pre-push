@@ -1,5 +1,5 @@
 #!/bin/sh
 set -e
 
-echo "Running WeLikeTrains verification before push..."
-npm run verify
+echo "Running fast WeLikeTrains checks before push..."
+npm run verify:push

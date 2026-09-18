@@ -221,6 +221,18 @@ test("resizes the mobile journey sheet by drag and keyboard", async ({
   await handle.press("End");
   await expect(handle).toHaveAttribute("data-sheet-snap", "collapsed");
   expect((await map.boundingBox())!.height).toBeGreaterThan(initialHeight + 80);
+  expect(
+    (await page.locator(".planner-card").boundingBox())!.height,
+  ).toBeLessThan(70);
+  await expect(
+    page.getByRole("button", { name: "Find my best route" }),
+  ).toBeHidden();
+
+  await handle.press("Home");
+  await expect(handle).toHaveAttribute("data-sheet-snap", "expanded");
+  await expect(
+    page.getByRole("button", { name: "Find my best route" }),
+  ).toBeVisible();
 });
 test("keeps the draggable phone sheet and full-width map on wide screens", async ({
   page,
@@ -241,6 +253,9 @@ test("keeps the draggable phone sheet and full-width map on wide screens", async
 
   await handle.press("End");
   await expect(handle).toHaveAttribute("data-sheet-snap", "collapsed");
+  expect(
+    (await page.locator(".planner-card").boundingBox())!.height,
+  ).toBeLessThan(70);
 });
 test("renders validated route cards when the companion displays routes", async ({
   page,

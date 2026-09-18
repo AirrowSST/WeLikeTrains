@@ -4680,6 +4680,27 @@ body {
   .sheet-drag-handle:focus-visible { outline: 3px solid #a9cdb9; outline-offset: -3px; }
   .planner-card .section-title { margin: 4px 0 10px; }
   .planner-card .section-title h2 { margin-left: 0; font-size: 20px; }
+  .journey-layout.sheet-collapsed .planner-card {
+    height: 62px;
+    min-height: 62px;
+    padding-bottom: 8px;
+    overflow: hidden;
+  }
+  .journey-layout.sheet-collapsed
+    .planner-card
+    > :not(.sheet-drag-handle):not(.section-title) {
+    display: none;
+  }
+  .journey-layout.sheet-collapsed .planner-card .section-title {
+    height: 33px;
+    margin: 4px 0 0;
+  }
+  .journey-layout.sheet-collapsed
+    .planner-card
+    .section-title
+    .icon-button {
+    display: none;
+  }
   .place-inputs { width: 100%; margin: 0; border-radius: 15px; box-shadow: none; }
   .place-field { min-height: 61px; }
   .place-field:first-child { border-bottom: 1px solid #e6eee8; }

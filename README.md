@@ -36,11 +36,14 @@ Optional: copy `.env.example` to `.env` and fill credentials. Never commit `.env
 
 ```sh
 npx playwright install chromium
+npm run verify:push
 npm run verify
 npm run evaluate
 ```
 
-`npm run verify` builds fresh client and server assets before running the unit and browser suites. `npm ci` also configures the repository's pre-push hook to run the same verification locally. Unit tests cover OSM routing, rerouting, closures, lift avoidance, parser nesting, canonical line codes, crowd sources, preferences and input validation. Browser checks cover the mobile-only layout at phone and wide viewports, main interactions, offline reload and automated WCAG A/AA rules. These are **not a substitute for a real-phone field test**; see [demo and phone checklist](docs/DEMO.md).
+This is a fast-moving hackathon project: keep checks proportionate and avoid rerunning slow, unaffected suites. `npm run verify:push` runs TypeScript and the unit suite and is the routine pre-push gate installed by `npm ci`. Use targeted browser tests while changing UI behavior. `npm run verify` remains the full gate: it builds fresh client and server assets, then runs the unit and browser suites; deployment runs this full gate automatically.
+
+Unit tests cover OSM routing, rerouting, closures, lift avoidance, parser nesting, canonical line codes, crowd sources, preferences and input validation. Browser checks cover the mobile-only layout at phone and wide viewports, main interactions, offline reload and automated WCAG A/AA rules. These are **not a substitute for a real-phone field test**; see [demo and phone checklist](docs/DEMO.md).
 
 `npm run evaluate` is a no-cost, reproducible synthetic evaluation. [Recorded local results](docs/evaluation-local.json) include per-case checks and timings. They are not a forecast-accuracy benchmark. To evaluate the team-hosted AI using its credits, run `node --import tsx scripts/evaluate.ts --url=https://weliketrains-191711317812.asia-southeast1.run.app`; without the flag, the local companion is tested.
 
@@ -48,7 +51,7 @@ npm run evaluate
 
 See [GCP setup and operations](docs/GCP.md). The provisioned project is `qwiklabs-gcp-02-7df98c2d8335`, Cloud Run region `asia-southeast1`.
 
-Deployments are deliberately manual. GitHub Actions workflows have been removed, so no remote workflow verifies or deploys a push or merge. The configured local pre-push hook still runs verification, but it never deploys. When a deployment is explicitly requested, run the guarded local code-deployment script from a clean `main` checkout on the authenticated development device:
+Deployments are deliberately manual. GitHub Actions workflows have been removed, so no remote workflow verifies or deploys a push or merge. The configured local pre-push hook runs the fast TypeScript-and-unit gate, but it never deploys. When a deployment is explicitly requested, run the guarded local code-deployment script from a clean `main` checkout on the authenticated development device:
 
 ```powershell
 pwsh -File scripts/deploy-code.ps1

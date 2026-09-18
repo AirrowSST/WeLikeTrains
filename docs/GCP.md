@@ -32,7 +32,7 @@ Cloud Run’s attached identity handles Google authentication automatically. For
 
 ## Manual deployments from the development device
 
-By user decision on 2026-09-19, this repository has no GitHub Actions workflows and no push-to-deploy behavior. No remote workflow verifies a push or changes production; the configured local pre-push hook may still run verification, but it never deploys. Deploy only from the authenticated development device after the user explicitly asks for it in chat:
+By user decision on 2026-09-19, this repository has no GitHub Actions workflows and no push-to-deploy behavior. No remote workflow verifies a push or changes production; the configured local pre-push hook runs the fast `npm run verify:push` gate, but it never deploys. Deploy only from the authenticated development device after the user explicitly asks for it in chat:
 
 ```powershell
 pwsh -File scripts/deploy-code.ps1
