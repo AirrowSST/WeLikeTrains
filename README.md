@@ -4,16 +4,16 @@ A **mobile-only Singapore commuter companion**: a useful decision before you lea
 
 **Open on your phone:** https://weliketrains-191711317812.asia-southeast1.run.app
 
-The normal app starts in a local guest space with editable preferences and daily commutes. Optional Google sign-in merges that guest data into a verified account for continued syncing. Rachel’s Tampines → Raffles Place commute remains the primary end-to-end demo; Rachel, Arjun and Mdm Lim are isolated faux-account presets under **Options → Developer mode**. Every viewport uses the same one-column interface, bottom navigation and 480px maximum app width. This is an installable web app, not a native app-store build.
+The normal app starts in a local guest space with editable preferences and daily commutes. Optional Google sign-in merges that guest data into a verified account for continued syncing. Rachel’s Tampines → Raffles Place commute remains the primary end-to-end demo; Rachel, Arjun and Mdm Lim are isolated faux-account presets under **Account → Developer mode**. Every viewport uses the same one-column interface, bottom navigation and 480px maximum app width. This is an installable web app, not a native app-store build.
 
 ## Try it
 
-The app opens as a standard guest using live-mode source labels. No account or API key is required for local routing. To present deterministic scenarios, open **Options**, enable **Developer mode**, then open the demo presets. The places and OSM routes are real; demo incidents, crowd levels, weather and delays are synthetic, not a claim about current service.
+The app opens as a standard guest using live-mode source labels. No account or API key is required for local routing. To present deterministic scenarios, open **Account**, enable **Developer mode**, then open the demo presets. The places and OSM routes are real; demo incidents, crowd levels, weather and delays are synthetic, not a claim about current service.
 
-1. Enable Developer mode in Options, load Rachel, and change the simulated network or custom weather controls to compare normal service, disruption, crowds, rain, closure or lift maintenance.
+1. Open **Account**, enable Developer mode, load Rachel, and change the simulated network or custom weather controls to compare normal service, disruption, crowds, rain, closure or lift maintenance.
 2. Compare the original and revised route on the detailed OneMap basemap. Swipe route cards for time, crowd and walking trade-offs. Open **Full details** for directions and limitations. When OneMap is unavailable, the map visibly falls back to the bundled OSM extract.
-3. Tap **Use simulated location** to preview the labelled demo position, then start the step-by-step journey. In Live mode, **Use my location** requests browser permission and the active journey can show foreground location until it is closed. Progress remains manual; there is no background tracking.
-4. Open the companion, consent to sending route context, ask why this route or describe your preferences. Review changes before applying them. Tap the speaker to listen.
+3. In normal Live mode, Wayce requests a one-shot foreground location when it opens, starts with **Where to?**, and defaults departure to **Now**. Permission failures stay visible and the origin remains editable. In a demo, tap **Use simulated location** to preview the labelled position. The active journey can show continuous foreground location until it is closed; progress remains manual and there is no background tracking.
+4. Open the companion, consent to sending route context, then type or tap the microphone to dictate a question. Voice input stays as a reviewable draft until you send it; browser speech recognition may use the browser vendor's online service. Review preference changes before applying them, or tap the speaker to hear a reply.
 5. **Data & sources → Live feeds** switches to LTA and NEA conditions while place search and routing stay on the bundled OSM snapshot. Each feed reports its own freshness or failure; live failures never silently inject demo data.
 
 ## Run from a clean machine
@@ -41,7 +41,7 @@ npm run verify
 npm run evaluate
 ```
 
-This is a fast-moving hackathon project: keep checks proportionate and avoid rerunning slow, unaffected suites. `npm run verify:push` runs TypeScript and the unit suite and is the routine pre-push gate installed by `npm ci`. Use targeted browser tests while changing UI behavior. `npm run verify` remains the full gate: it builds fresh client and server assets, then runs the unit and browser suites; deployment runs this full gate automatically.
+This is a fast-moving hackathon project: keep checks proportionate and avoid rerunning slow, unaffected suites. `npm run verify:push` runs TypeScript and the unit suite and is the routine pre-push gate installed by `npm ci`. Use targeted browser tests while changing UI behavior. `npm run verify` remains the full gate: it builds fresh client and server assets, then runs the unit and browser suites. Browser runs use process-isolated local ports, avoiding collisions between concurrent or recently stopped Playwright processes.
 
 Unit tests cover OSM routing, rerouting, closures, lift avoidance, parser nesting, canonical line codes, crowd sources, preferences and input validation. Browser checks cover the mobile-only layout at phone and wide viewports, main interactions, offline reload and automated WCAG A/AA rules. These are **not a substitute for a real-phone field test**; see [demo and phone checklist](docs/DEMO.md).
 
@@ -55,9 +55,11 @@ Deployments are deliberately manual. GitHub Actions workflows have been removed,
 
 ```powershell
 pwsh -File scripts/deploy-code.ps1
+# Explicit time-critical exception:
+pwsh -File scripts/deploy-code.ps1 -VerificationMode Fast
 ```
 
-The script runs the complete local verification suite, checks the Cloud Build upload set for protected files, deploys the source with the existing service identities, and verifies the resulting `/api/health` endpoint. It does not reimport or rotate secrets.
+The default mode runs the complete local verification suite. Explicit `Fast` mode still performs a production build, TypeScript and all unit tests, while skipping Playwright only for a knowingly accepted time-critical release. Both modes check the Cloud Build upload set for protected files, deploy with the existing service identities, label the service with the verification mode and source commit, and verify the resulting `/api/health` endpoint. The script does not reimport or rotate secrets.
 
 On the original development device, the personal Codex skill `$weliketrains-deploy` wraps this documented workflow for chat-requested deployments. It is a local convenience, not a repository or clean-clone requirement; `scripts/deploy-code.ps1` and `docs/GCP.md` remain authoritative.
 

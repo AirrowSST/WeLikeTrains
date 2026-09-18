@@ -47,15 +47,17 @@ By user decision on 2026-09-19, this repository has no GitHub Actions workflows 
 
 ```powershell
 pwsh -File scripts/deploy-code.ps1
+# Explicit time-critical exception after relevant targeted browser checks:
+pwsh -File scripts/deploy-code.ps1 -VerificationMode Fast
 ```
 
-The script refuses non-`main` branches and uncommitted changes by default, runs `npm run verify`, checks the exact Cloud Build upload list for protected credential paths, deploys with the existing runtime and builder identities, then reads the ready revision and checks `/api/health`. `-AllowNonMain` and `-AllowDirty` are explicit escape hatches and should be used only when the user knowingly requests deployment of that source state.
+The script refuses non-`main` branches and uncommitted changes by default. Its default `Full` mode runs `npm run verify`. Explicit `Fast` mode still creates the production build, typechecks and runs every unit test, but skips Playwright when the user knowingly accepts that time-critical exception. Both modes inspect the exact Cloud Build upload list for protected credential paths, deploy with the existing runtime and builder identities, then read the ready revision and check `/api/health`. The service is labelled with `wayce-verification` and `wayce-source` so the verification mode and source commit remain inspectable after rollout. `-AllowNonMain` and `-AllowDirty` remain separate explicit escape hatches and should be used only when the user knowingly requests that exact source state.
 
 The original development device also has a personal Codex skill at `C:\Users\Yaw Tia\.codex\skills\weliketrains-deploy` (`$weliketrains-deploy`). It preserves the explicit-request rule, invokes the repository script, diagnoses regional Cloud Build failures, prevents automatic paid retries, verifies traffic and the canonical URL, and records results in `docs/IMPLEMENTATION.md`. The skill is not committed and is not required on another machine; this document and the repository script are the portable workflow.
 
 The container build uses `npm ci --ignore-scripts` because the repository's `prepare` lifecycle script configures workstation Git hooks while the intentional Cloud Build context has neither Git nor `.git`. `.gcloudignore` and `.dockerignore` also exclude `gha-creds-*.json` and the unrelated `temp.txt` from uploads and Docker contexts.
 
-Allow roughly **5–7 minutes** for verification, build and rollout under recent conditions. This is an operational estimate, not a guarantee. A deployment is complete only after the script reports the ready revision and successful application health check.
+Allow roughly **5–7 minutes** for full verification, build and rollout under recent conditions. Fast mode recently measured about **2–3 minutes** when the cloud service was healthy, but this is an operational estimate rather than a guarantee. A deployment is complete only after the script reports the ready revision and successful application health check.
 
 The former GitHub Workload Identity provider and deployer service account may still exist in the temporary GCP project but are unused. They were not deleted because IAM cleanup is a separate infrastructure change; do not reuse them as an implicit deployment path.
 
