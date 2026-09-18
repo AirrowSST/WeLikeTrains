@@ -1,0 +1,108 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-18T22:07:22.327Z",
+  "phase": null,
+  "phase_name": "routing-timing-improvements",
+  "phase_dir": null,
+  "plan": null,
+  "task": 3,
+  "total_tasks": 6,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Document the current timing pipeline and compare existing products",
+      "status": "done",
+      "commit": null
+    },
+    {
+      "id": 2,
+      "name": "Audit and correct the DataMall traffic and flood adapters",
+      "status": "done",
+      "commit": null
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 3,
+      "name": "Add an explicit GTFS train-schedule import and chronological rail timing",
+      "status": "not_started"
+    },
+    {
+      "id": 4,
+      "name": "Replace fixed bus boarding waits with the first catchable BusArrival",
+      "status": "not_started"
+    },
+    {
+      "id": 5,
+      "name": "Add route-matched, bounded traffic corrections for bus running time",
+      "status": "not_started"
+    },
+    {
+      "id": 6,
+      "name": "Calibrate and field-validate component and end-to-end timing",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [],
+  "human_actions_pending": [
+    {
+      "action": "Collect explicitly consented real-journey timestamps during Stage 4",
+      "context": "Automated fixtures cannot establish real-world prediction accuracy",
+      "blocking": false
+    },
+    {
+      "action": "Explicitly authorize deployment if a future local change should reach Cloud Run",
+      "context": "No deployment was requested or performed during this work",
+      "blocking": false
+    }
+  ],
+  "decisions": [
+    {
+      "decision": "Use current DataMall v6.9 paths: PubFloodAlerts, v4/TrafficSpeedBands and EstTravelTimes",
+      "rationale": "The old configured paths no longer matched the current official API contract",
+      "phase": null
+    },
+    {
+      "decision": "Keep road speed and expressway section ETA informational during Stage 0",
+      "rationale": "General road speed is not measured bus speed, and section ETA is not an additive delay",
+      "phase": null
+    },
+    {
+      "decision": "Import GTFS only through an explicit maintenance workflow",
+      "rationale": "Avoid startup downloads, preserve deterministic fallback behaviour and record provenance",
+      "phase": null
+    },
+    {
+      "decision": "Keep route computation local and OneMap display-only",
+      "rationale": "This is an existing user-approved product and privacy boundary",
+      "phase": null
+    }
+  ],
+  "uncommitted_files": [
+    "docs/DATA-SOURCES.md",
+    "docs/IMPLEMENTATION.md",
+    "docs/ROUTING-TIMING-PIPELINE.md",
+    "server/feeds.ts",
+    "server/planner.ts",
+    "shared/types.ts",
+    "tests/feeds.test.ts",
+    "tests/planner.test.ts",
+    "tests/fixtures/datamall/estimated-travel-times.json",
+    "tests/fixtures/datamall/pub-flood-alerts.json",
+    "tests/fixtures/datamall/traffic-speed-bands-v4.json"
+  ],
+  "next_action": "Read AGENTS.md and docs/ROUTING-TIMING-PIPELINE.md, inspect the dirty tree without overwriting unrelated work, then critique the Stage 1 design and verify DataMall redistribution terms before implementing the GTFS importer.",
+  "context_notes": "Stage 0 is complete locally and intentionally does not alter journey times. TypeScript and all 41 unit tests pass. An authenticated read-only smoke check returned HTTP 200 for the three corrected DataMall endpoints; PubFloodAlerts had no active rows at that moment. The deployed Cloud Run app is unchanged. There is no active GSD phase directory, and the broader worktree contains unrelated user changes that must be preserved.",
+  "blocking_constraints": [],
+  "advisory_constraints": [
+    {
+      "description": "Do not let zero-delay road-speed records mark bus segments as congested; server/planner.ts now filters them until route matching exists.",
+      "severity": "advisory"
+    },
+    {
+      "description": "Inline npx tsx -e uses CommonJS output in this setup; wrap asynchronous smoke-test code in an async IIFE instead of using top-level await.",
+      "severity": "advisory"
+    }
+  ]
+}
