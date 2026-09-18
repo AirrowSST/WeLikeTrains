@@ -3351,7 +3351,7 @@ input {
     right: 47px;
     gap: 10px;
     justify-content: space-between;
-    bottom: 27px;
+    bottom: auto;
     padding: 7px 9px;
   }
   .map-legend > span:last-child {
