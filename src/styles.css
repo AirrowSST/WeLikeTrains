@@ -4432,9 +4432,12 @@ body {
 .time-sequence + .plan-button {
   margin-top: 8px;
 }
-.time-picker-card {
+.time-picker-control {
   position: relative;
   min-width: 0;
+}
+.time-picker-card {
+  width: 100%;
   min-height: 92px;
   padding: 12px 10px;
   display: flex;

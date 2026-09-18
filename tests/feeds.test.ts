@@ -9,6 +9,7 @@ import {
 import {
   extractPreferences,
   decodePolyline,
+  localChat,
   resolveChatToolCalls,
 } from "../server/providers";
 import type { PlanResponse } from "../shared/types";
@@ -172,6 +173,9 @@ describe("official data contracts", () => {
     expect(accepted.recommendedRouteId).toBe("dtl");
     expect(accepted.displayedRouteIds).toEqual(["dtl"]);
     expect(accepted.responses).toHaveLength(3);
+    expect(
+      localChat("Show me the route options", plan).displayedRouteIds,
+    ).toEqual(["dtl"]);
 
     const rejected = resolveChatToolCalls(
       [

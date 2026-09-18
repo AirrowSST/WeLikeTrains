@@ -171,19 +171,7 @@ function TimeScrollPicker({
   };
 
   return (
-    <div
-      className="time-picker-card"
-      role="button"
-      aria-label={`${label.toLowerCase()} time`}
-      tabIndex={0}
-      onClick={openPicker}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          openPicker();
-        }
-      }}
-    >
+    <div className="time-picker-control">
       <input
         ref={nativeInput}
         className="time-picker-native"
@@ -195,14 +183,21 @@ function TimeScrollPicker({
           if (event.target.value) onChange(event.target.value);
         }}
       />
-      <span className="time-picker-heading">
-        <Clock3 size={20} aria-hidden="true" />
-        <strong className="time-label">{label}</strong>
-      </span>
-      <span className="time-picker-value">
-        {displayTime}
-        <ChevronDown size={19} aria-hidden="true" />
-      </span>
+      <button
+        type="button"
+        className="time-picker-card"
+        aria-label={`${label.toLowerCase()} time`}
+        onClick={openPicker}
+      >
+        <span className="time-picker-heading">
+          <Clock3 size={20} aria-hidden="true" />
+          <strong className="time-label">{label}</strong>
+        </span>
+        <span className="time-picker-value">
+          {displayTime}
+          <ChevronDown size={19} aria-hidden="true" />
+        </span>
+      </button>
     </div>
   );
 }
