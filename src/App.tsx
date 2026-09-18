@@ -140,6 +140,72 @@ function dateValue(iso: string) {
     day: "2-digit",
   }).format(new Date(iso));
 }
+function TimeScrollPicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: "LEAVE" | "ARRIVE";
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const nativeInput = useRef<HTMLInputElement>(null);
+  const [hourText = "09", minuteText = "00"] = value.split(":");
+  const hour24 = Number(hourText);
+  const hour12 = hour24 % 12 || 12;
+  const period = hour24 >= 12 ? "PM" : "AM";
+  const displayTime = `${String(hour12).padStart(2, "0")}:${minuteText} ${period}`;
+  const openPicker = () => {
+    const input = nativeInput.current;
+    if (!input) return;
+    input.focus();
+    try {
+      (
+        input as HTMLInputElement & {
+          showPicker?: () => void;
+        }
+      ).showPicker?.();
+    } catch {
+      input.click();
+    }
+  };
+
+  return (
+    <div
+      className="time-picker-card"
+      role="button"
+      aria-label={`${label.toLowerCase()} time`}
+      tabIndex={0}
+      onClick={openPicker}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openPicker();
+        }
+      }}
+    >
+      <input
+        ref={nativeInput}
+        className="time-picker-native"
+        tabIndex={-1}
+        aria-label={`${label.toLowerCase()} time picker`}
+        type="time"
+        value={value}
+        onChange={(event) => {
+          if (event.target.value) onChange(event.target.value);
+        }}
+      />
+      <span className="time-picker-heading">
+        <Clock3 size={20} aria-hidden="true" />
+        <strong className="time-label">{label}</strong>
+      </span>
+      <span className="time-picker-value">
+        {displayTime}
+        <ChevronDown size={19} aria-hidden="true" />
+      </span>
+    </div>
+  );
+}
 function makeRequest(
   persona: Persona = "lim",
   dataMode: "demo" | "live" = "live",
@@ -398,7 +464,7 @@ export default function App() {
   const [trackingLocation, setTrackingLocation] = useState(false);
   const [persona, setPersona] = useState<Persona>("rachel");
   const [savedRoutine, setSavedRoutine] = useState(!!saved.current);
-  const [demoPersona, setDemoPersona] = useState<Persona>("rachel");
+  const [demoPersona, setDemoPersona] = useState<Persona>("lim");
   const [demoScenario, setDemoScenario] = useState<Scenario>("disruption");
   const [hardPreferences, setHardPreferences] = useState<Partial<Preferences>>(
     saved.current?.hardPreferences ?? {},
@@ -407,6 +473,14 @@ export default function App() {
   const normalRequest = useRef<PlanRequest | null>(null);
   const lastProactiveWarning = useRef("");
   const locationWatch = useRef<number | null>(null);
+  const demoProfiles = (["arjun", "rachel", "lim"] as Persona[]).map(
+    (id) => profiles.find((candidate) => candidate.id === id)!,
+  );
+  const selectedDemoProfile =
+    demoProfiles.find((candidate) => candidate.id === demoPersona) ??
+    demoProfiles[0];
+  const selectedDemoScenario =
+    scenarios.find((scenario) => scenario.id === demoScenario) ?? scenarios[0];
   const selected = plan
     ? ([plan.recommended, ...plan.alternatives, plan.original].find(
         (j) => j.id === selectedId,
@@ -741,14 +815,15 @@ export default function App() {
     });
     setModal("proactive");
   }, [plan]);
-  const startDemo = () => {
+  const runDemoSelection = (persona: Persona, scenario: Scenario) => {
     if (request.dataMode === "live") normalRequest.current = request;
     clearLocation();
-    const value = makeRequest(demoPersona, "demo", demoScenario);
+    const value = makeRequest(persona, "demo", scenario);
     setRequest(value);
     setModal(null);
     void runPlan(value);
   };
+  const startDemo = () => runDemoSelection(demoPersona, demoScenario);
   const exitDemo = () => {
     clearLocation();
     const stored =
@@ -1072,47 +1147,29 @@ export default function App() {
                       </p>
                     )}
                     <div className="time-fields time-sequence">
-                      <label>
-                        <Clock3 size={20} />
-                        <span>
-                          <strong className="time-label">LEAVE</strong>
-                          <input
-                            aria-label="Departure time"
-                            type="time"
-                            value={sgTime(request.departure)}
-                            onChange={(e) => {
-                              if (e.target.value)
-                                updateRequest({
-                                  departure: `${dateValue(request.departure)}T${e.target.value}:00+08:00`,
-                                });
-                            }}
-                          />
-                        </span>
-                      </label>
+                      <TimeScrollPicker
+                        label="LEAVE"
+                        value={sgTime(request.departure)}
+                        onChange={(value) =>
+                          updateRequest({
+                            departure: `${dateValue(request.departure)}T${value}:00+08:00`,
+                          })
+                        }
+                      />
                       <span className="time-sequence-arrow" aria-hidden="true">
                         <ArrowRight size={17} />
                       </span>
-                      <label>
-                        <Clock3 size={20} />
-                        <span>
-                          <strong className="time-label">ARRIVE</strong>
-                          <input
-                            id="arrive-by"
-                            aria-label="Arrive by"
-                            type="time"
-                            value={
-                              request.arriveBy ? sgTime(request.arriveBy) : ""
-                            }
-                            onChange={(e) =>
-                              updateRequest({
-                                arriveBy: e.target.value
-                                  ? `${dateValue(request.departure)}T${e.target.value}:00+08:00`
-                                  : undefined,
-                              })
-                            }
-                          />
-                        </span>
-                      </label>
+                      <TimeScrollPicker
+                        label="ARRIVE"
+                        value={
+                          request.arriveBy ? sgTime(request.arriveBy) : "10:30"
+                        }
+                        onChange={(value) =>
+                          updateRequest({
+                            arriveBy: `${dateValue(request.departure)}T${value}:00+08:00`,
+                          })
+                        }
+                      />
                     </div>
                     <button
                       className="primary-button plan-button"
@@ -1676,32 +1733,9 @@ export default function App() {
             </small>
           </span>
           {request.dataMode === "demo" && (
-            <>
-              <label className="scenario-select">
-                <span className="sr-only">Demo scenario</span>
-                <select
-                  aria-label="Demo scenario"
-                  value={request.scenario}
-                  onChange={(event) => {
-                    const scenario = event.target.value as Scenario;
-                    setDemoScenario(scenario);
-                    const value = { ...request, scenario };
-                    setRequest(value);
-                    void runPlan(value);
-                  }}
-                >
-                  {scenarios.map((scenario) => (
-                    <option key={scenario.id} value={scenario.id}>
-                      {scenario.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={14} />
-              </label>
-              <button className="text-button" onClick={exitDemo}>
-                Exit demo
-              </button>
-            </>
+            <button className="text-button" onClick={exitDemo}>
+              Exit demo
+            </button>
           )}
           <button
             className="text-button data-source-button"
@@ -1710,6 +1744,53 @@ export default function App() {
             Data & sources <ArrowRight size={14} />
           </button>
         </div>
+        <section className="demo-test-panel" aria-label="Demo test controls">
+          <h2 className="sr-only">Demo test controls</h2>
+          <label className="demo-template-option">
+            <span className="demo-template-label">Profile</span>
+            <span className="demo-template-value">
+              {selectedDemoProfile.name}
+              <ChevronDown size={15} aria-hidden="true" />
+            </span>
+            <select
+              aria-label="Demo profile"
+              value={demoPersona}
+              onChange={(event) => {
+                const persona = event.target.value as Persona;
+                setDemoPersona(persona);
+                runDemoSelection(persona, demoScenario);
+              }}
+            >
+              {demoProfiles.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {candidate.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="demo-template-option">
+            <span className="demo-template-label">Disruption simulator</span>
+            <span className="demo-template-value">
+              {selectedDemoScenario.label}
+              <ChevronDown size={15} aria-hidden="true" />
+            </span>
+            <select
+              aria-label="Disruption simulator"
+              value={demoScenario}
+              onChange={(event) => {
+                const scenario = event.target.value as Scenario;
+                setDemoScenario(scenario);
+                runDemoSelection(demoPersona, scenario);
+              }}
+            >
+              {scenarios.map((scenario) => (
+                <option key={scenario.id} value={scenario.id}>
+                  {scenario.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
         <footer className="site-footer">
           <span>
             {plan

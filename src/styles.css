@@ -3913,6 +3913,140 @@ body {
 .time-sequence + .plan-button {
   margin-top: 8px;
 }
+.time-picker-card {
+  position: relative;
+  min-width: 0;
+  min-height: 92px;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px solid #0f4d3e;
+  border-radius: 9px;
+  background: var(--green);
+  color: #fff;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: box-shadow 160ms ease, transform 160ms ease;
+}
+.time-picker-card:hover,
+.time-picker-card:focus-visible,
+.time-picker-card:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 3px #a9c6b7;
+}
+.time-picker-card:active {
+  transform: scale(0.99);
+}
+.time-picker-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.time-picker-card .time-label {
+  color: #fff;
+  font-size: 20px;
+  font-weight: 750;
+  line-height: 1;
+  text-align: center;
+}
+.time-fields .time-picker-card > .time-picker-heading {
+  width: auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: #fff;
+}
+.time-picker-heading svg {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  color: #e6f1eb;
+}
+.time-fields .time-picker-card > .time-picker-value {
+  width: auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: #fff;
+  font-size: clamp(20px, 5vw, 25px);
+  font-weight: 700;
+  letter-spacing: -0.45px;
+  line-height: 1;
+  text-align: center;
+}
+.time-picker-value svg {
+  flex: 0 0 auto;
+  color: #dcebe3;
+  stroke-width: 2.5;
+}
+.demo-test-panel {
+  margin: -10px 0 22px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  overflow: hidden;
+  border: 1px solid #9ca79a;
+  border-radius: 8px;
+  background: #f2f4ef;
+}
+.demo-template-option {
+  position: relative;
+  min-width: 0;
+  min-height: 88px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.demo-template-option + .demo-template-option {
+  border-left: 1px solid #9ca79a;
+}
+.demo-template-label {
+  color: #2f4f40;
+  font-size: clamp(15px, 3.7vw, 19px);
+  font-weight: 700;
+  line-height: 1.1;
+}
+.demo-template-value {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #53665b;
+  font-size: clamp(14px, 3.3vw, 17px);
+  font-weight: 600;
+  line-height: 1.1;
+}
+.demo-template-value svg {
+  flex: 0 0 auto;
+  color: #3f5f4e;
+  stroke-width: 2.5;
+}
+.demo-template-option select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.demo-template-option:focus-within {
+  z-index: 1;
+  outline: 3px solid #9bbba9;
+  outline-offset: -3px;
+}
 .planner-card .preference-chips {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.1fr) minmax(0, 0.7fr);
