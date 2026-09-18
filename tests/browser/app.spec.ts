@@ -1,31 +1,37 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import type { PlanResponse } from "../../shared/types";
+import type { AccountState, PlanResponse } from "../../shared/types";
+import { places, profiles } from "../../shared/catalog";
+
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
 
 async function useDeterministicPlans(page: Page) {
-  const templates = new Map<string, PlanResponse>();
+  const templates = new Map<string, Promise<PlanResponse>>();
   let latestTemplate: PlanResponse | undefined;
   await page.route("**/api/plan", async (route) => {
     const request = route.request().postDataJSON();
     const fixtureKey = request.scenario ?? "normal";
     let template = templates.get(fixtureKey);
     if (!template) {
-      const response = await route.fetch({
-        postData: JSON.stringify({
-          ...request,
-          dataMode: "demo",
-        }),
-      });
-      if (!response.ok())
-        throw new Error(
-          `Fixture plan request failed: HTTP ${response.status()}`,
-        );
-      const fetchedTemplate = (await response.json()) as PlanResponse;
-      templates.set(fixtureKey, fetchedTemplate);
-      template = fetchedTemplate;
+      template = (async () => {
+        const response = await page.request.post(route.request().url(), {
+          data: {
+            ...request,
+            dataMode: "demo",
+          },
+        });
+        if (!response.ok())
+          throw new Error(
+            `Fixture plan request failed: HTTP ${response.status()}`,
+          );
+        return (await response.json()) as PlanResponse;
+      })();
+      templates.set(fixtureKey, template);
     }
-    const plan = template;
+    const plan = await template;
     latestTemplate = plan;
     await route.fulfill({
       contentType: "application/json",
@@ -40,6 +46,11 @@ async function useDeterministicPlans(page: Page) {
 }
 function startJourneyButton(page: Page) {
   return page.getByRole("button", { name: "Start", exact: true });
+}
+async function openDeveloperDemos(page: Page) {
+  await page.getByRole("button", { name: "Open options and account" }).click();
+  await page.getByLabel("Developer mode").check();
+  await page.getByRole("button", { name: "Open demo presets" }).click();
 }
 test("plans, compares, saves, interviews preferences and shows planned notices", async ({
   page,
@@ -111,11 +122,13 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
     path: `test-results/${info.project.name}-journey.png`,
     fullPage: true,
   });
-  await page.getByLabel("Disruption simulator").selectOption("rain");
+  await expect(page.getByLabel("Demo test controls")).toHaveCount(0);
+  await openDeveloperDemos(page);
+  await page.getByLabel("Demo weather").selectOption("storm");
+  await page.getByRole("button", { name: "Start demo" }).click();
   await expect(page.locator(".rain-zone").first()).toBeVisible();
   await expect(page.locator(".map-mode-key")).toContainText("Rain area");
-  await page.getByLabel("Disruption simulator").selectOption("normal");
-  await expect(page.getByLabel("Disruption simulator")).toHaveValue("normal");
+  await page.getByRole("button", { name: "Exit demo" }).click();
   await expect(page.locator(".map-mode-key")).not.toContainText("Rain area");
   await page.getByRole("button", { name: "Save route", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("saved");
@@ -155,6 +168,14 @@ test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
   await useDeterministicPlans(page);
   await page.goto("/");
   await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(page.locator(".route-options")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(
+    page.getByRole("button", { name: "Find my best route" }),
+  ).toBeEnabled();
+  await page.waitForLoadState("networkidle");
   for (const name of ["leave time", "arrive time"] as const) {
     const trigger = page.getByRole("button", { name, exact: true });
     await expect(trigger).toHaveCount(1);
@@ -171,14 +192,23 @@ test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
       nodes: v.nodes.map((n) => n.target),
     })),
   ).toEqual([]);
+  await page.getByRole("button", { name: "Open options and account" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  const optionsResults = await new AxeBuilder({ page })
+    .include("dialog")
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  expect(optionsResults.violations.map((violation) => violation.id)).toEqual(
+    [],
+  );
 });
-test("resizes the mobile journey sheet by drag and keyboard", async ({ page }) => {
+test("resizes the mobile journey sheet by drag and keyboard", async ({
+  page,
+}) => {
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(
-    startJourneyButton(page),
-  ).toBeEnabled();
+  await expect(startJourneyButton(page)).toBeEnabled();
 
   const handle = page.getByRole("button", { name: /Resize journey panel/ });
   await expect(handle).toBeVisible();
@@ -298,14 +328,15 @@ test("shows labelled simulated location and follows manual demo progress", async
   await useDeterministicPlans(page);
   await page.goto("/");
   await expect(startJourneyButton(page)).toBeEnabled();
-  await page.getByRole("button", { name: "Demo mode", exact: true }).click();
+  await openDeveloperDemos(page);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
   await page.getByRole("button", { name: "Start demo" }).click();
-  await page.getByRole("button", { name: "Use simulated location" }).click();
   await expect(page.getByLabel("FROM")).toHaveValue(
     "Simulated current location",
-  );
-  await expect(page.getByRole("status")).toContainText(
-    "Simulated location active",
   );
   await expect(page.locator(".current-location-marker.demo")).toBeVisible();
   await expect(page.locator(".route-options")).toHaveAttribute(
@@ -319,6 +350,150 @@ test("shows labelled simulated location and follows manual demo progress", async
   await page.getByRole("button", { name: "I’m here" }).click();
   await expect(page.getByRole("dialog")).toContainText("STEP 2");
 });
+test("keeps faux demo accounts isolated and restores the guest space", async ({
+  page,
+}) => {
+  await useDeterministicPlans(page);
+  await page.goto("/");
+  await expect(startJourneyButton(page)).toBeEnabled();
+  await page.getByRole("button", { name: "Save route", exact: true }).click();
+  await openDeveloperDemos(page);
+  await page.getByRole("button", { name: /Mdm Lim/ }).click();
+  await page.getByLabel("Demo weather").selectOption("heat");
+  await page.getByRole("button", { name: "Start demo" }).click();
+
+  await expect(page.locator("html")).toHaveClass("large-text");
+  await page.getByRole("button", { name: "Open options and account" }).click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "Mdm Lim · Faux account",
+  );
+  await expect(page.getByRole("dialog")).toContainText("never synced");
+  await page.getByRole("button", { name: "Close dialog" }).click();
+
+  await page.getByRole("button", { name: "Exit demo" }).click();
+  await expect(page.locator("html")).not.toHaveClass("large-text");
+  await page.getByRole("button", { name: "Open options and account" }).click();
+  await expect(page.getByRole("dialog")).toContainText("Guest");
+  await page.getByRole("button", { name: "Close dialog" }).click();
+  await page.getByRole("button", { name: "Routes", exact: true }).click();
+  await expect(page.getByText("SAVED IN GUEST SPACE")).toBeVisible();
+});
+test("preserves the guest snapshot timestamp during Google sign-in", async ({
+  page,
+}) => {
+  await useDeterministicPlans(page);
+  const guestPreferences = { ...profiles[0].preferences, maxWalk: 2200 };
+  const guestUpdatedAt = "2026-09-18T08:00:00.000Z";
+  const request = {
+    origin: places[0],
+    destination: places[1],
+    departure: "2026-09-21T07:40:00+08:00",
+    arriveBy: "2026-09-21T08:45:00+08:00",
+    preferences: guestPreferences,
+    scenario: "normal" as const,
+    dataMode: "live" as const,
+  };
+  const guestState: AccountState = {
+    preferences: guestPreferences,
+    hardPreferences: { maxWalk: 2200 },
+    commutes: [
+      {
+        id: "guest-commute",
+        label: "Guest commute",
+        request,
+        hardPreferences: { maxWalk: 2200 },
+        timeSensitive: "08:45",
+        savedAt: guestUpdatedAt,
+      },
+    ],
+    largeText: false,
+    updatedAt: guestUpdatedAt,
+  };
+  const accountPreferences = { ...profiles[0].preferences, maxWalk: 900 };
+  const accountState: AccountState = {
+    ...guestState,
+    preferences: accountPreferences,
+    hardPreferences: { maxWalk: 900 },
+    commutes: [],
+    updatedAt: "2026-09-19T08:00:00.000Z",
+  };
+  let submittedGuestState: AccountState | undefined;
+
+  await page.addInitScript((state) => {
+    localStorage.setItem("wlt-guest-v2", JSON.stringify(state));
+    const browserWindow = window as typeof window & {
+      google?: {
+        accounts: {
+          id: {
+            initialize(options: {
+              callback: (response: { credential: string }) => void;
+            }): void;
+            renderButton(parent: HTMLElement): void;
+            disableAutoSelect(): void;
+          };
+        };
+      };
+      googleCredentialCallback?: (response: { credential: string }) => void;
+    };
+    browserWindow.google = {
+      accounts: {
+        id: {
+          initialize: ({ callback }) => {
+            browserWindow.googleCredentialCallback = callback;
+          },
+          renderButton: (parent) => {
+            const button = document.createElement("button");
+            button.textContent = "Continue with Google";
+            button.addEventListener("click", () =>
+              browserWindow.googleCredentialCallback?.({
+                credential: "c".repeat(120),
+              }),
+            );
+            parent.append(button);
+          },
+          disableAutoSelect: () => {},
+        },
+      },
+    };
+  }, guestState);
+  await page.route("**/api/config", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        integrations: {
+          googleAccounts: true,
+          push: false,
+          tts: false,
+          vertex: false,
+        },
+        googleClientId: "123-test.apps.googleusercontent.com",
+      }),
+    });
+  });
+  await page.route("**/api/auth/session", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ authenticated: false }),
+    });
+  });
+  await page.route("**/api/auth/google", async (route) => {
+    submittedGuestState = route.request().postDataJSON().guestState;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        authenticated: true,
+        user: { name: "Test commuter", email: "commuter@example.test" },
+        state: accountState,
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open options and account" }).click();
+  await page.getByRole("button", { name: "Continue with Google" }).click();
+
+  await expect.poll(() => submittedGuestState?.updatedAt).toBe(guestUpdatedAt);
+});
 test("uses browser geolocation in live mode only after explicit action", async ({
   page,
   context,
@@ -331,7 +506,15 @@ test("uses browser geolocation in live mode only after explicit action", async (
   await context.setGeolocation({ latitude: 1.3521, longitude: 103.9398 });
   await expect(startJourneyButton(page)).toBeEnabled();
   await expect(page.locator(".demo-toolbar")).toContainText("Live LTA + NEA");
+  const locationPlan = page.waitForResponse((response) => {
+    if (!response.url().endsWith("/api/plan")) return false;
+    return (
+      response.request().postDataJSON()?.origin?.id ===
+      "device-current-location"
+    );
+  });
   await page.getByRole("button", { name: "Use my location" }).click();
+  await locationPlan;
   await expect(page.getByLabel("FROM")).toHaveValue("Current location");
   await expect(page.locator(".current-location-marker.device")).toBeVisible();
   await expect(page.getByText(/Device location · ±/)).toBeVisible();
@@ -342,16 +525,19 @@ test("uses browser geolocation in live mode only after explicit action", async (
   await startJourneyButton(page).click();
   await page.getByRole("button", { name: "Start live location" }).click();
   await expect(page.getByRole("dialog")).toContainText("Live location on");
+  await page.getByRole("button", { name: "Close dialog" }).click();
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 test("fits a narrow phone without horizontal overflow", async ({ page }) => {
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 320, height: 700 });
   await page.goto("/");
   await expect(startJourneyButton(page)).toBeEnabled();
-  await page.getByRole("button", { name: "Demo mode", exact: true }).click();
+  await openDeveloperDemos(page);
   await page.getByRole("button", { name: "Start demo" }).click();
-  await page.getByRole("button", { name: "Use simulated location" }).click();
-  await expect(page.getByText("Simulated location active")).toBeVisible();
+  await expect(page.getByLabel("FROM")).toHaveValue(
+    "Simulated current location",
+  );
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -367,9 +553,7 @@ test("supports large text and preserves a previously loaded journey offline", as
   await useDeterministicPlans(page);
   await page.goto("/");
   await expect(startJourneyButton(page)).toBeEnabled();
-  await page
-    .getByRole("button", { name: "Open profile and preferences" })
-    .click();
+  await page.getByRole("button", { name: "Open options and account" }).click();
   await page.getByLabel("Larger, easier-to-read text").check();
   await page.getByRole("button", { name: "Apply my preferences" }).click();
   await expect(page.locator("html")).toHaveClass("large-text");

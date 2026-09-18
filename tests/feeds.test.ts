@@ -120,6 +120,23 @@ describe("official data contracts", () => {
       false,
     );
   });
+  it("applies labelled custom weather only to deterministic demo conditions", () => {
+    const conditions = demoConditions(
+      "disruption",
+      "2026-09-21T07:40:00+08:00",
+      { kind: "storm", rainfallMm: 12, temperature: 28 },
+    );
+    expect(conditions.weather).toMatchObject({
+      forecast: "Heavy demo thunderstorms",
+      rain: true,
+      rainfallMm: 12,
+      walkStatus: "invalid",
+      cycleStatus: "invalid",
+    });
+    expect(
+      conditions.feeds.find((feed) => feed.name === "Weather")?.detail,
+    ).toBe("Custom simulated weather");
+  });
   it("extracts preferences without executing user instructions", () => {
     expect(
       extractPreferences(

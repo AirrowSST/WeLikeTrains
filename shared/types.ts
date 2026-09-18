@@ -16,6 +16,7 @@ export type SegmentIssue =
 export type Scenario =
   "normal" | "disruption" | "rain" | "crowded" | "maintenance" | "closure";
 export type Persona = "rachel" | "arjun" | "lim";
+export type DemoWeatherKind = "clear" | "showers" | "storm" | "heat";
 export interface Place {
   id: string;
   name: string;
@@ -51,6 +52,32 @@ export interface PlanRequest {
   preferences: Preferences;
   scenario: Scenario;
   dataMode: "demo" | "live";
+  demoWeather?: {
+    kind: DemoWeatherKind;
+    rainfallMm: number;
+    temperature: number;
+  };
+}
+export interface SavedCommute {
+  id: string;
+  label: string;
+  request: PlanRequest;
+  hardPreferences: Partial<Preferences>;
+  timeSensitive: string;
+  inferred?: boolean;
+  savedAt: string;
+}
+export interface AccountState {
+  preferences: Preferences;
+  hardPreferences: Partial<Preferences>;
+  commutes: SavedCommute[];
+  largeText: boolean;
+  updatedAt: string;
+}
+export interface AccountUser {
+  name: string;
+  email: string;
+  picture?: string;
 }
 export interface Segment {
   id: string;

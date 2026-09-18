@@ -11,8 +11,9 @@ Public URL: https://weliketrains-191711317812.asia-southeast1.run.app
 - `weliketrains-runtime` has Vertex invocation, service usage, Firestore (when enabled), and individual secret access. Build and scheduler identities are separate. No service-account JSON key is created.
 - Secret Manager holds LTA AccountKey, OneMap email/password/token and Web Push private key. VAPID public key is intentionally public.
 - Vertex AI uses the global endpoint; Cloud Text-to-Speech provides MP3 output.
-- Firestore `(default)` in Singapore stores consented routines with TTL on `routines.expiresAt`.
+- Firestore `(default)` in Singapore stores consented routines with TTL on `routines.expiresAt` and optional user-controlled account preferences/commutes without a TTL.
 - `weliketrains-reminders` runs every five minutes using an OIDC identity; `/api/internal/reminders` rejects unauthenticated calls at application level.
+- Optional end-user accounts use Google Identity Services, server-side ID-token verification, signed HttpOnly sessions and Firestore documents keyed from the stable Google subject. Email is display data, not the account key.
 
 ## First deployment
 
@@ -23,12 +24,22 @@ gcloud auth login
 npm ci
 Copy-Item .env.example .env # only if .env does not already exist
 # Edit .env privately: LTA_ACCOUNT_KEY, ONEMAP_EMAIL and ONEMAP_PASSWORD.
-pwsh -File scripts/deploy-gcp.ps1 -ProjectId YOUR_PROJECT_ID -EnableReminders
+pwsh -File scripts/deploy-gcp.ps1 -ProjectId YOUR_PROJECT_ID -EnableReminders -EnableAccounts
 ```
 
 The script explicitly selects the supplied project rather than changing the user’s global default. It enables required services, sets up resources, imports configured secrets and checks `/api/health`. It does not print secret values. Running setup again creates new secret versions; preserve the ignored `.local/vapid.json` for existing push subscriptions. Do not rotate VAPID casually.
 
-Cloud Run’s attached identity handles Google authentication automatically. For optional **local** Vertex/TTS calls, use `gcloud auth application-default login` and set `ENABLE_VERTEX_LOCAL=true`, `GOOGLE_CLOUD_PROJECT`, and the relevant feature switches. A plain `gcloud auth login` alone is not local application-default authentication. Local demo mode needs neither.
+Cloud Run’s attached identity handles authentication to Google Cloud APIs automatically; this is separate from end-user Google sign-in. For optional **local** Vertex/TTS calls, use `gcloud auth application-default login` and set `ENABLE_VERTEX_LOCAL=true`, `GOOGLE_CLOUD_PROJECT`, and the relevant feature switches. A plain `gcloud auth login` alone is not local application-default authentication. Local demo mode needs neither.
+
+## Google account sync
+
+Account sync is optional; without it the app remains a fully usable local guest experience. Before enabling it:
+
+1. Configure the OAuth consent screen and create a **Web application** OAuth client in Google Cloud. Add the exact production Cloud Run origin and the local development origins (`http://localhost:5173` and `http://localhost:8080`) as authorised JavaScript origins.
+2. Put the public client ID in the ignored `.env` as `GOOGLE_CLIENT_ID`. `SESSION_SECRET` may be supplied there, or `deploy-gcp.ps1 -EnableAccounts` will create and retain a random value under ignored `.local` storage before binding it through Secret Manager.
+3. Run the infrastructure setup only after an explicit deployment request. A code-only deployment retains the resulting environment and secret bindings.
+
+The browser uses Google’s rendered sign-in button. The server verifies the returned ID token against `GOOGLE_CLIENT_ID`, uses the immutable `sub` claim as the identity, and issues a 30-day signed HttpOnly, Secure, SameSite=Lax session cookie. Preferences and up to ten live daily commutes persist in Firestore until the user deletes them. Guest data is merged by commute ID, with the most recently changed preference state winning. Simulated requests are rejected by the account API. See Google’s official [web setup](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid) and [server verification](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token) guides.
 
 ## Manual deployments from the development device
 

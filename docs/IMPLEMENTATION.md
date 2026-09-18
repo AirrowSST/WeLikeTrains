@@ -10,6 +10,7 @@ Primary journey: Rachel, Tampines to Raffles Place, 07:40 departure / 08:45 dead
 - Planned events, lift outages, rain and crowd forecasts affect route ranking.
 - Grounded Vertex AI assistant with bounded function calls for preference proposals, supplied-route recommendations and validated in-chat route cards, recent conversational context, speech, transparent disruption-risk estimation and reproducible evaluation.
 - Local routine/journey persistence, opt-in background web push with Firestore + Cloud Scheduler.
+- Guest-first preferences and multiple daily commutes, with optional server-verified Google sign-in that merges guest state into a Firestore-backed account. Rachel, Arjun and Mdm Lim are isolated faux accounts under Options → Developer mode, with deterministic location, scenario and custom weather state that is discarded on exit.
 - Cloud Run, Secret Manager, least-privilege service accounts, first-time infrastructure setup and guarded manual code deployment from the authenticated development device.
 - Requirements matrix, assumptions, data licences, demo and clean-machine instructions.
 
@@ -24,13 +25,14 @@ The remote was initially empty. The organiser's referenced PS2/data and PS2/refe
 - The mobile journey map now distinguishes walking, bus, rail and cycling geometry with mode icons, labels and a compact legend; selected endpoints and a small set of Singapore landmarks provide orientation. Weather-affected walking areas use clearly labelled, approximate rain highlights rather than claiming radar-level precision.
 - Official OneMap tiles now provide complete online road, building and place context across Singapore. The committed OSM vectors remain underneath as an offline fallback, and reduced detail is visibly labelled if OneMap tiles fail.
 - Production build and TypeScript pass.
-- 26 unit tests pass, including deployment guardrails, real OSM Rachel/Arjun/Mdm Lim routes, DTL crowd-code join, location handling and server validation of chat tool calls.
-- All 18 Chromium browser checks pass across phone and wide-screen mobile-only UI when run as separate projects, including the resizable journey sheet, validated chat route cards, foreground/simulated location, 320px no-overflow, main journey/chat/preference/save flows, axe and large-text/offline reload.
+- 31 unit tests pass, including deployment guardrails, real OSM Rachel/Arjun/Mdm Lim routes, DTL crowd-code join, location handling, session tamper/expiry handling, demo/account validation boundaries and server validation of chat tool calls.
+- The previous 20 Chromium browser checks pass across phone and wide-screen mobile-only UI when run as separate projects, including the resizable journey sheet, validated chat route cards, guest/faux-account isolation and restoration, custom demo weather, foreground/simulated location, 320px no-overflow, main journey/chat/preference/save flows, axe and large-text/offline reload. A new targeted browser regression also passes for preserving the real guest modification timestamp during Google sign-in.
 - Local evaluation: nine synthetic journeys plus six preference cases. Two routing checks currently fail because every candidate in the Rachel/rain and Arjun/rain fixtures is marked blocked for unsafe exposed walking; the preference cases pass. Previously recorded cloud evaluation used Vertex AI for all nine journey cases. `docs/evaluation-*.json` contain exact outputs, not a general AI accuracy claim. Model-generated prose still needs human review.
 - Hosted Cloud TTS returned MP3; real LTA/OneMap integrations were exercised. Scheduler completed successfully; anonymous reminder calls return 401 and invalid plan bodies return 400.
 - Local Vertex function calling was exercised with a combined crowd, walking-limit and route-choice request. Preference arguments and route IDs are validated on the server, and changes remain proposals until the user confirms them.
 - Chat route-list requests use `display_routes`; the server accepts only supplied, unblocked route IDs and the client renders timing, arrival, legs, walking, transfers and crowd information from its computed plan.
 - Physical-phone, spoken-audio listening, lock-screen push delivery and walked-route verification remain human QA tasks. Accessibility route certification, trained disruption probabilities and final submission materials are not claimed.
+- Google’s real sign-in popup was exercised locally with an authorised Web OAuth client and a consenting test account. Preference and saved-commute writes reached Firestore, and logout followed by re-login restored the account state while keeping the guest space separate. Cross-device and deployed-production account sync remain unverified.
 
 ## Deployment status — 2026-09-19
 
@@ -45,3 +47,5 @@ The remote was initially empty. The organiser's referenced PS2/data and PS2/refe
 ## Next session
 
 Read `AGENTS.md`. Human polishing is pending. Do not restart the app architecture, introduce a desktop dashboard or prepare the deferred write-up. Do not recreate GitHub Actions or deploy without an explicit user request; use the guarded local deployment script when asked. Google model access can change: configured Gemini 3.5 returned 429, while Gemini 2.5 Flash worked in this project; the model remains environment-configurable.
+
+Normal use now starts as Guest. Local Google account sync is configured and its sign-in/logout persistence flow has been exercised; production still needs the account environment and secret bindings deployed before claiming hosted account support. Developer-mode persona state must remain synthetic, visibly labelled and isolated from guest/account persistence.

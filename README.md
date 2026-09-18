@@ -4,13 +4,13 @@ A **mobile-only Singapore commuter companion**: a useful decision before you lea
 
 **Open on your phone:** https://weliketrains-191711317812.asia-southeast1.run.app
 
-Rachel’s Tampines → Raffles Place commute is the primary end-to-end journey. Arjun and Mdm Lim are selectable in the profile button. Every viewport uses the same one-column interface, bottom navigation and 480px maximum app width. This is an installable web app, not a native app-store build.
+The normal app starts in a local guest space with editable preferences and daily commutes. Optional Google sign-in merges that guest data into a verified account for continued syncing. Rachel’s Tampines → Raffles Place commute remains the primary end-to-end demo; Rachel, Arjun and Mdm Lim are isolated faux-account presets under **Options → Developer mode**. Every viewport uses the same one-column interface, bottom navigation and 480px maximum app width. This is an installable web app, not a native app-store build.
 
 ## Try it
 
-The app opens in clearly labelled **Demo experience** mode with an injected EWL signalling disruption. The places and OSM routes are real; demo incidents, crowd levels and delays are synthetic, not a claim about current service. No account or API key is required to judge this path.
+The app opens as a standard guest using live-mode source labels. No account or API key is required for local routing. To present deterministic scenarios, open **Options**, enable **Developer mode**, then open the demo presets. The places and OSM routes are real; demo incidents, crowd levels, weather and delays are synthetic, not a claim about current service.
 
-1. Read Rachel’s recommendation at the top. Change the demo scenario to compare normal service, disruption, crowds, rain, closure or lift maintenance.
+1. Enable Developer mode in Options, load Rachel, and change the simulated network or custom weather controls to compare normal service, disruption, crowds, rain, closure or lift maintenance.
 2. Compare the original and revised route on the OSM map. Swipe route cards for time, crowd and walking trade-offs. Open **Full details** for directions and limitations.
 3. Tap **Use simulated location** to preview the labelled demo position, then start the step-by-step journey. In Live mode, **Use my location** requests browser permission and the active journey can show foreground location until it is closed. Progress remains manual; there is no background tracking.
 4. Open the companion, consent to sending route context, ask why this route or describe your preferences. Review changes before applying them. Tap the speaker to listen.
@@ -30,7 +30,7 @@ npm start
 
 Open http://localhost:8080. For development, `npm run dev` serves the UI at http://localhost:5173 and the API at port 8080. On a phone, use the deployed HTTPS URL: service workers and background push require a secure origin, unlike an ordinary LAN HTTP address.
 
-Optional: copy `.env.example` to `.env` and fill credentials. Never commit `.env`. The deployed app already has the supplied LTA and OneMap credentials in Google Secret Manager and uses an attached Google service account for AI and speech—no downloadable service-account key is needed.
+Optional: copy `.env.example` to `.env` and fill credentials. Never commit `.env`. Google account sync additionally requires a Google Identity Services web client ID, a server-only session secret and Firestore; see `docs/GCP.md`. The deployed app’s existing transport/AI credentials remain in Google Secret Manager and use an attached Google service account—no downloadable service-account key is needed.
 
 ## Verification
 
@@ -65,7 +65,7 @@ The script below is only for first-time infrastructure setup:
 
 ```powershell
 gcloud auth login
-pwsh -File scripts/deploy-gcp.ps1 -ProjectId YOUR_PROJECT_ID -EnableReminders
+pwsh -File scripts/deploy-gcp.ps1 -ProjectId YOUR_PROJECT_ID -EnableReminders -EnableAccounts
 ```
 
 This enables APIs, creates scoped service accounts, imports nonempty `.env` credentials into Secret Manager, deploys Cloud Run, and configures Firestore TTL plus an authenticated five-minute reminder job. It creates billable resources using the project’s credits. Cloud Run scales to zero and is capped at two instances; these settings are **not a spending cap**. Qwiklabs projects can expire; migrate before the lab ends if the URL must remain available.
@@ -78,6 +78,7 @@ This enables APIs, creates scoped service accounts, imports nonempty `.env` cred
 - Step-free mode excludes mapped stairs and known station lift outages, but station access, unmapped obstacles and shelter are **not fully verified**. Do not treat this prototype as certified accessible navigation. Rachel is the primary validated persona.
 - The bundled transit extract covers rail and selected bus routes, not every bus in Singapore. OneMap provides broader live coverage. Planned road-work notices are informational without verified route geometry. Unstructured advisories are shown verbatim, not automatically turned into closures.
 - Background alerts require opt-in browser permission and compatible installed-web-app support. Saved routines repeat daily and expire after 30 days. Delivery is not guaranteed when a device or platform restricts push.
+- Guest preferences and commutes remain local. Google account sync is optional, uses a server-verified Google identity and persists until the user deletes the account data. Signing out restores the separate guest space. Faux demo accounts never sync or register reminders.
 - Foreground browser location is opt-in. Demo mode uses a labelled deterministic position without requesting device permission; live failures remain visible and never become simulated data. Live tracking stops when the active journey closes.
 
 ## Engineering notes

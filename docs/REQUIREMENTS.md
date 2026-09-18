@@ -6,7 +6,8 @@ Source: the supplied “Problem Statement 2 — Smart Commuter Companion”. Use
 |---|---|---|
 | Phone web app, no native build | React PWA; `src/styles.css`, manifest, bottom navigation; Playwright width/order assertions | Real-device test still required |
 | Rachel primary end to end | Public Tampines/Raffles endpoints, 07:40/08:45 defaults, scenario route/steps/save | Public landmarks stand in for private addresses |
-| Arjun / Mdm Lim selectable | Editable profiles, cycling/crowd/shelter/slow walking/step-free/large text | Accessibility is explicitly unverified |
+| Arjun / Mdm Lim selectable | Isolated Developer-mode faux-account presets, cycling/crowd/shelter/slow walking/step-free/large text | Accessibility is explicitly unverified; demo state never syncs |
+| Guest and Google accounts | Local guest preferences and multiple daily commutes; server-verified Google sign-in merges and syncs account state | Sign-out restores the separate guest space; account data is user-deletable |
 | Actual origin/destination/time routes | OSM graph + OneMap PT, input validation and geocoding | Local bus subset and estimated timetable |
 | Revised route as conditions change | Condition-aware search; compare unconstrained original vs alternatives | Live upstream outages fall back honestly |
 | Rail, bus, walk, cycle where needed | Transit adjacency, access A*, cycling-to-transit candidate; route leg icons | Cycle graph incomplete; no bike-on-train guarantee |

@@ -54,13 +54,17 @@ import {
   Trash2,
 } from "lucide-react";
 import type {
+  AccountState,
+  AccountUser,
   ChatResponse,
+  DemoWeatherKind,
   Journey,
   Persona,
   Place,
   PlanRequest,
   PlanResponse,
   Preferences,
+  SavedCommute,
   Scenario,
   Segment,
 } from "../shared/types";
@@ -73,6 +77,7 @@ import {
   sgTime,
 } from "../shared/catalog";
 import JourneyMap from "./Map";
+import GoogleSignIn, { disableGoogleAutoSelect } from "./GoogleSignIn";
 import {
   demoJourneyFix,
   demoLocationFix,
@@ -93,7 +98,7 @@ type ModalName =
   | "help"
   | "proactive"
   | null;
-interface Saved {
+interface LegacySaved {
   profile: "profile-1";
   preferences: Preferences;
   request: PlanRequest;
@@ -110,8 +115,10 @@ interface Activity {
   date: string;
 }
 const PROFILE_KEY = "wlt-profile-v1",
+  GUEST_KEY = "wlt-guest-v2",
   PLAN_KEY = "wlt-journey-v1",
-  ACTIVITY_KEY = "wlt-activity-v1";
+  ACTIVITY_KEY = "wlt-activity-v1",
+  DEVELOPER_KEY = "wlt-developer-mode";
 function readSaved<T>(key: string): T | null {
   try {
     const v = JSON.parse(localStorage.getItem(key) ?? "null");
@@ -131,6 +138,13 @@ function persist(key: string, value: unknown) {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
     /* storage may be full or disabled */
+  }
+}
+function readLocal<T>(key: string): T | null {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? "null") as T | null;
+  } catch {
+    return null;
   }
 }
 function dateValue(iso: string) {
@@ -212,13 +226,11 @@ function TimeScrollPicker({
   );
 }
 function makeRequest(
-  persona: Persona = "lim",
+  persona: Persona = "rachel",
   dataMode: "demo" | "live" = "live",
   scenario: Scenario = "normal",
+  demoWeather?: PlanRequest["demoWeather"],
 ): PlanRequest {
-  // Profile 1 begins with the accessibility-safe defaults formerly used for
-  // the elderly journey. Habit learning can relax these only when the user
-  // has not supplied a manual preference.
   const p = profiles.find((x) => x.id === persona)!;
   const departure = nextDeparture(p.departure);
   return {
@@ -229,8 +241,76 @@ function makeRequest(
     preferences: p.preferences,
     dataMode,
     scenario,
+    ...(dataMode === "demo" && demoWeather ? { demoWeather } : {}),
   };
 }
+function liveRequest(request: PlanRequest): PlanRequest {
+  const { demoWeather: _demoWeather, ...rest } = request;
+  return { ...rest, dataMode: "live", scenario: "normal" };
+}
+function commuteId(request: PlanRequest) {
+  return `${request.origin.id}:${request.destination.id}:${sgTime(
+    request.arriveBy ?? request.departure,
+  )}`;
+}
+function savedCommute(
+  request: PlanRequest,
+  hardPreferences: Partial<Preferences>,
+  inferred = false,
+): SavedCommute {
+  const live = liveRequest(request);
+  return {
+    id: commuteId(live),
+    label: `${live.origin.name} to ${live.destination.name}`,
+    request: live,
+    hardPreferences,
+    timeSensitive: sgTime(live.arriveBy ?? live.departure),
+    inferred,
+    savedAt: new Date().toISOString(),
+  };
+}
+function initialGuestState(): AccountState {
+  const stored = readLocal<AccountState>(GUEST_KEY);
+  if (stored?.preferences && Array.isArray(stored.commutes)) return stored;
+  const legacy = readSaved<LegacySaved>(PROFILE_KEY);
+  const request = legacy?.request
+    ? liveRequest(legacy.request)
+    : makeRequest("rachel", "live", "normal");
+  const migrated = legacy
+    ? [savedCommute(request, legacy.hardPreferences ?? {}, !!legacy.inferred)]
+    : [];
+  return {
+    preferences: legacy?.preferences ?? request.preferences,
+    hardPreferences: legacy?.hardPreferences ?? {},
+    commutes: migrated,
+    largeText: localStorage.getItem("wlt-large-text") === "true",
+    updatedAt: legacy?.savedAt ?? new Date().toISOString(),
+  };
+}
+const demoDefaults: Record<
+  Persona,
+  {
+    scenario: Scenario;
+    weather: {
+      kind: DemoWeatherKind;
+      rainfallMm: number;
+      temperature: number;
+    };
+  }
+> = {
+  rachel: {
+    scenario: "disruption",
+    weather: { kind: "clear", rainfallMm: 0, temperature: 29 },
+  },
+  arjun: {
+    scenario: "rain",
+    weather: { kind: "showers", rainfallMm: 4, temperature: 30 },
+  },
+  lim: {
+    scenario: "maintenance",
+    weather: { kind: "clear", rainfallMm: 0, temperature: 29 },
+  },
+};
 const ModeIcon = ({ mode, size = 17 }: { mode: string; size?: number }) =>
   mode === "walk" ? (
     <Footprints size={size} />
@@ -430,15 +510,19 @@ function PlacePicker({
 }
 
 export default function App() {
-  const saved = useRef(readSaved<Saved>(PROFILE_KEY));
+  const guest = useRef<AccountState | null>(null);
+  if (!guest.current) guest.current = initialGuestState();
+  const saved = useRef<SavedCommute | null>(guest.current.commutes[0] ?? null);
   const [request, setRequest] = useState<PlanRequest>(() =>
     saved.current?.request
-      ? {
-          ...saved.current.request,
-          dataMode: "live",
-          scenario: "normal",
-        }
-      : makeRequest(),
+      ? liveRequest(saved.current.request)
+      : {
+          ...makeRequest(),
+          preferences: {
+            ...makeRequest().preferences,
+            ...guest.current!.preferences,
+          },
+        },
   );
   const [plan, setPlan] = useState<PlanResponse | null>(
     readSaved<PlanResponse>(PLAN_KEY),
@@ -450,10 +534,17 @@ export default function App() {
   const [error, setError] = useState("");
   const [online, setOnline] = useState(navigator.onLine);
   const [toast, setToast] = useState("");
-  const [largeText, setLargeText] = useState(
-    localStorage.getItem("wlt-large-text") === "true",
-  );
+  const [largeText, setLargeText] = useState(guest.current.largeText);
   const [config, setConfig] = useState<any>(null);
+  const [accountUser, setAccountUser] = useState<AccountUser | null>(null);
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [accountError, setAccountError] = useState("");
+  const [commutes, setCommutes] = useState<SavedCommute[]>(
+    guest.current.commutes,
+  );
+  const [developerMode, setDeveloperMode] = useState(
+    localStorage.getItem(DEVELOPER_KEY) === "true",
+  );
   const [expanded, setExpanded] = useState<string | null>(null);
   const [journeyStep, setJourneyStep] = useState(0);
   const [started, setStarted] = useState(false);
@@ -469,20 +560,25 @@ export default function App() {
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [trackingLocation, setTrackingLocation] = useState(false);
-  const [persona, setPersona] = useState<Persona>("rachel");
-  const [savedRoutine, setSavedRoutine] = useState(!!saved.current);
-  const [demoPersona, setDemoPersona] = useState<Persona>("lim");
+  const [demoPersona, setDemoPersona] = useState<Persona>("rachel");
   const [demoScenario, setDemoScenario] = useState<Scenario>("disruption");
+  const [demoWeather, setDemoWeather] = useState(demoDefaults.rachel.weather);
   const [sheetSnap, setSheetSnap] = useState(1);
-  const [sheetMapHeight, setSheetMapHeight] = useState<number>(() =>
-    journeySheetHeights()[1],
+  const [sheetMapHeight, setSheetMapHeight] = useState<number>(
+    () => journeySheetHeights()[1],
   );
   const [sheetDragging, setSheetDragging] = useState(false);
   const [hardPreferences, setHardPreferences] = useState<Partial<Preferences>>(
-    saved.current?.hardPreferences ?? {},
+    guest.current.hardPreferences,
   );
   const activeRequest = useRef<AbortController | null>(null);
-  const normalRequest = useRef<PlanRequest | null>(null);
+  const normalState = useRef<{
+    request: PlanRequest;
+    hardPreferences: Partial<Preferences>;
+    commutes: SavedCommute[];
+    saved: SavedCommute | null;
+    largeText: boolean;
+  } | null>(null);
   const lastProactiveWarning = useRef("");
   const locationWatch = useRef<number | null>(null);
   const sheetDrag = useRef<{
@@ -491,8 +587,8 @@ export default function App() {
     startHeight: number;
   } | null>(null);
   const sheetMoved = useRef(false);
-  const demoProfiles = (["arjun", "rachel", "lim"] as Persona[]).map(
-    (id) => profiles.find((candidate) => candidate.id === id)!,
+  const demoProfiles = (["arjun", "rachel", "lim"] as Persona[]).map((id) =>
+    profiles.find((candidate) => candidate.id === id)!,
   );
   const selectedDemoProfile =
     demoProfiles.find((candidate) => candidate.id === demoPersona) ??
@@ -504,6 +600,9 @@ export default function App() {
         (j) => j.id === selectedId,
       ) ?? plan.recommended)
     : null;
+  const savedRoutine = commutes.some(
+    (commute) => commute.id === commuteId(request),
+  );
   const preferenceSummary = [
     request.preferences.sheltered && "Sheltered walks",
     request.preferences.stepFree && "Avoid stairs",
@@ -610,7 +709,7 @@ export default function App() {
       setPlan(data);
       setShowAllRoutes(false);
       setSelectedId(null);
-      persist(PLAN_KEY, data);
+      if (value.dataMode === "live") persist(PLAN_KEY, data);
     } catch (e: any) {
       if (e.name !== "AbortError") {
         if (navigator.onLine) {
@@ -627,6 +726,99 @@ export default function App() {
       if (activeRequest.current === control) setLoading(false);
     }
   }, []);
+  const buildAccountState = (
+    overrides: Partial<
+      Pick<
+        AccountState,
+        "preferences" | "hardPreferences" | "commutes" | "largeText"
+      >
+    > = {},
+  ): AccountState => ({
+    preferences: overrides.preferences ?? request.preferences,
+    hardPreferences: overrides.hardPreferences ?? hardPreferences,
+    commutes: overrides.commutes ?? commutes,
+    largeText: overrides.largeText ?? largeText,
+    updatedAt: new Date().toISOString(),
+  });
+  const storeRealState = async (state: AccountState) => {
+    if (request.dataMode === "demo") return;
+    if (!accountUser) {
+      guest.current = state;
+      persist(GUEST_KEY, state);
+      persist("wlt-large-text", state.largeText);
+      return;
+    }
+    try {
+      const response = await fetch("/api/account", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(state),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Account sync failed");
+      setAccountError("");
+    } catch (reason: any) {
+      setAccountError(reason.message ?? "Account sync failed");
+      notify(
+        "Your changes are active for this session, but account sync is unavailable.",
+      );
+    }
+  };
+  const applyRealState = (state: AccountState) => {
+    const primary = state.commutes[0] ?? null;
+    const base = primary?.request ?? liveRequest(request);
+    const next: PlanRequest = {
+      ...liveRequest(base),
+      preferences: {
+        ...base.preferences,
+        ...state.preferences,
+        ...state.hardPreferences,
+      },
+    };
+    saved.current = primary;
+    setCommutes(state.commutes);
+    setHardPreferences(state.hardPreferences);
+    setLargeText(state.largeText);
+    setRequest(next);
+    void runPlan(next);
+  };
+  const signInWithGoogle = async (credential: string) => {
+    setAccountBusy(true);
+    setAccountError("");
+    try {
+      // Preserve the guest snapshot's real modification time. Rebuilding it here
+      // would make stale guest data look newer than the synced account on every
+      // logout/login cycle.
+      const guestState = guest.current ?? buildAccountState();
+      const response = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential, guestState }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Google sign-in failed");
+      setAccountUser(data.user);
+      applyRealState(data.state);
+      notify("Signed in. Your guest preferences and commutes were merged.");
+    } catch (reason: any) {
+      setAccountError(reason.message ?? "Google sign-in failed");
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+  const signOut = async () => {
+    setAccountBusy(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      disableGoogleAutoSelect();
+      setAccountUser(null);
+      setAccountError("");
+      applyRealState(guest.current ?? initialGuestState());
+      notify("Signed out. Your separate guest space is active.");
+    } finally {
+      setAccountBusy(false);
+    }
+  };
   const updateRequestAndPlan = (value: Partial<PlanRequest>) => {
     const next = { ...request, ...value };
     setRequest(next);
@@ -675,7 +867,7 @@ export default function App() {
     setLocationError("");
     if (request.dataMode === "demo") {
       const savedOrigin =
-        normalRequest.current?.origin ??
+        normalState.current?.request.origin ??
         saved.current?.request.origin ??
         makeRequest().origin;
       const base =
@@ -750,6 +942,14 @@ export default function App() {
       .then((r) => r.json())
       .then(setConfig)
       .catch(() => {});
+    fetch("/api/auth/session")
+      .then((response) => response.json())
+      .then((session) => {
+        if (!session.authenticated || !session.user || !session.state) return;
+        setAccountUser(session.user);
+        applyRealState(session.state);
+      })
+      .catch(() => {});
     if (navigator.onLine) void runPlan(request);
     const yes = () => setOnline(true),
       no = () => setOnline(false);
@@ -776,21 +976,18 @@ export default function App() {
   }, [sheetSnap]);
   useEffect(() => {
     document.documentElement.classList.toggle("large-text", largeText);
-    persist("wlt-large-text", largeText);
-  }, [largeText]);
-  useEffect(() => {
-    const commonRoute = saved.current;
-    if (commonRoute && !commonRoute.timeSensitive) {
-      const migrated: Saved = {
-        ...commonRoute,
-        timeSensitive: sgTime(
-          commonRoute.request.arriveBy ?? commonRoute.request.departure,
-        ),
+    if (request.dataMode === "live" && !accountUser) {
+      if (guest.current?.largeText === largeText) return;
+      const next = {
+        ...(guest.current ?? initialGuestState()),
+        largeText,
+        updatedAt: new Date().toISOString(),
       };
-      persist(PROFILE_KEY, migrated);
-      saved.current = migrated;
+      guest.current = next;
+      persist(GUEST_KEY, next);
+      persist("wlt-large-text", largeText);
     }
-  }, []);
+  }, [accountUser, largeText, request.dataMode]);
   useEffect(() => {
     const timer = setInterval(() => {
       if (
@@ -804,7 +1001,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, [plan, loading, runPlan]);
   useEffect(() => {
-    if (!plan) return;
+    if (!plan || plan.request.dataMode === "demo") return;
     const departure = new Date(plan.request.departure);
     const weekday = new Intl.DateTimeFormat("en-US", {
       timeZone: "Asia/Singapore",
@@ -845,22 +1042,17 @@ export default function App() {
         .map((entry) => entry.date),
     );
     if (matchingDays.size >= 3) {
-      setSavedRoutine(true);
-      const existing = readSaved<Saved>(PROFILE_KEY);
-      if (!existing || existing.inferred) {
-        const learned: Saved = {
-          profile: "profile-1",
-          preferences: plan.request.preferences,
-          request: plan.request,
-          hardPreferences,
-          timeSensitive: sgTime(
-            plan.request.arriveBy ?? plan.request.departure,
-          ),
-          inferred: true,
-          savedAt: new Date().toISOString(),
-        };
-        persist(PROFILE_KEY, learned);
+      const learned = savedCommute(plan.request, hardPreferences, true);
+      if (!commutes.some((commute) => commute.id === learned.id)) {
+        const nextCommutes = [learned, ...commutes].slice(0, 10);
         saved.current = learned;
+        setCommutes(nextCommutes);
+        void storeRealState(
+          buildAccountState({
+            preferences: plan.request.preferences,
+            commutes: nextCommutes,
+          }),
+        );
       }
     }
   }, [hardPreferences, plan]);
@@ -901,61 +1093,116 @@ export default function App() {
     });
     setModal("proactive");
   }, [plan]);
-  const runDemoSelection = (persona: Persona, scenario: Scenario) => {
-    if (request.dataMode === "live") normalRequest.current = request;
-    clearLocation();
-    const value = makeRequest(persona, "demo", scenario);
+  const runDemoSelection = (
+    persona: Persona,
+    scenario: Scenario,
+    weather = demoWeather,
+  ) => {
+    if (request.dataMode === "live") {
+      normalState.current = {
+        request,
+        hardPreferences,
+        commutes,
+        saved: saved.current,
+        largeText,
+      };
+    }
+    stopLocationTracking();
+    const base = makeRequest(persona, "demo", scenario, weather);
+    const fix = demoLocationFix(base.origin);
+    const value: PlanRequest = { ...base, origin: locationPlace(fix) };
+    const fauxCommute = savedCommute(base, base.preferences);
+    saved.current = fauxCommute;
+    setHardPreferences(base.preferences);
+    setCommutes([fauxCommute]);
+    setLargeText(persona === "lim");
+    setCurrentLocation(fix);
+    setLocationError("");
     setRequest(value);
     setModal(null);
     void runPlan(value);
   };
-  const startDemo = () => runDemoSelection(demoPersona, demoScenario);
+  const startDemo = () =>
+    runDemoSelection(demoPersona, demoScenario, demoWeather);
   const exitDemo = () => {
     clearLocation();
-    const stored =
-      normalRequest.current ?? saved.current?.request ?? makeRequest();
-    const value: PlanRequest = {
-      ...stored,
-      dataMode: "live",
-      scenario: "normal",
+    const stored = normalState.current;
+    const value = liveRequest(
+      stored?.request ?? saved.current?.request ?? makeRequest(),
+    );
+    setHardPreferences(stored?.hardPreferences ?? {});
+    setCommutes(stored?.commutes ?? []);
+    setLargeText(stored?.largeText ?? false);
+    saved.current = stored?.saved ?? null;
+    normalState.current = null;
+    setRequest(value);
+    void runPlan(value);
+  };
+  const saveCommute = async () => {
+    if (request.dataMode === "demo") {
+      notify("Demo commutes stay in the faux account and are never saved.");
+      return;
+    }
+    const commonRoute = savedCommute(request, hardPreferences);
+    const nextCommutes = [
+      commonRoute,
+      ...commutes.filter((commute) => commute.id !== commonRoute.id),
+    ].slice(0, 10);
+    saved.current = commonRoute;
+    setCommutes(nextCommutes);
+    await storeRealState(
+      buildAccountState({
+        preferences: request.preferences,
+        commutes: nextCommutes,
+      }),
+    );
+    notify(
+      accountUser
+        ? "Your daily commute is saved to your account."
+        : "Your daily commute is saved in your guest space.",
+    );
+  };
+  const loadCommute = (commute: SavedCommute) => {
+    if (request.dataMode === "demo") {
+      setTab("today");
+      runDemoSelection(demoPersona, demoScenario, demoWeather);
+      return;
+    }
+    clearLocation();
+    const departure = nextDeparture(sgTime(commute.request.departure));
+    const next: PlanRequest = {
+      ...liveRequest(commute.request),
+      departure,
+      arriveBy: commute.request.arriveBy
+        ? `${dateValue(departure)}T${commute.timeSensitive}:00+08:00`
+        : undefined,
       preferences: {
-        ...stored.preferences,
-        ...hardPreferences,
+        ...commute.request.preferences,
+        ...commute.hardPreferences,
       },
     };
-    normalRequest.current = null;
-    setRequest(value);
-    void runPlan(value);
+    saved.current = commute;
+    setHardPreferences(commute.hardPreferences);
+    setRequest(next);
+    setTab("today");
+    void runPlan(next);
   };
-  const choosePersona = (id: Persona) => {
-    clearLocation();
-    setPersona(id);
-    const next = makeRequest(id, request.dataMode, request.scenario);
-    const value: PlanRequest = {
-      ...next,
-      preferences: { ...next.preferences, ...hardPreferences },
-    };
-    setRequest(value);
-    setModal(null);
-    void runPlan(value);
-  };
-  const saveCommute = () => {
-    const commonRoute: Saved = {
-      profile: "profile-1",
-      preferences: request.preferences,
-      request,
-      hardPreferences,
-      timeSensitive: sgTime(request.arriveBy ?? request.departure),
-      inferred: false,
-      savedAt: new Date().toISOString(),
-    };
-    persist(PROFILE_KEY, commonRoute);
-    saved.current = commonRoute;
-    setSavedRoutine(true);
-    notify("Your commute is saved on this device for 30 days.");
+  const removeCommute = async (commute: SavedCommute) => {
+    if (request.dataMode === "demo") {
+      notify("Faux demo commutes are restored from their preset.");
+      return;
+    }
+    const nextCommutes = commutes.filter((item) => item.id !== commute.id);
+    setCommutes(nextCommutes);
+    if (saved.current?.id === commute.id)
+      saved.current = nextCommutes[0] ?? null;
+    await storeRealState(buildAccountState({ commutes: nextCommutes }));
+    notify("Daily commute removed.");
   };
   const enableReminders = async () => {
     try {
+      if (request.dataMode === "demo")
+        throw new Error("Reminders cannot be enabled for simulated commutes.");
       if (!config?.integrations.push) {
         notify(
           "Background reminders need Cloud Scheduler, Firestore and push credentials. Your commute can still be saved locally.",
@@ -1001,7 +1248,7 @@ export default function App() {
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
-      saveCommute();
+      await saveCommute();
       notify(
         "Reminders enabled. We’ll check before departure and the day before planned work.",
       );
@@ -1010,6 +1257,10 @@ export default function App() {
     }
   };
   const deleteData = async () => {
+    if (request.dataMode === "demo") {
+      notify("Exit demo before deleting real saved data.");
+      return;
+    }
     const token = localStorage.getItem("wlt-device-token");
     if (token) {
       try {
@@ -1029,15 +1280,38 @@ export default function App() {
         return;
       }
     }
+    if (accountUser) {
+      try {
+        const response = await fetch("/api/account", { method: "DELETE" });
+        if (!response.ok) throw new Error();
+        disableGoogleAutoSelect();
+        setAccountUser(null);
+      } catch {
+        notify(
+          "Could not delete your account data. Please reconnect and try again.",
+        );
+        return;
+      }
+    }
     for (const key of [
       PROFILE_KEY,
+      GUEST_KEY,
       PLAN_KEY,
+      ACTIVITY_KEY,
       "wlt-device-token",
       "wlt-large-text",
     ])
       localStorage.removeItem(key);
-    setSavedRoutine(false);
-    notify("Saved commute, journey and cloud reminder deleted.");
+    const clean = initialGuestState();
+    guest.current = clean;
+    saved.current = null;
+    setCommutes([]);
+    setHardPreferences({});
+    setLargeText(false);
+    const next = makeRequest();
+    setRequest(next);
+    void runPlan(next);
+    notify("Saved guest, account, journey and reminder data deleted.");
   };
   const dateLabel = new Intl.DateTimeFormat("en-SG", {
     day: "numeric",
@@ -1090,7 +1364,8 @@ export default function App() {
             <TrainFront size={23} />
           </span>
           <span>
-            Wayce<i />
+            Wayce
+            <i />
           </span>
         </a>
         <div className="header-actions">
@@ -1112,9 +1387,11 @@ export default function App() {
           <button
             className="avatar"
             onClick={() => setModal("profile")}
-            aria-label="Open profile and preferences"
+            aria-label="Open options and account"
           >
-            1
+            {request.dataMode === "demo"
+              ? selectedDemoProfile.name[0]
+              : (accountUser?.name?.[0]?.toUpperCase() ?? "G")}
           </button>
         </div>
       </div>
@@ -1128,11 +1405,7 @@ export default function App() {
         {tab !== "today" && (
           <section className="greeting">
             <div>
-              <h1>
-                {tab === "commutes"
-                  ? "Routes"
-                  : "Disruptions"}
-              </h1>
+              <h1>{tab === "commutes" ? "Routes" : "Disruptions"}</h1>
             </div>
           </section>
         )}
@@ -1166,7 +1439,9 @@ export default function App() {
                     className="sheet-drag-handle"
                     aria-label={`Resize journey panel, ${["expanded", "half open", "collapsed"][sheetSnap]}`}
                     aria-controls="journey-planner"
-                    data-sheet-snap={["expanded", "middle", "collapsed"][sheetSnap]}
+                    data-sheet-snap={
+                      ["expanded", "middle", "collapsed"][sheetSnap]
+                    }
                     title="Drag to resize the journey panel"
                     onPointerDown={startSheetDrag}
                     onPointerMove={moveJourneySheet}
@@ -1257,13 +1532,18 @@ export default function App() {
                             })
                           }
                         />
-                        <span className="time-sequence-arrow" aria-hidden="true">
+                        <span
+                          className="time-sequence-arrow"
+                          aria-hidden="true"
+                        >
                           <ArrowRight size={17} />
                         </span>
                         <TimeScrollPicker
                           label="ARRIVE"
                           value={
-                            request.arriveBy ? sgTime(request.arriveBy) : "10:30"
+                            request.arriveBy
+                              ? sgTime(request.arriveBy)
+                              : "10:30"
                           }
                           onChange={(value) =>
                             updateRequest({
@@ -1482,14 +1762,19 @@ export default function App() {
                 )}
                 <button
                   className={`save-button ${savedRoutine ? "saved" : ""}`}
-                  onClick={saveCommute}
+                  onClick={() => void saveCommute()}
+                  disabled={request.dataMode === "demo"}
                 >
                   {savedRoutine ? (
                     <CheckCheck size={17} />
                   ) : (
                     <Bookmark size={17} />
                   )}{" "}
-                  {savedRoutine ? "Route saved" : "Save route"}
+                  {request.dataMode === "demo"
+                    ? "Faux account route"
+                    : savedRoutine
+                      ? "Route saved"
+                      : "Save route"}
                 </button>
               </aside>
               <div className="journey-content">
@@ -1669,93 +1954,107 @@ export default function App() {
         )}
         {tab === "commutes" && (
           <section className="saved-page">
-            <div className="saved-journey-card">
-              <div className="routine-top">
-                <span className="routine-icon">
-                  <House size={27} />
-                </span>
-                <span className="tag">
-                  {savedRoutine
-                    ? "SAVED ON THIS DEVICE"
-                    : "YOUR SUGGESTED ROUTINE"}
-                </span>
-                <button
-                  className="icon-button"
-                  aria-label="Edit commute"
-                  onClick={() => {
-                    setTab("today");
-                  }}
-                >
-                  <Settings2 size={18} />
+            {commutes.length ? (
+              <div className="saved-commute-list">
+                {commutes.map((commute) => (
+                  <div className="saved-journey-card" key={commute.id}>
+                    <div className="routine-top">
+                      <span className="routine-icon">
+                        <House size={27} />
+                      </span>
+                      <span className="tag">
+                        {request.dataMode === "demo"
+                          ? "FAUX DEMO COMMUTE"
+                          : accountUser
+                            ? "SYNCED WITH GOOGLE"
+                            : "SAVED IN GUEST SPACE"}
+                      </span>
+                      <button
+                        className="icon-button"
+                        aria-label={`Remove ${commute.label}`}
+                        onClick={() => void removeCommute(commute)}
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                    <h2>
+                      {commute.request.origin.name} <ArrowRight size={19} />{" "}
+                      {commute.request.destination.name}
+                    </h2>
+                    <p>
+                      Daily commute · Leave at{" "}
+                      {sgTime(commute.request.departure)}
+                      {commute.request.arriveBy
+                        ? ` · Arrive by ${commute.timeSensitive}`
+                        : ""}
+                    </p>
+                    <div className="preference-chips">
+                      <span>Time-sensitive · {commute.timeSensitive}</span>
+                      <span>
+                        {commute.request.preferences.stepFree
+                          ? "Step-free preference"
+                          : commute.request.preferences.sheltered
+                            ? "Sheltered walks"
+                            : "Standard walking"}
+                      </span>
+                      <span>
+                        Alert only at +
+                        {commute.request.preferences.alertThreshold} min
+                      </span>
+                    </div>
+                    <button
+                      className="primary-button"
+                      onClick={() => loadCommute(commute)}
+                    >
+                      Check this commute <ArrowRight size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state saved-empty">
+                <Bookmark size={30} />
+                <h2>No daily commutes saved yet</h2>
+                <p>
+                  Plan a journey, tune its preferences, then save it here for
+                  faster daily checks.
+                </p>
+              </div>
+            )}
+            {request.dataMode === "live" && commutes.length > 0 && (
+              <div className="reminder-card">
+                <BellRing size={29} />
+                <h2>A heads-up, before you head out.</h2>
+                <p>
+                  Check conditions before your departure and planned closures
+                  the day before. We’ll interrupt only when the change meets
+                  your threshold.
+                </p>
+                <p className="privacy-note">
+                  Enabling reminders shares your route, departure time,
+                  preferences and push subscription with our Google Cloud
+                  backend for 30 days. Remove them in preferences at any time.
+                </p>
+                <button className="secondary-button" onClick={enableReminders}>
+                  Enable commute reminders <Bell size={16} />
                 </button>
+                {!config?.integrations.push && (
+                  <small>
+                    Cloud reminders are awaiting deployment configuration.
+                  </small>
+                )}
               </div>
-              <h2>
-                {request.origin.name} <ArrowRight size={19} />{" "}
-                {request.destination.name}
-              </h2>
-              <p>
-                Profile 1 · Leave at {sgTime(request.departure)}
-                {request.arriveBy
-                  ? ` · Arrive by ${sgTime(request.arriveBy)}`
-                  : ""}
-              </p>
-              <div className="preference-chips">
-                <span>
-                  Time-sensitive ·{" "}
-                  {saved.current?.timeSensitive ??
-                    sgTime(request.arriveBy ?? request.departure)}
-                </span>
-                <span>
-                  {request.preferences.stepFree
-                    ? "Step-free preference"
-                    : "Sheltered walks"}
-                </span>
-                <span>
-                  Alert only at +{request.preferences.alertThreshold} min
-                </span>
-              </div>
-              <button
-                className="primary-button"
-                onClick={() => {
-                  setTab("today");
-                  void runPlan(request);
-                }}
-              >
-                Check my commute <ArrowRight size={16} />
-              </button>
-            </div>
-            <div className="reminder-card">
-              <BellRing size={29} />
-              <h2>A heads-up, before you head out.</h2>
-              <p>
-                Check conditions before your departure and planned closures the
-                day before. We’ll interrupt only when the change meets your
-                threshold.
-              </p>
-              <p className="privacy-note">
-                Enabling reminders shares your route, departure time,
-                preferences and push subscription with our Google Cloud backend
-                for 30 days. Remove them in preferences at any time.
-              </p>
-              <button className="secondary-button" onClick={enableReminders}>
-                Enable commute reminders <Bell size={16} />
-              </button>
-              {!config?.integrations.push && (
-                <small>
-                  Cloud reminders are awaiting deployment configuration.
-                </small>
-              )}
-            </div>
+            )}
             <button
               className="add-commute"
               onClick={() => {
-                setModal("profile");
+                setTab("today");
               }}
             >
               <Plus size={22} />
               <span>
-                Explore a different routine
-                <small>Try Rachel, Arjun or Mdm Lim</small>
+                Plan another daily commute
+                <small>Choose places, time and your own preferences</small>
               </span>
               <ArrowRight size={18} />
             </button>
@@ -1878,53 +2177,62 @@ export default function App() {
             Data & sources <ArrowRight size={14} />
           </button>
         </div>
-        <section className="demo-test-panel" aria-label="Demo test controls">
-          <h2 className="sr-only">Demo test controls</h2>
-          <label className="demo-template-option">
-            <span className="demo-template-label">Profile</span>
-            <span className="demo-template-value">
-              {selectedDemoProfile.name}
-              <ChevronDown size={15} aria-hidden="true" />
-            </span>
-            <select
-              aria-label="Demo profile"
-              value={demoPersona}
-              onChange={(event) => {
-                const persona = event.target.value as Persona;
-                setDemoPersona(persona);
-                runDemoSelection(persona, demoScenario);
-              }}
-            >
-              {demoProfiles.map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="demo-template-option">
-            <span className="demo-template-label">Disruption simulator</span>
-            <span className="demo-template-value">
-              {selectedDemoScenario.label}
-              <ChevronDown size={15} aria-hidden="true" />
-            </span>
-            <select
-              aria-label="Disruption simulator"
-              value={demoScenario}
-              onChange={(event) => {
-                const scenario = event.target.value as Scenario;
-                setDemoScenario(scenario);
-                runDemoSelection(demoPersona, scenario);
-              }}
-            >
-              {scenarios.map((scenario) => (
-                <option key={scenario.id} value={scenario.id}>
-                  {scenario.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </section>
+        {developerMode && request.dataMode === "demo" && (
+          <section className="demo-test-panel" aria-label="Demo test controls">
+            <h2 className="sr-only">Demo test controls</h2>
+            <label className="demo-template-option">
+              <span className="demo-template-label">Profile</span>
+              <span className="demo-template-value">
+                {selectedDemoProfile.name}
+                <ChevronDown size={15} aria-hidden="true" />
+              </span>
+              <select
+                aria-label="Demo profile"
+                value={demoPersona}
+                onChange={(event) => {
+                  const persona = event.target.value as Persona;
+                  const defaults = demoDefaults[persona];
+                  setDemoPersona(persona);
+                  setDemoScenario(defaults.scenario);
+                  setDemoWeather(defaults.weather);
+                  runDemoSelection(
+                    persona,
+                    defaults.scenario,
+                    defaults.weather,
+                  );
+                }}
+              >
+                {demoProfiles.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="demo-template-option">
+              <span className="demo-template-label">Disruption simulator</span>
+              <span className="demo-template-value">
+                {selectedDemoScenario.label}
+                <ChevronDown size={15} aria-hidden="true" />
+              </span>
+              <select
+                aria-label="Disruption simulator"
+                value={demoScenario}
+                onChange={(event) => {
+                  const scenario = event.target.value as Scenario;
+                  setDemoScenario(scenario);
+                  runDemoSelection(demoPersona, scenario, demoWeather);
+                }}
+              >
+                {scenarios.map((scenario) => (
+                  <option key={scenario.id} value={scenario.id}>
+                    {scenario.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
+        )}
         <footer className="site-footer">
           <span>
             {plan
@@ -1933,7 +2241,14 @@ export default function App() {
             ·{" "}
             <button onClick={() => setModal("sources")}>Data & privacy</button>
             {" · "}
-            <button onClick={() => setModal("demo")}>Demo mode</button>
+            {developerMode && (
+              <>
+                <button onClick={() => setModal("demo")}>
+                  Developer demos
+                </button>
+                {" · "}
+              </>
+            )}
             <span className="footer-credit">© OpenStreetMap contributors</span>
           </span>
         </footer>
@@ -1987,34 +2302,74 @@ export default function App() {
         </Modal>
       )}
       {modal === "profile" && (
-        <Modal title="Your commute preferences" onClose={() => setModal(null)}>
+        <Modal title="Options & account" onClose={() => setModal(null)}>
           <div className="modal-body">
-            <p className="muted">
-              Choose a commuter profile, then fine-tune the preferences for this
-              journey. Changes you make here are kept on this device.
-            </p>
-            <h3>Commuter profile</h3>
-            <div className="persona-options">
-              {profiles.map((candidate) => (
-                <button
-                  key={candidate.id}
-                  type="button"
-                  onClick={() => choosePersona(candidate.id)}
-                  className={
-                    persona === candidate.id ? "persona active" : "persona"
-                  }
-                >
-                  <span className="persona-avatar">
-                    {candidate.id === "lim" ? "ML" : candidate.name[0]}
-                  </span>
-                  <span>
-                    <strong>{candidate.name}</strong>
-                    <small>{candidate.label}</small>
-                  </span>
-                  {persona === candidate.id && <Check size={18} />}
-                </button>
-              ))}
+            <h3>Account</h3>
+            <div
+              className={`account-card ${request.dataMode === "demo" ? "demo" : ""}`}
+            >
+              <span className="persona-avatar">
+                {request.dataMode === "demo"
+                  ? selectedDemoProfile.name[0]
+                  : (accountUser?.name?.[0]?.toUpperCase() ?? "G")}
+              </span>
+              <span>
+                <strong>
+                  {request.dataMode === "demo"
+                    ? `${selectedDemoProfile.name} · Faux account`
+                    : (accountUser?.name ?? "Guest")}
+                </strong>
+                <small>
+                  {request.dataMode === "demo"
+                    ? `${demoPersona}.demo@wayce.invalid · never synced`
+                    : (accountUser?.email ??
+                      "Preferences and commutes stay on this device")}
+                </small>
+              </span>
             </div>
+            {request.dataMode === "demo" ? (
+              <p className="privacy-note">
+                This simulated account is isolated. Changes, reminders and
+                locations are discarded when you exit the demo.
+              </p>
+            ) : accountUser ? (
+              <>
+                <p className="privacy-note">
+                  Preferences and up to ten daily commutes sync to your verified
+                  Google account. Demo data is never uploaded.
+                </p>
+                <button
+                  className="secondary-button full"
+                  disabled={accountBusy}
+                  onClick={() => void signOut()}
+                >
+                  <DoorOpen size={16} /> Sign out
+                </button>
+              </>
+            ) : config?.integrations?.googleAccounts &&
+              config.googleClientId ? (
+              <>
+                <p className="privacy-note">
+                  Continue with Google to merge this guest space and sync your
+                  preferences and daily commutes across sessions.
+                </p>
+                <GoogleSignIn
+                  clientId={config.googleClientId}
+                  busy={accountBusy}
+                  onCredential={signInWithGoogle}
+                />
+              </>
+            ) : (
+              <p className="privacy-note">
+                Google account sync is not configured on this server. Guest mode
+                remains fully usable.
+              </p>
+            )}
+            {accountError && (
+              <p className="error-copy" role="alert">
+                {accountError}
+              </p>
+            )}
             <h3>Preferences</h3>
             {(
               [
@@ -2118,7 +2473,7 @@ export default function App() {
               className="primary-button full"
               onClick={() => {
                 void runPlan(request);
-                saveCommute();
+                void saveCommute();
                 setModal(null);
               }}
             >
@@ -2130,6 +2485,36 @@ export default function App() {
             >
               <Trash2 size={15} /> Delete my saved data and reminders
             </button>
+            <div className="developer-options">
+              <h3>Developer options</h3>
+              <label className="toggle-row">
+                <Settings2 size={21} />
+                <span>
+                  <strong>Developer mode</strong>
+                  <small>
+                    Show isolated persona demos and simulation controls
+                  </small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={developerMode}
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setDeveloperMode(enabled);
+                    persist(DEVELOPER_KEY, enabled);
+                    if (!enabled && request.dataMode === "demo") exitDemo();
+                  }}
+                />
+              </label>
+              {developerMode && (
+                <button
+                  className="secondary-button full"
+                  onClick={() => setModal("demo")}
+                >
+                  Open demo presets <ArrowRight size={16} />
+                </button>
+              )}
+            </div>
           </div>
         </Modal>
       )}
@@ -2142,16 +2527,24 @@ export default function App() {
             plan={plan}
             request={request}
             onApply={(preferences) => {
+              const nextHardPreferences = {
+                ...hardPreferences,
+                ...preferences,
+              };
               const value = {
                 ...request,
                 preferences: { ...request.preferences, ...preferences },
               };
-              setHardPreferences((previous) => ({
-                ...previous,
-                ...preferences,
-              }));
+              setHardPreferences(nextHardPreferences);
               setRequest(value);
               void runPlan(value);
+              if (request.dataMode === "live")
+                void storeRealState(
+                  buildAccountState({
+                    preferences: value.preferences,
+                    hardPreferences: nextHardPreferences,
+                  }),
+                );
               notify("Preferences applied to your route.");
             }}
             config={config}
@@ -2172,19 +2565,25 @@ export default function App() {
         </Modal>
       )}
       {modal === "demo" && (
-        <Modal title="Demo mode" onClose={() => setModal(null)}>
+        <Modal title="Developer demos" onClose={() => setModal(null)}>
           <div className="modal-body">
             <p className="muted">
-              Choose a presentation profile and a hypothetical network
-              condition. Demo data is clearly separated from live LTA data.
+              Load a complete faux account with deterministic commute,
+              preferences, time, location and simulated conditions. Nothing in
+              this menu writes to a guest or Google account.
             </p>
-            <h3>Profile</h3>
+            <h3>Faux account preset</h3>
             <div className="persona-options">
               {profiles.map((candidate) => (
                 <button
                   key={candidate.id}
                   type="button"
-                  onClick={() => setDemoPersona(candidate.id)}
+                  onClick={() => {
+                    const defaults = demoDefaults[candidate.id];
+                    setDemoPersona(candidate.id);
+                    setDemoScenario(defaults.scenario);
+                    setDemoWeather(defaults.weather);
+                  }}
                   className={
                     demoPersona === candidate.id ? "persona active" : "persona"
                   }
@@ -2216,12 +2615,81 @@ export default function App() {
                 ))}
               </select>
             </label>
+            <h3>Custom simulated weather</h3>
+            <label className="demo-scenario-field">
+              <span>Weather condition</span>
+              <select
+                aria-label="Demo weather"
+                value={demoWeather.kind}
+                onChange={(event) => {
+                  const kind = event.target.value as DemoWeatherKind;
+                  setDemoWeather((previous) => ({
+                    ...previous,
+                    kind,
+                    rainfallMm:
+                      kind === "clear" || kind === "heat"
+                        ? 0
+                        : kind === "storm"
+                          ? 10
+                          : Math.max(2, previous.rainfallMm),
+                    temperature:
+                      kind === "heat" ? 34 : Math.min(previous.temperature, 32),
+                  }));
+                }}
+              >
+                <option value="clear">Clear</option>
+                <option value="showers">Showers</option>
+                <option value="storm">Heavy thunderstorm</option>
+                <option value="heat">Hot conditions</option>
+              </select>
+            </label>
+            <div className="settings-fields">
+              <label>
+                Rainfall (mm)
+                <input
+                  aria-label="Demo rainfall"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  value={demoWeather.rainfallMm}
+                  onChange={(event) =>
+                    setDemoWeather((previous) => ({
+                      ...previous,
+                      rainfallMm: Math.min(
+                        100,
+                        Math.max(0, Number(event.target.value)),
+                      ),
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Temperature (°C)
+                <input
+                  aria-label="Demo temperature"
+                  type="number"
+                  min="20"
+                  max="40"
+                  value={demoWeather.temperature}
+                  onChange={(event) =>
+                    setDemoWeather((previous) => ({
+                      ...previous,
+                      temperature: Math.min(
+                        40,
+                        Math.max(20, Number(event.target.value)),
+                      ),
+                    }))
+                  }
+                />
+              </label>
+            </div>
             <button className="primary-button full" onClick={startDemo}>
               Start demo <ArrowRight size={17} />
             </button>
             {request.dataMode === "demo" && (
               <button className="secondary-button full" onClick={exitDemo}>
-                Return to Profile 1 and live data
+                Return to my real account and live data
               </button>
             )}
           </div>
@@ -2264,12 +2732,13 @@ export default function App() {
             </p>
             <h3>Your commute is personal</h3>
             <p>
-              Saved preferences and the most recent journey stay on this device
-              for up to 30 days. Chat is processed only after consent; our app
-              does not store chat history. Optional reminders store your route
-              and push subscription in Google Cloud for 30 days. No background
-              location tracking or analytics. Live tracking stops when you close
-              the active journey.
+              Guest preferences and daily commutes stay on this device. If you
+              choose Google sign-in, they merge into your verified account and
+              sync until you delete them. Chat is processed only after consent;
+              our app does not store chat history. Optional reminders store the
+              selected route and push subscription in Google Cloud for 30 days.
+              No background location tracking or analytics. Live tracking stops
+              when you close the active journey. Faux demo accounts never sync.
             </p>
             <h3>Connected services</h3>
             {Object.entries(config?.integrations ?? {}).map(([name, ready]) => (
@@ -2297,8 +2766,8 @@ export default function App() {
               <h3>Tell us where your day takes you.</h3>
               <p>
                 Choose your origin, destination, departure and arrival deadline.
-                You can select a commuter profile or explicitly use your current
-                location. Demo mode supplies a labelled simulation.
+                Guest mode works without sign-in, and device location is used
+                only after your explicit action.
               </p>
             </div>
             <div>
@@ -2306,7 +2775,8 @@ export default function App() {
               <h3>See the change before you leave.</h3>
               <p>
                 Route warnings appear only when a live condition affects the
-                selected journey. Demo mode is available at the end of the page.
+                selected journey. Persona simulations are available only after
+                enabling Developer mode in Options.
               </p>
             </div>
             <div>

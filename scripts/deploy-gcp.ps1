@@ -2,6 +2,7 @@ param(
     [ValidatePattern('^[a-z][a-z0-9-]{4,61}[a-z0-9]$')][string]$ProjectId = 'qwiklabs-gcp-02-7df98c2d8335',
     [ValidatePattern('^[a-z]+-[a-z]+[0-9]$')][string]$Region = 'asia-southeast1',
     [switch]$EnableReminders,
+    [switch]$EnableAccounts,
     [string]$Gcloud = 'gcloud'
 )
 $ErrorActionPreference = 'Stop'
@@ -27,9 +28,11 @@ foreach ($id in @('weliketrains-runtime','weliketrains-builder','weliketrains-sc
 }
 foreach ($role in @('roles/aiplatform.user','roles/serviceusage.serviceUsageConsumer')) { Invoke-Gcloud @('projects','add-iam-policy-binding',$ProjectId,'--member',"serviceAccount:$runtime",'--role',$role,'--condition=None','--quiet') }
 Invoke-Gcloud @('projects','add-iam-policy-binding',$ProjectId,'--member',"serviceAccount:$builder",'--role','roles/run.builder','--condition=None','--quiet')
-if ($EnableReminders) {
+if ($EnableReminders -or $EnableAccounts) {
     Invoke-Gcloud @('projects','add-iam-policy-binding',$ProjectId,'--member',"serviceAccount:$runtime",'--role','roles/datastore.user','--condition=None','--quiet')
     if (-not (Test-GcloudResource @('firestore','databases','describe','--database=(default)','--project',$ProjectId))) { Invoke-Gcloud @('firestore','databases','create','--database=(default)','--location',$Region,'--type=firestore-native','--project',$ProjectId,'--quiet') }
+}
+if ($EnableReminders) {
     Invoke-Gcloud @('firestore','fields','ttls','update','expiresAt','--collection-group=routines','--enable-ttl','--project',$ProjectId,'--quiet')
 }
 # Parse dotenv with its actual parser, never echo values to the terminal.
@@ -46,7 +49,20 @@ if ($EnableReminders -and (-not $values.VAPID_PUBLIC_KEY -or -not $values.VAPID_
     $values.VAPID_PUBLIC_KEY = $vapid.publicKey
     $values.VAPID_PRIVATE_KEY = $vapid.privateKey
 }
-$secretKeys = @('LTA_ACCOUNT_KEY','ONEMAP_EMAIL','ONEMAP_PASSWORD','ONEMAP_TOKEN','VERTEX_API_KEY','VAPID_PRIVATE_KEY')
+if ($EnableAccounts) {
+    if (-not $values.GOOGLE_CLIENT_ID) { throw 'EnableAccounts requires GOOGLE_CLIENT_ID in the ignored .env file.' }
+    if (-not $values.SESSION_SECRET) {
+        $sessionFile = Join-Path $repoRoot '.local\session-secret.txt'
+        if (Test-Path -LiteralPath $sessionFile) { $values.SESSION_SECRET = (Get-Content -Raw -LiteralPath $sessionFile).Trim() }
+        else {
+            $sessionSecret = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $sessionFile) | Out-Null
+            [System.IO.File]::WriteAllText($sessionFile, $sessionSecret, [System.Text.UTF8Encoding]::new($false))
+            $values.SESSION_SECRET = $sessionSecret
+        }
+    }
+}
+$secretKeys = @('LTA_ACCOUNT_KEY','ONEMAP_EMAIL','ONEMAP_PASSWORD','ONEMAP_TOKEN','VERTEX_API_KEY','VAPID_PRIVATE_KEY','SESSION_SECRET')
 $secretBindings = @()
 $privateDir = Join-Path $repoRoot '.local\deploy'
 New-Item -ItemType Directory -Force -Path $privateDir | Out-Null
@@ -65,7 +81,8 @@ foreach ($key in $secretKeys) {
 $publicEnv = @{
     NODE_ENV='production'; DATA_MODE='demo'; GOOGLE_CLOUD_PROJECT=$ProjectId; GOOGLE_CLOUD_LOCATION='global';
     GEMINI_MODEL=$(if ($values.GEMINI_MODEL) { $values.GEMINI_MODEL } else { 'gemini-2.5-flash' });
-    ENABLE_CLOUD_TTS='true'; FIRESTORE_ENABLED=$(if ($EnableReminders) { 'true' } else { 'false' });
+    ENABLE_CLOUD_TTS='true'; FIRESTORE_ENABLED=$(if ($EnableReminders -or $EnableAccounts) { 'true' } else { 'false' });
+    GOOGLE_CLIENT_ID=$(if ($EnableAccounts) { $values.GOOGLE_CLIENT_ID } else { '' });
     VAPID_PUBLIC_KEY=$(if ($values.VAPID_PUBLIC_KEY) { $values.VAPID_PUBLIC_KEY } else { '' });
     VAPID_SUBJECT=$(if ($values.VAPID_SUBJECT) { $values.VAPID_SUBJECT } else { 'https://github.com/AirrowSST/WeLikeTrains' });
     SCHEDULER_SERVICE_ACCOUNT=$scheduler

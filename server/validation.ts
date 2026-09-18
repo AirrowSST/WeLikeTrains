@@ -31,9 +31,57 @@ export const planSchema = z
       "closure",
     ]),
     dataMode: z.enum(["demo", "live"]),
+    demoWeather: z
+      .object({
+        kind: z.enum(["clear", "showers", "storm", "heat"]),
+        rainfallMm: z.number().min(0).max(100),
+        temperature: z.number().min(20).max(40),
+      })
+      .optional(),
+  })
+  .superRefine((request, context) => {
+    if (request.dataMode === "live" && request.demoWeather) {
+      context.addIssue({
+        code: "custom",
+        path: ["demoWeather"],
+        message: "Simulated weather is allowed only in demo mode",
+      });
+    }
   })
   .refine(
     (r) =>
       r.origin.lat !== r.destination.lat || r.origin.lon !== r.destination.lon,
     { message: "Choose a different destination" },
   );
+
+const hardPreferencesSchema = preferencesSchema.partial();
+export const savedCommuteSchema = z
+  .object({
+    id: z.string().min(1).max(240),
+    label: z.string().min(1).max(100),
+    request: planSchema,
+    hardPreferences: hardPreferencesSchema,
+    timeSensitive: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    inferred: z.boolean().optional(),
+    savedAt: z.string().datetime({ offset: true }),
+  })
+  .superRefine((commute, context) => {
+    if (
+      commute.request.dataMode !== "live" ||
+      commute.request.scenario !== "normal" ||
+      commute.request.demoWeather
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["request"],
+        message: "Account commutes must contain live, non-simulated data",
+      });
+    }
+  });
+export const accountStateSchema = z.object({
+  preferences: preferencesSchema,
+  hardPreferences: hardPreferencesSchema,
+  commutes: z.array(savedCommuteSchema).max(10),
+  largeText: z.boolean(),
+  updatedAt: z.string().datetime({ offset: true }),
+});

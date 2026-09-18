@@ -255,6 +255,7 @@ function nearestReading(raw: Obj, origin: { lat: number; lon: number }) {
 export function demoConditions(
   scenario: Scenario,
   departure: string,
+  weatherOverride?: PlanRequest["demoWeather"],
 ): Conditions {
   const when = new Date(departure);
   const at = new Date(when.getTime() - 1800000).toISOString();
@@ -386,6 +387,40 @@ export function demoConditions(
     end,
     forecast: true,
   }));
+  const customWeather = weatherOverride
+    ? (() => {
+        const rain =
+          weatherOverride.kind === "showers" ||
+          weatherOverride.kind === "storm" ||
+          weatherOverride.rainfallMm > 0;
+        const heavyRain =
+          weatherOverride.kind === "storm" || weatherOverride.rainfallMm >= 7.2;
+        const heat =
+          weatherOverride.kind === "heat" || weatherOverride.temperature >= 33;
+        return {
+          forecast: {
+            clear: "Clear demo conditions",
+            showers: "Scattered demo showers",
+            storm: "Heavy demo thunderstorms",
+            heat: "Hot demo conditions",
+          }[weatherOverride.kind],
+          rain,
+          rainfallMm: weatherOverride.rainfallMm,
+          temperature: weatherOverride.temperature,
+          walkStatus: heavyRain
+            ? "invalid"
+            : rain || heat
+              ? "limited"
+              : "valid",
+          cycleStatus:
+            heavyRain || weatherOverride.temperature >= 34
+              ? "invalid"
+              : rain || heat
+                ? "limited"
+                : "valid",
+        } satisfies Conditions["weather"];
+      })()
+    : undefined;
   return {
     notices,
     crowd,
@@ -399,7 +434,7 @@ export function demoConditions(
         type: "DD",
       },
     ],
-    weather: {
+    weather: customWeather ?? {
       forecast:
         scenario === "rain" ? "Heavy thundery showers" : "Partly cloudy",
       rain: scenario === "rain",
@@ -432,7 +467,7 @@ export function demoConditions(
         name: "Weather",
         status: "demo",
         updatedAt: at,
-        detail: "Scenario weather",
+        detail: customWeather ? "Custom simulated weather" : "Scenario weather",
       },
       {
         name: "Planned works & lifts",
@@ -447,11 +482,18 @@ export function demoConditions(
 }
 
 export async function getConditions(
-  request: Pick<PlanRequest, "dataMode" | "scenario" | "departure"> &
+  request: Pick<
+    PlanRequest,
+    "dataMode" | "scenario" | "departure" | "demoWeather"
+  > &
     Partial<Pick<PlanRequest, "origin" | "destination">>,
 ): Promise<Conditions> {
   if (request.dataMode === "demo")
-    return demoConditions(request.scenario, request.departure);
+    return demoConditions(
+      request.scenario,
+      request.departure,
+      request.demoWeather,
+    );
   const conditions: Conditions = {
     notices: [],
     crowd: [],

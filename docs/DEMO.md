@@ -4,7 +4,7 @@ Engineering QA notes only. The user has deferred the submission write-up and rec
 
 ## Rachel: about five minutes
 
-1. Open the HTTPS URL in a **real phone browser**. Confirm the mobile-only bottom navigation and one-column UI. Open the profile button and choose Rachel if needed.
+1. Open the HTTPS URL in a **real phone browser**. Confirm the mobile-only bottom navigation and one-column UI starts as Guest. Open **Options**, enable **Developer mode**, choose **Open demo presets**, then load Rachel.
 2. Explain the scope: Our Tampines Hub → One Raffles Place, leaves 07:40, desk by 08:45. These are real Singapore locations, using real OSM geometry.
 3. Select **A regular morning** in Demo experience. The route uses EWL with walking at both ends. Open Full details and explain that OSM fallback timings are estimates.
 4. Select **EWL disruption**. Explicitly say: “This is an injected test disruption, not a claim that trains are disrupted now.” The original EWL path remains on the map, its affected portion is distinguished, and the DTL alternative appears. Read the actionable recommendation and arrival-buffer advice. Swipe between cards to compare walking/time/crowd trade-offs.
@@ -15,8 +15,9 @@ Engineering QA notes only. The user has deferred the submission write-up and rec
 
 ## Additional profiles
 
-- Arjun: choose his profile; compare comfort preferences and cycling availability in dry vs rain scenarios. Bicycles are parked before transit. The nearest-station walk can legitimately outrank cycling; do not claim every trip should include a bicycle.
-- Mdm Lim: choose the profile, enable large text and select Lift maintenance. Show the known affected station avoided and the explicit warning that step-free access remains unverified. The app is not certified accessible navigation.
+- Arjun: load his faux-account preset; compare comfort preferences and cycling availability with custom showers or dry weather. Bicycles are parked before transit. The nearest-station walk can legitimately outrank cycling; do not claim every trip should include a bicycle.
+- Mdm Lim: load her faux-account preset, which enables large text and lift-maintenance conditions. Show the known affected station avoided and the explicit warning that step-free access remains unverified. The app is not certified accessible navigation.
+- Exit a demo and confirm the prior guest or signed-in account, saved commutes, preferences and text size are restored. Demo changes must not appear in real account data.
 - Reminders: on a compatible phone, explain cloud storage and lock-screen privacy, then optionally enable push in Saved commutes. Do not grant permission on behalf of a judge. iOS and browser installation requirements should be checked on the target device; in-app advice works without push.
 - Location: on a compatible phone over HTTPS, switch to Live mode, tap **Use my location**, grant permission yourself, and confirm the blue device marker and accuracy label. Start/stop foreground tracking in the journey dialog and confirm closing it stops tracking. Do not grant permission on behalf of a judge or claim a physical-phone result until performed.
 

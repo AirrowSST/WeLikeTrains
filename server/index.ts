@@ -10,7 +10,17 @@ import { planJourney } from "./planner";
 import { getBusArrivals } from "./feeds";
 import { chat, searchPlaces, speech } from "./providers";
 import { places, profiles, scenarios } from "../shared/catalog";
-import { planSchema } from "./validation";
+import { accountStateSchema, planSchema } from "./validation";
+import {
+  accountSession,
+  accountsConfigured,
+  clearAccountSession,
+  deleteAccount,
+  getAccount,
+  saveAccount,
+  setAccountSession,
+  signInWithGoogle,
+} from "./accounts";
 import {
   deleteRoutine,
   pushConfigured,
@@ -26,18 +36,25 @@ app.set("trust proxy", 1);
 app.use(compression());
 app.use(
   helmet({
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+    referrerPolicy: {
+      policy:
+        process.env.NODE_ENV === "production"
+          ? "strict-origin-when-cross-origin"
+          : "no-referrer-when-downgrade",
+    },
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: [
+        scriptSrc: ["'self'", "https://accounts.google.com/gsi/client"],
+        styleSrc: [
           "'self'",
-          "data:",
-          "blob:",
-          "https://www.onemap.gov.sg",
+          "'unsafe-inline'",
+          "https://accounts.google.com/gsi/style",
         ],
-        connectSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "blob:", "https://www.onemap.gov.sg"],
+        connectSrc: ["'self'", "https://accounts.google.com/gsi/"],
+        frameSrc: ["https://accounts.google.com/gsi/"],
         fontSrc: ["'self'"],
         mediaSrc: ["'self'", "blob:"],
         workerSrc: ["'self'"],
@@ -96,10 +113,57 @@ app.get("/api/config", (_req, res) =>
         process.env.ENABLE_VERTEX_LOCAL === "true",
       tts: process.env.ENABLE_CLOUD_TTS === "true",
       push: pushConfigured(),
+      googleAccounts: accountsConfigured(),
     },
     vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? null,
+    googleClientId: accountsConfigured() ? process.env.GOOGLE_CLIENT_ID : null,
   }),
 );
+app.get("/api/auth/session", async (req, res) => {
+  const identity = accountSession(req);
+  if (!accountsConfigured() || !identity) {
+    res.json({ authenticated: false });
+    return;
+  }
+  res.json({ authenticated: true, ...(await getAccount(identity)) });
+});
+app.post(
+  "/api/auth/google",
+  rateLimit({ windowMs: 60000, limit: 10, skip: skipTestRateLimit }),
+  async (req, res) => {
+    const body = z
+      .object({
+        credential: z.string().min(100).max(5000),
+        guestState: accountStateSchema,
+      })
+      .parse(req.body);
+    const result = await signInWithGoogle(body.credential, body.guestState);
+    setAccountSession(res, result.identity);
+    res.json({ authenticated: true, user: result.user, state: result.state });
+  },
+);
+app.post("/api/auth/logout", (_req, res) => {
+  clearAccountSession(res);
+  res.json({ authenticated: false });
+});
+app.put("/api/account", async (req, res) => {
+  const identity = accountSession(req);
+  if (!identity) {
+    res.status(401).json({ error: "Sign in before saving account data" });
+    return;
+  }
+  res.json({ state: await saveAccount(identity, req.body) });
+});
+app.delete("/api/account", async (req, res) => {
+  const identity = accountSession(req);
+  if (!identity) {
+    res.status(401).json({ error: "Sign in before deleting account data" });
+    return;
+  }
+  await deleteAccount(identity);
+  clearAccountSession(res);
+  res.json({ deleted: true });
+});
 app.get("/api/places", async (req, res) =>
   res.json(await searchPlaces(z.string().min(1).max(100).parse(req.query.q))),
 );
