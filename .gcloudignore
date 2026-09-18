@@ -15,3 +15,5 @@ playwright-report/**
 *.log
 *-credentials.json
 *-service-account.json
+gha-creds-*.json
+temp.txt

@@ -474,8 +474,8 @@ export default function App() {
   const [demoPersona, setDemoPersona] = useState<Persona>("lim");
   const [demoScenario, setDemoScenario] = useState<Scenario>("disruption");
   const [sheetSnap, setSheetSnap] = useState(1);
-  const [sheetMapHeight, setSheetMapHeight] = useState<number | null>(() =>
-    window.innerWidth <= 700 ? journeySheetHeights()[1] : null,
+  const [sheetMapHeight, setSheetMapHeight] = useState<number>(() =>
+    journeySheetHeights()[1],
   );
   const [sheetDragging, setSheetDragging] = useState(false);
   const [hardPreferences, setHardPreferences] = useState<Partial<Preferences>>(
@@ -538,7 +538,6 @@ export default function App() {
     setSheetMapHeight(journeySheetHeights()[nextSnap]);
   };
   const startSheetDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (window.innerWidth > 700) return;
     const map = document.querySelector<HTMLElement>(".map-wrap");
     if (!map) return;
     sheetDrag.current = {
@@ -770,9 +769,7 @@ export default function App() {
   }, [toast]);
   useEffect(() => {
     const resizeSheet = () => {
-      setSheetMapHeight(
-        window.innerWidth <= 700 ? journeySheetHeights()[sheetSnap] : null,
-      );
+      setSheetMapHeight(journeySheetHeights()[sheetSnap]);
     };
     window.addEventListener("resize", resizeSheet);
     return () => window.removeEventListener("resize", resizeSheet);

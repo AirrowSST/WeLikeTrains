@@ -205,6 +205,26 @@ test("resizes the mobile journey sheet by drag and keyboard", async ({ page }) =
   await expect(handle).toHaveAttribute("data-sheet-snap", "collapsed");
   expect((await map.boundingBox())!.height).toBeGreaterThan(initialHeight + 80);
 });
+test("keeps the draggable phone sheet and full-width map on wide screens", async ({
+  page,
+}) => {
+  await useDeterministicPlans(page);
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.goto("/");
+  await expect(startJourneyButton(page)).toBeEnabled();
+
+  const handle = page.getByRole("button", { name: /Resize journey panel/ });
+  await expect(handle).toBeVisible();
+
+  const shell = await page.locator(".app-shell").boundingBox();
+  const map = await page.locator(".map-wrap").boundingBox();
+  expect(shell!.width).toBeLessThanOrEqual(480);
+  expect(map!.x).toBeCloseTo(shell!.x, 0);
+  expect(map!.width).toBeCloseTo(shell!.width, 0);
+
+  await handle.press("End");
+  await expect(handle).toHaveAttribute("data-sheet-snap", "collapsed");
+});
 test("renders validated route cards when the companion displays routes", async ({
   page,
 }, info) => {
