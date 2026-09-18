@@ -491,8 +491,8 @@ export default function App() {
     startHeight: number;
   } | null>(null);
   const sheetMoved = useRef(false);
-  const demoProfiles = (["arjun", "rachel", "lim"] as Persona[]).map(
-    (id) => profiles.find((candidate) => candidate.id === id)!,
+  const demoProfiles = (["arjun", "rachel", "lim"] as Persona[]).map((id) =>
+    profiles.find((candidate) => candidate.id === id)!,
   );
   const selectedDemoProfile =
     demoProfiles.find((candidate) => candidate.id === demoPersona) ??
@@ -1090,7 +1090,8 @@ export default function App() {
             <TrainFront size={23} />
           </span>
           <span>
-            Wayce<i />
+            Wayce
+            <i />
           </span>
         </a>
         <div className="header-actions">
@@ -1128,11 +1129,7 @@ export default function App() {
         {tab !== "today" && (
           <section className="greeting">
             <div>
-              <h1>
-                {tab === "commutes"
-                  ? "Routes"
-                  : "Disruptions"}
-              </h1>
+              <h1>{tab === "commutes" ? "Routes" : "Disruptions"}</h1>
             </div>
           </section>
         )}
@@ -1166,7 +1163,9 @@ export default function App() {
                     className="sheet-drag-handle"
                     aria-label={`Resize journey panel, ${["expanded", "half open", "collapsed"][sheetSnap]}`}
                     aria-controls="journey-planner"
-                    data-sheet-snap={["expanded", "middle", "collapsed"][sheetSnap]}
+                    data-sheet-snap={
+                      ["expanded", "middle", "collapsed"][sheetSnap]
+                    }
                     title="Drag to resize the journey panel"
                     onPointerDown={startSheetDrag}
                     onPointerMove={moveJourneySheet}
@@ -1257,13 +1256,18 @@ export default function App() {
                             })
                           }
                         />
-                        <span className="time-sequence-arrow" aria-hidden="true">
+                        <span
+                          className="time-sequence-arrow"
+                          aria-hidden="true"
+                        >
                           <ArrowRight size={17} />
                         </span>
                         <TimeScrollPicker
                           label="ARRIVE"
                           value={
-                            request.arriveBy ? sgTime(request.arriveBy) : "10:30"
+                            request.arriveBy
+                              ? sgTime(request.arriveBy)
+                              : "10:30"
                           }
                           onChange={(value) =>
                             updateRequest({
@@ -2250,10 +2254,10 @@ export default function App() {
               >
                 OpenStreetMap contributors
               </a>
-              , ODbL. The bundled extract powers the map and local routing. No
-              public tile requests. Local timings are estimates; station access
-              and shelter are not fully verified. OneMap can supply official
-              itineraries when connected.
+              , ODbL. The bundled extract powers the map, station search and
+              routing. No public map, geocoding or routing requests are made.
+              Local timings are estimates; coverage, station access and shelter
+              are not fully verified.
             </p>
             <h3>AI with its feet on the ground</h3>
             <p>

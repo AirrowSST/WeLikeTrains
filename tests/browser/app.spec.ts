@@ -101,8 +101,25 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
     "data-ready",
     "true",
   );
-  await expect(page.locator(".onemap-tiles").first()).toBeAttached();
-  await expect(page.getByRole("link", { name: "OneMap" })).toBeVisible();
+  await expect(page.locator(".journey-map")).toHaveAttribute(
+    "data-map-source",
+    "bundled-osm",
+  );
+  await expect(page.locator(".map-extract")).toContainText("Bundled OSM map");
+  expect(await page.locator(".local-map-road").count()).toBeGreaterThan(100);
+  expect(await page.locator(".local-map-water").count()).toBeGreaterThan(0);
+  await expect(page.locator(".local-map-road").first()).toHaveAttribute(
+    "stroke",
+    "#a5b1ab",
+  );
+  await expect(page.getByRole("link", { name: "OneMap" })).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      performance
+        .getEntriesByType("resource")
+        .some((entry) => entry.name.includes("onemap.gov.sg")),
+    ),
+  ).toBe(false);
   await expect(page.locator(".route-mode-marker.walk").first()).toBeVisible();
   await expect(page.locator(".route-mode-marker.rail").first()).toBeVisible();
   await expect(page.locator(".map-mode-key")).toContainText("Walk");
@@ -172,13 +189,13 @@ test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
     })),
   ).toEqual([]);
 });
-test("resizes the mobile journey sheet by drag and keyboard", async ({ page }) => {
+test("resizes the mobile journey sheet by drag and keyboard", async ({
+  page,
+}) => {
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(
-    startJourneyButton(page),
-  ).toBeEnabled();
+  await expect(startJourneyButton(page)).toBeEnabled();
 
   const handle = page.getByRole("button", { name: /Resize journey panel/ });
   await expect(handle).toBeVisible();
@@ -384,8 +401,13 @@ test("supports large text and preserves a previously loaded journey offline", as
       "You’re offline. Your saved map and journey are available. Conditions may have changed.",
     ),
   ).toBeVisible();
-  await expect(page.locator(".map-source-note")).toContainText(
-    "showing offline roads",
+  await expect(page.locator(".journey-map")).toHaveAttribute(
+    "data-map-source",
+    "bundled-osm",
+  );
+  await expect(page.locator(".journey-map")).toHaveAttribute(
+    "data-ready",
+    "true",
   );
   await expect(startJourneyButton(page)).toBeEnabled();
   await context.setOffline(false);

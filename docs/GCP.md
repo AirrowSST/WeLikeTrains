@@ -9,7 +9,7 @@ Public URL: https://weliketrains-191711317812.asia-southeast1.run.app
 - Cloud Run hosts both mobile web assets and the Express API; 1 vCPU/1 GiB, minimum zero, maximum two instances, concurrency eight.
 - Cloud Build and Artifact Registry build/store the container from `Dockerfile`.
 - `weliketrains-runtime` has Vertex invocation, service usage, Firestore (when enabled), and individual secret access. Build and scheduler identities are separate. No service-account JSON key is created.
-- Secret Manager holds LTA AccountKey, OneMap email/password/token and Web Push private key. VAPID public key is intentionally public.
+- Secret Manager holds the LTA AccountKey and Web Push private key. VAPID public key is intentionally public. Legacy OneMap secrets may remain in the project but are no longer read or bound by the deployment script.
 - Vertex AI uses the global endpoint; Cloud Text-to-Speech provides MP3 output.
 - Firestore `(default)` in Singapore stores consented routines with TTL on `routines.expiresAt`.
 - `weliketrains-reminders` runs every five minutes using an OIDC identity; `/api/internal/reminders` rejects unauthenticated calls at application level.
@@ -22,7 +22,7 @@ Install [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), Node 22.1
 gcloud auth login
 npm ci
 Copy-Item .env.example .env # only if .env does not already exist
-# Edit .env privately: LTA_ACCOUNT_KEY, ONEMAP_EMAIL and ONEMAP_PASSWORD.
+# Edit .env privately if live LTA conditions or optional cloud features are needed.
 pwsh -File scripts/deploy-gcp.ps1 -ProjectId YOUR_PROJECT_ID -EnableReminders
 ```
 

@@ -962,11 +962,8 @@ input {
 .journey-map {
   height: 100%;
   width: 100%;
-  background: #e7ece5 !important;
+  background: #eef1eb !important;
   z-index: 1;
-}
-.onemap-tiles {
-  filter: saturate(0.68) brightness(1.04) contrast(0.9);
 }
 .leaflet-container {
   font-family: inherit !important;
@@ -1070,7 +1067,10 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 650;
-  text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff,
+  text-shadow:
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
     1px 1px 0 #fff;
 }
 .route-mode-marker {
@@ -1088,7 +1088,10 @@ input {
   filter: drop-shadow(0 1px 0 #fff) drop-shadow(0 0 2px #fff);
 }
 .route-mode-marker strong {
-  text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff,
+  text-shadow:
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
     1px 1px 0 #fff;
 }
 .route-mode-marker.walk {
@@ -1116,7 +1119,10 @@ input {
   filter: drop-shadow(0 1px 0 #fff) drop-shadow(0 0 2px #fff);
 }
 .map-weather-marker strong {
-  text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff,
+  text-shadow:
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
     1px 1px 0 #fff;
 }
 .rain-zone {
@@ -1166,13 +1172,17 @@ input {
   border-radius: 50%;
   border: 3px solid #fff;
   background: #2479a9;
-  box-shadow: 0 0 0 3px #2479a944, 0 2px 7px #173b4e55;
+  box-shadow:
+    0 0 0 3px #2479a944,
+    0 2px 7px #173b4e55;
   display: grid;
   place-items: center;
 }
 .current-location-marker.demo {
   background: #b2873c;
-  box-shadow: 0 0 0 3px #b2873c44, 0 2px 7px #60471f55;
+  box-shadow:
+    0 0 0 3px #b2873c44,
+    0 2px 7px #60471f55;
 }
 .current-location-marker > span {
   width: 6px;
@@ -1257,7 +1267,7 @@ input {
   .app-shell .arrival,
   .app-shell .place-field small,
   .app-shell .recommendation p {
-    color: #52665cbf !important;
+    color: #52665c !important;
     font-weight: 400;
   }
   .app-shell h1,
@@ -2197,6 +2207,10 @@ input {
 .feed-status.demo {
   background: #f6f1e2;
   color: #a79663;
+}
+.feed-status.local {
+  background: #e7f1ec;
+  color: #39735a;
 }
 .feed-status.unavailable,
 .feed-status.stale {
@@ -4031,15 +4045,15 @@ body {
     min-height: 54px;
     margin-top: 12px;
     border-radius: 15px;
-    border: 1px solid #afd0be;
-    background: #cfe6d8;
-    color: #1f503c;
+    border: 1px solid #007536;
+    background: #007f3a;
+    color: #fff;
     box-shadow: 0 7px 15px #5a8f7324;
     font-size: 16px;
     font-weight: 600;
   }
   .plan-button:hover {
-    background: #c1ddcc;
+    background: #006d32;
   }
   .recommendation {
     order: 2;
@@ -4090,7 +4104,7 @@ body {
     padding-top: 14px;
   }
   .recommended-label {
-    color: #009b46;
+    color: #006c32;
   }
   .route-summary .duration {
     color: #142c24;
@@ -4458,7 +4472,9 @@ body {
   color: #234f3d;
   cursor: pointer;
   touch-action: manipulation;
-  transition: box-shadow 160ms ease, transform 160ms ease;
+  transition:
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 .time-picker-card:hover,
 .time-picker-card:focus-visible,
@@ -4693,13 +4709,13 @@ body {
   .field-marker { transform: translateX(12px); }
   .swap-button { right: 10px; width: 34px; height: 34px; min-width: 34px; }
   .planner-secondary-controls { display: none; }
-  .plan-button { width: 100%; min-height: 54px; margin-top: 12px; border-radius: 15px; background: #00b14f; box-shadow: 0 7px 15px #00a84b2e; font-size: 17px; }
+  .plan-button { width: 100%; min-height: 54px; margin-top: 12px; border-radius: 15px; border-color: #007536; background: #007f3a; color: #fff; box-shadow: 0 7px 15px #00a84b2e; font-size: 17px; }
   .recommendation { order: 2; margin: 0; padding: 14px 18px; min-height: 0; border: 0; border-radius: 0; background: #f2fbf5; }
   .routes-heading { order: 3; }
   .route-options { order: 4; padding: 12px 16px 0; background: #fff; }
   .route-card { border: 0; border-bottom: 1px solid #edf1ed; border-radius: 0; box-shadow: none; }
   .route-card.selected { border-color: #00b14f; border-radius: 14px; box-shadow: inset 0 0 0 1px #00b14f; }
-  .recommended-label { color: #009b46; }
+  .recommended-label { color: #006c32; }
   .route-summary .duration { color: #142c24; font-size: 28px; }
 .recommendation-icon {
   width: 36px;

@@ -92,9 +92,9 @@ describe("real OSM journeys", () => {
         lon: 103.6921041432306,
       },
     });
-    expect(p.recommended.segments.some((segment) => segment.line === "172")).toBe(
-      true,
-    );
+    expect(
+      p.recommended.segments.some((segment) => segment.line === "172"),
+    ).toBe(true);
     expect(p.recommended.segments.at(-1)?.mode).toBe("walk");
     expect(p.recommended.segments.at(-1)?.instructions).toContain(
       "access connection is approximate",
@@ -104,7 +104,7 @@ describe("real OSM journeys", () => {
     const p = await planJourney({
       ...request(),
       origin: {
-        id: "onemap-ntu",
+        id: "local-ntu",
         name: "Nanyang Technological University",
         subtitle: "94 Nanyang Crescent",
         lat: 1.352949370203277,
@@ -115,9 +115,9 @@ describe("real OSM journeys", () => {
 
     expect(p.recommended.blocked).toBe(false);
     expect(p.recommended.segments[0].mode).toBe("walk");
-    expect(p.recommended.segments.some((segment) => segment.line === "172")).toBe(
-      true,
-    );
+    expect(
+      p.recommended.segments.some((segment) => segment.line === "172"),
+    ).toBe(true);
     expect(p.recommended.segments[0].geometry.length).toBeGreaterThan(2);
     expect(p.recommended.segments[0].instructions).not.toContain(
       "short access connection is approximate",

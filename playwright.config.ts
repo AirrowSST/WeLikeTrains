@@ -17,7 +17,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm start",
+    command: "node dist-server/index.js",
     url: `${e2eBaseUrl}/api/health`,
     reuseExistingServer: false,
     timeout: 120000,
