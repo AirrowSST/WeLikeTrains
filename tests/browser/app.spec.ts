@@ -67,6 +67,10 @@ async function openDeveloperDemos(page: Page) {
 test("plans, compares, saves, interviews preferences and shows planned notices", async ({
   page,
 }, info) => {
+  let basemapRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/data/basemap.json")) basemapRequests += 1;
+  });
   await useDeterministicPlans(page, true);
   await page.route("**/api/chat", async (route) => {
     await route.fulfill({
@@ -162,12 +166,11 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
     "onemap",
   );
   await expect(page.locator(".map-extract")).toContainText("OneMap · online");
-  expect(await page.locator(".local-map-road").count()).toBeGreaterThan(100);
-  expect(await page.locator(".local-map-water").count()).toBeGreaterThan(0);
-  await expect(page.locator(".local-map-road").first()).toHaveAttribute(
-    "stroke",
-    "#a5b1ab",
+  await expect(page.locator(".local-map-feature")).toHaveCount(0);
+  await expect(page.locator(".leaflet-local-basemap-pane canvas")).toHaveCount(
+    0,
   );
+  expect(basemapRequests).toBe(0);
   await expect(page.getByRole("link", { name: "OneMap" })).toBeVisible();
   expect(
     await page.evaluate(() =>
@@ -715,6 +718,10 @@ test("supports large text and preserves a previously loaded journey offline", as
     "data-ready",
     "true",
   );
+  await expect(page.locator(".leaflet-local-basemap-pane canvas")).toHaveCount(
+    1,
+  );
+  await expect(page.locator(".local-map-feature")).toHaveCount(0);
   await expect(startJourneyButton(page)).toBeEnabled();
   await context.setOffline(false);
 });

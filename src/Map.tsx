@@ -84,11 +84,88 @@ export default function JourneyMap({
     m.attributionControl.addAttribution(
       '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
     );
-    m.createPane("local-basemap");
-    m.getPane("local-basemap")!.style.zIndex = "190";
-    element.current.setAttribute("data-map-source", "bundled-osm");
+    const localPane = m.createPane("local-basemap");
+    localPane.style.zIndex = "190";
+    localPane.style.display = "none";
+    element.current.setAttribute("data-map-source", "loading");
+    let alive = true;
+    let localBasemap: L.GeoJSON | null = null;
+    let localBasemapLoading = false;
     let loadedTileCount = 0;
     let failedTileCount = 0;
+    const localRenderer = L.canvas({ pane: "local-basemap" });
+    const loadLocalBasemap = () => {
+      if (!alive) return;
+      localPane.style.display = "block";
+      setMapDetail("offline");
+      element.current?.setAttribute("data-map-source", "bundled-osm");
+      if (localBasemap) {
+        if (!m.hasLayer(localBasemap)) localBasemap.addTo(m);
+        element.current?.setAttribute("data-ready", "true");
+        return;
+      }
+      if (localBasemapLoading) return;
+      localBasemapLoading = true;
+      basemapPromise ??= fetch("/data/basemap.json").then((response) => {
+        if (!response.ok) throw new Error("Map unavailable");
+        return response.json();
+      });
+      basemapPromise
+        .then((data) => {
+          if (!alive) return;
+          localBasemap = L.geoJSON(data, {
+            interactive: false,
+            pane: "local-basemap",
+            style: (feature) => {
+              const kind = feature?.properties.kind;
+              const style: L.PathOptions =
+                kind === "water"
+                  ? {
+                      className: "local-map-feature local-map-water",
+                      color: "#88b6bb",
+                      weight: 1.2,
+                      fillColor: "#b8d9d8",
+                      fillOpacity: 0.95,
+                    }
+                  : kind === "park"
+                    ? {
+                        className: "local-map-feature local-map-park",
+                        color: "#b9d1b2",
+                        weight: 0.8,
+                        fillColor: "#d2e4cc",
+                        fillOpacity: 0.92,
+                      }
+                    : kind === "coast"
+                      ? {
+                          className: "local-map-feature local-map-coast",
+                          color: "#719c96",
+                          weight: 1.8,
+                          opacity: 0.95,
+                        }
+                      : {
+                          className: "local-map-feature local-map-road",
+                          color: "#a5b1ab",
+                          weight: 2.35,
+                          opacity: 1,
+                          lineCap: "round",
+                          lineJoin: "round",
+                        };
+              return { ...style, renderer: localRenderer };
+            },
+          });
+          if (
+            element.current?.getAttribute("data-map-source") === "bundled-osm"
+          )
+            localBasemap.addTo(m);
+          element.current?.setAttribute("data-ready", "true");
+        })
+        .catch(() => {
+          if (alive && !loadedTileCount) setMapError(true);
+        })
+        .finally(() => {
+          localBasemapLoading = false;
+        });
+    };
     const detailedTiles = L.tileLayer(oneMapTiles, {
       detectRetina: true,
       minZoom: 11,
@@ -100,70 +177,21 @@ export default function JourneyMap({
     }).addTo(m);
     detailedTiles.on("tileload", () => {
       loadedTileCount += 1;
+      failedTileCount = 0;
       setMapError(false);
       setMapDetail("detailed");
+      localPane.style.display = "none";
+      if (localBasemap && m.hasLayer(localBasemap))
+        m.removeLayer(localBasemap);
       element.current?.setAttribute("data-map-source", "onemap");
+      element.current?.setAttribute("data-ready", "true");
     });
     detailedTiles.on("tileerror", () => {
       failedTileCount += 1;
-      if (!loadedTileCount && failedTileCount >= 2) {
-        setMapDetail("offline");
-        element.current?.setAttribute("data-map-source", "bundled-osm");
-      }
+      if (failedTileCount >= 2) loadLocalBasemap();
     });
-    let alive = true;
-    basemapPromise ??= fetch("/data/basemap.json").then((r) => {
-      if (!r.ok) throw new Error("Map unavailable");
-      return r.json();
-    });
-    basemapPromise
-      .then((data) => {
-        if (!alive) return;
-        L.geoJSON(data, {
-          interactive: false,
-          pane: "local-basemap",
-          style: (feature) => {
-            const kind = feature?.properties.kind;
-            const style: L.PathOptions =
-              kind === "water"
-                ? {
-                    className: "local-map-feature local-map-water",
-                    color: "#88b6bb",
-                    weight: 1.2,
-                    fillColor: "#b8d9d8",
-                    fillOpacity: 0.95,
-                  }
-                : kind === "park"
-                  ? {
-                      className: "local-map-feature local-map-park",
-                      color: "#b9d1b2",
-                      weight: 0.8,
-                      fillColor: "#d2e4cc",
-                      fillOpacity: 0.92,
-                    }
-                  : kind === "coast"
-                    ? {
-                        className: "local-map-feature local-map-coast",
-                        color: "#719c96",
-                        weight: 1.8,
-                        opacity: 0.95,
-                      }
-                    : {
-                        className: "local-map-feature local-map-road",
-                        color: "#a5b1ab",
-                        weight: 2.35,
-                        opacity: 1,
-                        lineCap: "round",
-                        lineJoin: "round",
-                      };
-            return style;
-          },
-        }).addTo(m);
-        element.current?.setAttribute("data-ready", "true");
-      })
-      .catch(() => {
-        if (alive && !loadedTileCount) setMapError(true);
-      });
+    window.addEventListener("offline", loadLocalBasemap);
+    if (!navigator.onLine) loadLocalBasemap();
     const landmarks: [string, number, number][] = [
       ["Our Tampines Hub", 1.3529, 103.9405],
       ["Singapore Sports Hub", 1.3048, 103.8745],
@@ -189,6 +217,7 @@ export default function JourneyMap({
     observer.observe(element.current);
     return () => {
       alive = false;
+      window.removeEventListener("offline", loadLocalBasemap);
       observer.disconnect();
       m.remove();
       map.current = null;
