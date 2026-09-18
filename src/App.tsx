@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Clock3,
   CloudSun,
+  DoorOpen,
   Footprints,
   Heart,
   HelpCircle,
@@ -271,8 +272,11 @@ function PlacePicker({
   }, [query, editing]);
   return (
     <div className="place-field" ref={container}>
-      <span className={`field-marker ${marker === "B" ? "filled" : ""}`}>
-        {marker}
+      <span
+        className={`field-marker ${marker === "B" ? "filled" : ""}`}
+        aria-hidden="true"
+      >
+        {marker === "A" ? <DoorOpen size={17} /> : <MapPin size={17} />}
       </span>
       <div>
         <label htmlFor={`place-${marker}`}>{label}</label>
@@ -747,10 +751,10 @@ export default function App() {
               { id: "today", label: "My journey", icon: Route },
               {
                 id: "updates",
-                label: "Disruptions / interruptions",
+                label: "Disruptions",
                 icon: Radio,
               },
-              { id: "commutes", label: "Common routes", icon: Bookmark },
+              { id: "commutes", label: "Routes", icon: Bookmark },
             ] as const
           ).map((item) => (
             <button
@@ -816,8 +820,8 @@ export default function App() {
             <div>
               <h1>
                 {tab === "commutes"
-                  ? "Common routes"
-                  : "Disruptions / interruptions"}
+                  ? "Routes"
+                  : "Disruptions"}
               </h1>
             </div>
           </section>
@@ -879,11 +883,11 @@ export default function App() {
                         onChange={(p) => updateRequest({ destination: p })}
                       />
                     </div>
-                    <div className="time-fields">
+                    <div className="time-fields time-sequence">
                       <label>
-                        <Clock3 size={16} />
+                        <Clock3 size={20} />
                         <span>
-                          Leave at
+                          <strong className="time-label">LEAVE</strong>
                           <input
                             aria-label="Departure time"
                             type="time"
@@ -897,42 +901,30 @@ export default function App() {
                           />
                         </span>
                       </label>
+                      <span className="time-sequence-arrow" aria-hidden="true">
+                        <ArrowRight size={17} />
+                      </span>
                       <label>
-                        <CalendarDays size={16} />
+                        <Clock3 size={20} />
                         <span>
-                          Travel date
+                          <strong className="time-label">ARRIVE</strong>
                           <input
-                            aria-label="Travel date"
-                            type="date"
-                            value={dateValue(request.departure)}
-                            onChange={(e) => {
-                              if (e.target.value)
-                                updateRequest({
-                                  departure: `${e.target.value}T${sgTime(request.departure)}:00+08:00`,
-                                  arriveBy: request.arriveBy
-                                    ? `${e.target.value}T${sgTime(request.arriveBy)}:00+08:00`
-                                    : undefined,
-                                });
-                            }}
+                            id="arrive-by"
+                            aria-label="Arrive by"
+                            type="time"
+                            value={
+                              request.arriveBy ? sgTime(request.arriveBy) : ""
+                            }
+                            onChange={(e) =>
+                              updateRequest({
+                                arriveBy: e.target.value
+                                  ? `${dateValue(request.departure)}T${e.target.value}:00+08:00`
+                                  : undefined,
+                              })
+                            }
                           />
                         </span>
                       </label>
-                    </div>
-                    <div className="arrival-field">
-                      <label htmlFor="arrive-by">Arrive by</label>
-                      <input
-                        id="arrive-by"
-                        aria-label="Arrive by"
-                        type="time"
-                        value={request.arriveBy ? sgTime(request.arriveBy) : ""}
-                        onChange={(e) =>
-                          updateRequest({
-                            arriveBy: e.target.value
-                              ? `${dateValue(request.departure)}T${e.target.value}:00+08:00`
-                              : undefined,
-                          })
-                        }
-                      />
                     </div>
                     <button
                       className="primary-button plan-button"
@@ -948,23 +940,46 @@ export default function App() {
                     </button>
                   </form>
                   <div className="preference-chips">
-                    <button onClick={() => setModal("profile")}>
+                    <div className="travel-date-field">
+                      <CalendarDays size={14} />
+                      <label>
+                        <span className="sr-only">Travel date</span>
+                        <input
+                          aria-label="Travel date"
+                          type="date"
+                          value={dateValue(request.departure)}
+                          onChange={(e) => {
+                            if (e.target.value)
+                              updateRequest({
+                                departure: `${e.target.value}T${sgTime(request.departure)}:00+08:00`,
+                                arriveBy: request.arriveBy
+                                  ? `${e.target.value}T${sgTime(request.arriveBy)}:00+08:00`
+                                  : undefined,
+                              });
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <button
+                      className="wheelchair-chip"
+                      onClick={() => setModal("profile")}
+                    >
                       {request.preferences.stepFree ? (
                         <Accessibility size={13} />
                       ) : (
                         <Umbrella size={13} />
                       )}{" "}
                       {request.preferences.stepFree
-                        ? "Step-free preference"
+                        ? "Wheelchair"
                         : request.preferences.sheltered
                           ? "Sheltered walks"
                           : "Your preferences"}
                     </button>
-                    <button onClick={() => setModal("profile")}>
-                      <UsersRound size={13} />
-                      {request.preferences.avoidCrowds
-                        ? "Quieter rides"
-                        : "Balanced journey"}
+                    <button
+                      className="crowds-chip"
+                      onClick={() => setModal("profile")}
+                    >
+                      <ChevronDown size={14} /> Crowds
                     </button>
                   </div>
                 </section>
@@ -1115,10 +1130,16 @@ export default function App() {
                       {plan
                         ? plan.recommended.blocked
                           ? "Route unavailable"
-                          : `Use ${plan.recommended.title}`
+                          : `Routes · Use ${plan.recommended.title}`
                         : "Finding route"}
                     </h2>
-                    <p>{plan?.advice ?? "Checking routes and conditions."}</p>
+                    <p>
+                      {plan
+                        ? plan.recommended.blocked
+                          ? plan.advice
+                          : `${1 + plan.alternatives.length} routes · Arrive at ${sgTime(plan.recommended.arrival)}`
+                        : "Checking routes and conditions."}
+                    </p>
                   </div>
                   <button
                     className="icon-button"

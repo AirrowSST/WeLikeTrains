@@ -30,8 +30,8 @@ export const places: Place[] = [
   },
   {
     id: "bedok-home",
-    name: "Bedok",
-    subtitle: "Bedok Mall · 311 New Upper Changi Road",
+    name: "Bedok Mall",
+    subtitle: "311 New Upper Changi Road",
     lat: 1.324,
     lon: 103.9298,
   },

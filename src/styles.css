@@ -3513,6 +3513,13 @@ body {
   white-space: normal;
   text-align: center;
   line-height: 1.15;
+  color: #40584b;
+  font-size: 14px;
+  font-weight: 700;
+}
+.site-header .nav-item.active {
+  color: #184e40;
+  font-weight: 800;
 }
 .site-header .nav-item.active::before {
   top: auto;
@@ -3603,4 +3610,287 @@ body {
 }
 .proactive-warning .primary-button {
   width: 100%;
+}
+
+/* Keep the destination fields visually connected to Navigate and fully readable. */
+.planner-card .section-title {
+  margin-bottom: 3px;
+}
+.planner-card .section-title h2 {
+  margin-left: 5%;
+  font-size: 21px;
+}
+.place-inputs {
+  width: calc(100% + 20px);
+  margin-inline: -10px;
+  padding-inline: 4px;
+  background: #fff;
+  border-color: #c8d3c5;
+  box-shadow: 0 1px 4px #2945380a;
+}
+.place-field {
+  gap: 6px;
+  min-height: 74px;
+  padding-block: 10px;
+  cursor: text;
+}
+.place-field:first-child {
+  border-bottom: 3px solid #d4ddd1;
+}
+.place-field > div {
+  position: absolute;
+  inset-inline: 0;
+  width: 100%;
+  margin-left: 0;
+  padding-inline: 84px;
+  text-align: center;
+  align-items: center;
+}
+.place-field label {
+  position: absolute;
+  right: 2px;
+  z-index: 4;
+  width: 40px;
+  margin: 0;
+  text-align: center;
+  line-height: 1.15;
+  color: #42594d;
+  font-size: 10px;
+  font-weight: 750;
+}
+.place-field:first-child label {
+  top: 50%;
+  transform: translateY(-50%);
+}
+.place-field:last-child label {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+}
+.place-field > div {
+  min-height: 50px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transform: none;
+}
+.place-field input {
+  width: 100%;
+  height: auto;
+  min-height: 24px;
+  font-size: clamp(16px, 3.6vw, 18px);
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  white-space: nowrap;
+}
+.place-field small {
+  width: 100%;
+  margin-top: 0;
+  overflow: hidden;
+  color: #40544a;
+  font-size: clamp(12px, 2.8vw, 14px);
+  font-weight: 550;
+  line-height: 1.15;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.place-inputs::before {
+  left: calc(17px + clamp(8px, calc(15vw - 40px), 32px));
+  top: 25%;
+  height: 50%;
+  border-color: #9fb0a2;
+}
+.field-marker {
+  width: 26px;
+  height: 26px;
+  border-width: 1.5px;
+  color: #3d6553;
+  transform: translateX(clamp(8px, calc(15vw - 40px), 32px));
+}
+.field-marker.filled {
+  color: #fff;
+}
+.swap-button {
+  top: 50%;
+  transform: translateY(-50%);
+  border-color: #c7d2c4;
+  color: #385f4d;
+}
+.app-shell main {
+  padding-top: 2px;
+}
+.planner-card {
+  padding-top: 10px;
+}
+.travel-date-field {
+  width: 100%;
+  min-height: 36px;
+  margin-top: 9px;
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #65755e;
+  background: #f5f7f2;
+  border: 1px solid #e7ebe3;
+  border-radius: 8px;
+}
+.travel-date-field label {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+.travel-date-field input {
+  width: 158px;
+  min-height: 27px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.time-fields.time-sequence {
+  width: 100%;
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 5px;
+}
+.time-fields.time-sequence > label {
+  position: relative;
+  min-width: 0;
+  padding: 8px 9px;
+  justify-content: center;
+  text-align: center;
+}
+.time-fields.time-sequence > label > svg {
+  position: absolute;
+  left: 9px;
+}
+.time-fields.time-sequence label > span {
+  align-items: center;
+  text-align: center;
+}
+.time-fields.time-sequence input {
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+  padding: 0;
+}
+.time-fields.time-sequence input::-webkit-calendar-picker-indicator {
+  width: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+}
+.time-label {
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: 0.55px;
+  color: #40584b;
+}
+.time-sequence-arrow {
+  display: grid;
+  place-items: center;
+  color: #56705f;
+}
+.time-sequence + .plan-button {
+  margin-top: 8px;
+}
+.planner-card .preference-chips {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.1fr) minmax(0, 0.7fr);
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+.preference-chips .travel-date-field {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 4px 6px;
+  gap: 4px;
+  justify-content: center;
+}
+.preference-chips .travel-date-field > svg {
+  position: absolute;
+  left: 7px;
+}
+.preference-chips .travel-date-field label {
+  min-width: 0;
+  width: 100%;
+  justify-content: center;
+}
+.preference-chips .travel-date-field input {
+  width: 118px;
+  min-width: 0;
+  min-height: 30px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+.planner-card .preference-chips button {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 4px;
+  justify-content: center;
+  white-space: nowrap;
+}
+.planner-card .preference-chips .wheelchair-chip {
+  font-size: 16px;
+  font-weight: 750;
+}
+.planner-card .preference-chips .crowds-chip {
+  font-size: 14px;
+  font-weight: 700;
+}
+.recommendation {
+  order: 2;
+  min-height: 76px;
+  padding: 10px 14px;
+  gap: 10px;
+}
+.map-wrap {
+  order: 1;
+}
+.routes-heading {
+  display: none;
+}
+.route-options {
+  order: 3;
+}
+.load-more-routes {
+  order: 4;
+}
+.save-button {
+  order: 5;
+}
+.journey-insights {
+  order: 6;
+}
+.steps-card {
+  order: 7;
+}
+.recommendation-icon {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+.recommendation h2 {
+  margin: 0 0 2px;
+}
+.recommendation p {
+  line-height: 1.3;
 }
