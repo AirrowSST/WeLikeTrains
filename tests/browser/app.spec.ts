@@ -95,6 +95,11 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
     }),
   ).toEqual({ family: '"Public Sans", sans-serif', loaded: true });
   await expect(startJourneyButton(page)).toBeEnabled();
+  const startButtonBox = await startJourneyButton(page).boundingBox();
+  const directionsBox = await page
+    .getByRole("heading", { name: "Directions" })
+    .boundingBox();
+  expect(startButtonBox!.y).toBeLessThan(directionsBox!.y);
   await expect(page.locator(".demo-toolbar")).toContainText("Live LTA + NEA");
   await expect(
     page.getByRole("link", { name: "OpenStreetMap contributors" }),
@@ -128,6 +133,20 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
     0,
   );
   await expect(page.locator(".planner-card .section-title svg")).toHaveCount(0);
+  await expect(page.locator('input[type="time"]')).toHaveCount(0);
+  await page.getByRole("button", { name: "leave time" }).click();
+  const timeDialog = page.getByRole("dialog", {
+    name: "Choose leave time",
+  });
+  await expect(timeDialog).toBeVisible();
+  await expect(
+    timeDialog.getByRole("button", { name: "Add one hour" }),
+  ).toBeVisible();
+  await expect(
+    timeDialog.getByRole("button", { name: "Add five minutes" }),
+  ).toBeVisible();
+  await timeDialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(timeDialog).toBeHidden();
   await expect(page.locator(".planner-card .plan-button svg")).toHaveCount(0);
   await expect(page.getByText("Leave", { exact: true })).toBeVisible();
   await expect(page.getByText("Arrive", { exact: true })).toBeVisible();

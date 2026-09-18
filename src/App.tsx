@@ -30,6 +30,7 @@ import {
   LoaderCircle,
   LocateFixed,
   MessageCircle,
+  Minus,
   Navigation,
   Plus,
   Radio,
@@ -173,49 +174,163 @@ function TimeScrollPicker({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const nativeInput = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [draftMinutes, setDraftMinutes] = useState(0);
   const [hourText = "09", minuteText = "00"] = value.split(":");
   const hour24 = Number(hourText);
   const hour12 = hour24 % 12 || 12;
   const period = hour24 >= 12 ? "PM" : "AM";
   const displayTime = `${String(hour12).padStart(2, "0")}:${minuteText} ${period}`;
+  const draftHour24 = Math.floor(draftMinutes / 60);
+  const draftHour12 = draftHour24 % 12 || 12;
+  const draftMinute = draftMinutes % 60;
+  const draftPeriod = draftHour24 >= 12 ? "PM" : "AM";
+  const draftDisplayTime = `${String(draftHour12).padStart(2, "0")}:${String(draftMinute).padStart(2, "0")} ${draftPeriod}`;
   const openPicker = () => {
-    const input = nativeInput.current;
-    if (!input) return;
-    input.focus();
-    try {
-      (
-        input as HTMLInputElement & {
-          showPicker?: () => void;
-        }
-      ).showPicker?.();
-    } catch {
-      input.click();
-    }
+    setDraftMinutes(hour24 * 60 + Number(minuteText));
+    setOpen(true);
+  };
+  const adjustTime = (amount: number) =>
+    setDraftMinutes((current) => (current + amount + 1440) % 1440);
+  const setPeriod = (nextPeriod: "AM" | "PM") => {
+    setDraftMinutes((current) => {
+      const currentHour = Math.floor(current / 60);
+      const minute = current % 60;
+      const nextHour =
+        nextPeriod === "AM"
+          ? currentHour >= 12
+            ? currentHour - 12
+            : currentHour
+          : currentHour < 12
+            ? currentHour + 12
+            : currentHour;
+      return nextHour * 60 + minute;
+    });
+  };
+  const applyTime = () => {
+    onChange(
+      `${String(draftHour24).padStart(2, "0")}:${String(draftMinute).padStart(2, "0")}`,
+    );
+    setOpen(false);
   };
 
   return (
     <div className="time-picker-control">
-      <input
-        ref={nativeInput}
-        className="time-picker-native"
-        tabIndex={-1}
-        aria-label={`${label.toLowerCase()} time picker`}
-        type="time"
-        value={value}
-        onChange={(event) => {
-          if (event.target.value) onChange(event.target.value);
-        }}
-      />
       <button
         type="button"
         className="time-picker-card"
         aria-label={`${label.toLowerCase()} time`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         onClick={openPicker}
       >
-        <strong className="time-label">{label}</strong>
-        <span className="time-picker-value">{displayTime}</span>
+        <span className="time-picker-heading">
+          <Clock3 size={18} />
+          <strong className="time-label">{label}</strong>
+        </span>
+        <span className="time-picker-value">
+          {displayTime} <ChevronDown size={17} />
+        </span>
       </button>
+      {open && (
+        <Modal
+          title={`Choose ${label.toLowerCase()} time`}
+          onClose={() => setOpen(false)}
+          className="time-picker-modal"
+        >
+          <div className="modal-body time-picker-panel">
+            <div className="time-picker-preview" aria-live="polite">
+              <Clock3 size={22} />
+              <span>
+                <small>{label}</small>
+                <strong>{draftDisplayTime}</strong>
+              </span>
+            </div>
+            <div className="time-adjusters">
+              <div className="time-adjuster" role="group" aria-label="Hour">
+                <span>Hour</span>
+                <button
+                  type="button"
+                  onClick={() => adjustTime(60)}
+                  aria-label="Add one hour"
+                >
+                  <Plus size={20} />
+                </button>
+                <output aria-label={`${draftHour12} hours`}>
+                  {String(draftHour12).padStart(2, "0")}
+                </output>
+                <button
+                  type="button"
+                  onClick={() => adjustTime(-60)}
+                  aria-label="Subtract one hour"
+                >
+                  <Minus size={20} />
+                </button>
+              </div>
+              <span className="time-adjuster-colon" aria-hidden="true">
+                :
+              </span>
+              <div
+                className="time-adjuster"
+                role="group"
+                aria-label="Minute"
+              >
+                <span>Minute</span>
+                <button
+                  type="button"
+                  onClick={() => adjustTime(5)}
+                  aria-label="Add five minutes"
+                >
+                  <Plus size={20} />
+                </button>
+                <output aria-label={`${draftMinute} minutes`}>
+                  {String(draftMinute).padStart(2, "0")}
+                </output>
+                <button
+                  type="button"
+                  onClick={() => adjustTime(-5)}
+                  aria-label="Subtract five minutes"
+                >
+                  <Minus size={20} />
+                </button>
+              </div>
+            </div>
+            <div
+              className="time-period-toggle"
+              role="group"
+              aria-label="Time period"
+            >
+              {(["AM", "PM"] as const).map((option) => (
+                <button
+                  type="button"
+                  className={draftPeriod === option ? "active" : ""}
+                  aria-pressed={draftPeriod === option}
+                  onClick={() => setPeriod(option)}
+                  key={option}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            <div className="time-picker-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={applyTime}
+              >
+                Set {label.toLowerCase()} time
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -348,11 +463,13 @@ function Modal({
   children,
   onClose,
   wide = false,
+  className = "",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -362,7 +479,8 @@ function Modal({
   return (
     <dialog
       ref={ref}
-      className={`modal ${wide ? "wide" : ""}`}
+      className={`modal ${wide ? "wide" : ""} ${className}`.trim()}
+      aria-label={title}
       onCancel={onClose}
       onClick={(e) => {
         if (e.target === ref.current) onClose();
@@ -371,6 +489,7 @@ function Modal({
       <div className="modal-header">
         <h2>{title}</h2>
         <button
+          type="button"
           className="icon-button"
           onClick={onClose}
           aria-label="Close dialog"
@@ -1810,86 +1929,7 @@ export default function App() {
                   </div>
                 </div>
                 {selected && (
-                  <section className="steps-card">
-                    <div className="section-title">
-                      <h2>Directions</h2>
-                      <button
-                        className="text-button"
-                        onClick={() =>
-                          setExpanded(
-                            expanded === selected.id ? null : selected.id,
-                          )
-                        }
-                      >
-                        {expanded === selected.id
-                          ? "Less detail"
-                          : "Full details"}{" "}
-                        <ChevronDown size={16} />
-                      </button>
-                    </div>
-                    <div className="timeline">
-                      {selected.segments.map((s, i) => (
-                        <div
-                          className={`timeline-step ${s.affected ? "affected" : ""}`}
-                          key={`${s.id}-${i}`}
-                        >
-                          <div
-                            className="step-icon"
-                            style={{
-                              color: lineColors[s.line] ?? lineColors[s.mode],
-                            }}
-                          >
-                            <ModeIcon mode={s.mode} size={18} />
-                          </div>
-                          <div>
-                            <h3>
-                              {s.mode === "walk"
-                                ? `Walk to ${s.to}`
-                                : s.mode === "cycle"
-                                  ? `Cycle to ${s.to}`
-                                  : `${s.mode === "bus" ? "Bus " : ""}${s.line} to ${s.to}`}
-                            </h3>
-                            <p>
-                              {s.mode === "walk" ? (
-                                <>
-                                  {Math.round(s.distance)} m{" "}
-                                  {s.sheltered && (
-                                    <span
-                                      className="shelter-mark"
-                                      title="Mapped sheltered walkway"
-                                      aria-label="Mapped sheltered walkway"
-                                    >
-                                      <Umbrella size={13} />
-                                    </span>
-                                  )}
-                                </>
-                              ) : s.mode === "rail" ? (
-                                `${s.direction ?? s.instructions.match(/towards ([^.]+)/i)?.[1] ?? s.to} direction · From ${s.from}${s.affected ? " · Service affected" : ""}`
-                              ) : (
-                                `From ${s.from}${s.affected ? " · Service affected" : ""}`
-                              )}
-                            </p>
-                            {expanded === selected.id && (
-                              <p className="step-detail">{s.instructions}</p>
-                            )}
-                          </div>
-                          <span className="step-duration">
-                            {Math.ceil(s.minutes)} min
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                    {expanded === selected.id && (
-                      <div className="journey-caveats">
-                        {selected.warnings.map((w) => (
-                          <p key={w}>
-                            <Info size={14} />
-                            {w}
-                          </p>
-                        ))}
-                        <p>{selected.source} · © OpenStreetMap contributors</p>
-                      </div>
-                    )}
+                  <>
                     <div className="start-journey single">
                       <button
                         className="primary-button"
@@ -1905,7 +1945,88 @@ export default function App() {
                         <Navigation size={16} /> Start <ArrowRight size={16} />
                       </button>
                     </div>
-                  </section>
+                    <section className="steps-card">
+                      <div className="section-title">
+                        <h2>Directions</h2>
+                        <button
+                          className="text-button"
+                          onClick={() =>
+                            setExpanded(
+                              expanded === selected.id ? null : selected.id,
+                            )
+                          }
+                        >
+                          {expanded === selected.id
+                            ? "Less detail"
+                            : "Full details"}{" "}
+                          <ChevronDown size={16} />
+                        </button>
+                      </div>
+                      <div className="timeline">
+                        {selected.segments.map((s, i) => (
+                          <div
+                            className={`timeline-step ${s.affected ? "affected" : ""}`}
+                            key={`${s.id}-${i}`}
+                          >
+                            <div
+                              className="step-icon"
+                              style={{
+                                color: lineColors[s.line] ?? lineColors[s.mode],
+                              }}
+                            >
+                              <ModeIcon mode={s.mode} size={18} />
+                            </div>
+                            <div>
+                              <h3>
+                                {s.mode === "walk"
+                                  ? `Walk to ${s.to}`
+                                  : s.mode === "cycle"
+                                    ? `Cycle to ${s.to}`
+                                    : `${s.mode === "bus" ? "Bus " : ""}${s.line} to ${s.to}`}
+                              </h3>
+                              <p>
+                                {s.mode === "walk" ? (
+                                  <>
+                                    {Math.round(s.distance)} m{" "}
+                                    {s.sheltered && (
+                                      <span
+                                        className="shelter-mark"
+                                        title="Mapped sheltered walkway"
+                                        aria-label="Mapped sheltered walkway"
+                                      >
+                                        <Umbrella size={13} />
+                                      </span>
+                                    )}
+                                  </>
+                                ) : s.mode === "rail" ? (
+                                  `${s.direction ?? s.instructions.match(/towards ([^.]+)/i)?.[1] ?? s.to} direction · From ${s.from}${s.affected ? " · Service affected" : ""}`
+                                ) : (
+                                  `From ${s.from}${s.affected ? " · Service affected" : ""}`
+                                )}
+                              </p>
+                              {expanded === selected.id && (
+                                <p className="step-detail">{s.instructions}</p>
+                              )}
+                            </div>
+                            <span className="step-duration">
+                              {Math.ceil(s.minutes)} min
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      {expanded === selected.id && (
+                        <div className="journey-caveats">
+                          {selected.warnings.map((w) => (
+                            <p key={w}>
+                              <Info size={14} />
+                              {w}
+                            </p>
+                          ))}
+                          <p>{selected.source} · © OpenStreetMap contributors</p>
+                        </div>
+                      )}
+                    </section>
+                  </>
                 )}
               </div>
             </div>
