@@ -8,228 +8,44 @@ import { TextToSpeechClient } from "@google-cloud/text-to-speech";
 import type {
   ChatResponse,
   ChatTurn,
-  Journey,
   Place,
-  PlanRequest,
   PlanResponse,
   Preferences,
-  Segment,
 } from "../shared/types";
-import { canonicalLine, places } from "../shared/catalog";
+import { places } from "../shared/catalog";
+import { getNetwork } from "./network";
 import { z } from "zod";
 
-let token: { value: string; expiry: number } | undefined;
-export async function oneMapToken() {
-  if (token && token.expiry > Date.now() + 60000) return token.value;
-  if (process.env.ONEMAP_TOKEN) {
-    try {
-      const payload = JSON.parse(
-        Buffer.from(
-          process.env.ONEMAP_TOKEN.split(".")[1],
-          "base64url",
-        ).toString("utf8"),
-      );
-      if (Number(payload.exp) * 1000 > Date.now() + 60000)
-        return process.env.ONEMAP_TOKEN;
-    } catch {
-      if (!process.env.ONEMAP_EMAIL || !process.env.ONEMAP_PASSWORD)
-        return process.env.ONEMAP_TOKEN;
-    }
-  }
-  if (!process.env.ONEMAP_EMAIL || !process.env.ONEMAP_PASSWORD)
-    throw new Error("OneMap is not configured");
-  const r = await fetch("https://www.onemap.gov.sg/api/auth/post/getToken", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email: process.env.ONEMAP_EMAIL,
-      password: process.env.ONEMAP_PASSWORD,
-    }),
-    signal: AbortSignal.timeout(7000),
-  });
-  if (!r.ok) throw new Error("OneMap authentication unavailable");
-  const data = await r.json();
-  token = {
-    value: data.access_token,
-    expiry: Number(data.expiry_timestamp) * 1000,
-  };
-  return token.value;
-}
-export function decodePolyline(value: string): [number, number][] {
-  let index = 0,
-    lat = 0,
-    lon = 0;
-  const coordinates: [number, number][] = [];
-  while (index < value.length) {
-    const read = () => {
-      let result = 0,
-        shift = 0,
-        b;
-      do {
-        if (index >= value.length || shift > 30)
-          throw new Error("Invalid route geometry");
-        b = value.charCodeAt(index++) - 63;
-        result |= (b & 31) << shift;
-        shift += 5;
-      } while (b >= 32);
-      return result & 1 ? ~(result >> 1) : result >> 1;
-    };
-    lat += read();
-    lon += read();
-    coordinates.push([lat / 1e5, lon / 1e5]);
-  }
-  return coordinates;
-}
 export async function searchPlaces(query: string): Promise<Place[]> {
-  const local = places.filter((p) =>
-    `${p.name} ${p.subtitle}`.toLowerCase().includes(query.toLowerCase()),
-  );
-  if (query.length < 3) return local;
-  try {
-    const r = await fetch(
-      `https://www.onemap.gov.sg/api/common/elastic/search?${new URLSearchParams({ searchVal: query, returnGeom: "Y", getAddrDetails: "Y", pageNum: "1" })}`,
-      { signal: AbortSignal.timeout(5000) },
-    );
-    if (!r.ok) return local;
-    const json = await r.json();
-    return [
-      ...local,
-      ...(json.results ?? [])
-        .filter(
-          (p: any) =>
-            Number.isFinite(Number(p.LATITUDE)) &&
-            Number.isFinite(Number(p.LONGITUDE)),
-        )
-        .slice(0, 8)
-        .map((p: any) => ({
-          id: `onemap-${p.POSTAL}-${p.LATITUDE}`,
-          name: p.BUILDING && p.BUILDING !== "NIL" ? p.BUILDING : p.SEARCHVAL,
-          subtitle: p.ADDRESS,
-          lat: Number(p.LATITUDE),
-          lon: Number(p.LONGITUDE),
-        })),
-    ];
-  } catch {
-    return local;
-  }
-}
-export async function oneMapJourneys(
-  request: PlanRequest,
-  make: (segments: Segment[], source?: string) => Journey,
-): Promise<Journey[]> {
-  const auth = await oneMapToken();
-  const d = new Date(request.departure);
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Singapore",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(d);
-  const part = (type: string) => parts.find((p) => p.type === type)?.value;
-  const params = new URLSearchParams({
-    start: `${request.origin.lat},${request.origin.lon}`,
-    end: `${request.destination.lat},${request.destination.lon}`,
-    routeType: "pt",
-    date: `${part("month")}-${part("day")}-${part("year")}`,
-    time: `${part("hour")}:${part("minute")}:${part("second")}`,
-    mode: "transit",
-    maxWalkDistance: String(request.preferences.maxWalk),
-    numItineraries: "3",
-  });
-  const r = await fetch(
-    `https://www.onemap.gov.sg/api/public/routingsvc/route?${params}`,
-    { headers: { Authorization: auth }, signal: AbortSignal.timeout(10000) },
-  );
-  if (!r.ok) throw new Error("OneMap routing unavailable");
-  const data = await r.json();
-  const itineraries = data.plan?.itineraries ?? data.itineraries ?? [];
-  return itineraries
-    .map((it: any) =>
-      make(
-        (it.legs ?? []).map((leg: any, i: number): Segment => {
-          const mode =
-            leg.mode === "WALK"
-              ? "walk"
-              : leg.mode === "BUS"
-                ? "bus"
-                : leg.mode === "BICYCLE"
-                  ? "cycle"
-                  : "rail";
-          const line =
-            mode === "rail"
-              ? canonicalLine(
-                  leg.routeId?.replace(/^.*:/, "") ??
-                    leg.routeShortName ??
-                    leg.route ??
-                    "rail",
-                )
-              : mode === "bus"
-                ? String(leg.routeShortName ?? leg.route)
-                : mode;
-          const previousEnd =
-            i > 0 ? Number(it.legs[i - 1].endTime) : Number(it.startTime);
-          const waitMinutes =
-            Math.max(0, (Number(leg.startTime) - previousEnd) / 60000) || 0;
-          return {
-            id: `onemap-${i}`,
-            mode,
-            line,
-            direction:
-              mode === "rail" || mode === "bus"
-                ? String(leg.headsign ?? leg.to?.name ?? "")
-                : undefined,
-            from:
-              i === 0
-                ? request.origin.name
-                : (leg.from?.name ?? request.origin.name),
-            to:
-              i === it.legs.length - 1
-                ? request.destination.name
-                : (leg.to?.name ?? request.destination.name),
-            minutes: Math.ceil(
-              Number(leg.duration ?? (leg.endTime - leg.startTime) / 1000) /
-                60 +
-                waitMinutes,
-            ),
-            waitMinutes,
-            distance: Number(leg.distance ?? 0),
-            geometry: leg.legGeometry?.points
-              ? decodePolyline(leg.legGeometry.points)
-              : [
-                  [
-                    leg.from?.lat ?? request.origin.lat,
-                    leg.from?.lon ?? request.origin.lon,
-                  ],
-                  [
-                    leg.to?.lat ?? request.destination.lat,
-                    leg.to?.lon ?? request.destination.lon,
-                  ],
-                ],
-            stops: [
-              leg.from?.stopCode,
-              leg.to?.stopCode,
-              ...(leg.intermediateStops ?? []).map((s: any) => s.stopCode),
-            ].filter(Boolean),
-            crowd: "unknown",
-            affected: false,
-            delay: 0,
-            sheltered: false,
-            accessibility: "unknown",
-            instructions:
-              mode === "walk"
-                ? `Walk to ${leg.to?.name ?? request.destination.name}. Check the access route on the map.`
-                : `Take ${line} towards ${leg.headsign ?? leg.to?.name}. Alight at ${leg.to?.name}.${waitMinutes > 0 ? ` Includes ${Math.ceil(waitMinutes)} min of scheduled waiting.` : ""}`,
-            source: "OneMap public transport itinerary",
-          };
-        }),
-        "OneMap public transport itinerary",
-      ),
+  const needle = query.trim().toLowerCase();
+  const catalog = places.map((place) => ({ place, priority: 0 }));
+  const stations = [...getNetwork().stations.values()].map((station) => ({
+    priority: 1,
+    place: {
+      id: `osm-station-${station.id}`,
+      name: station.name,
+      subtitle: `${station.codes.join(" · ") || "Mapped stop"} · ${station.mode === "rail" ? "Rail station" : "Bus stop"}`,
+      lat: station.coord[0],
+      lon: station.coord[1],
+    },
+  }));
+  const seen = new Set<string>();
+  return [...catalog, ...stations]
+    .filter(({ place }) => {
+      const key = `${place.name.toLowerCase()}|${place.lat.toFixed(5)}|${place.lon.toFixed(5)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return (
+        !needle ||
+        `${place.name} ${place.subtitle}`.toLowerCase().includes(needle)
+      );
+    })
+    .sort(
+      (a, b) =>
+        a.priority - b.priority || a.place.name.localeCompare(b.place.name),
     )
-    .filter((j: Journey) => j.segments.length > 0);
+    .slice(0, 8)
+    .map(({ place }) => place);
 }
 
 export function extractPreferences(text: string): Partial<Preferences> {
@@ -480,7 +296,9 @@ export function resolveChatToolCalls(
         .safeParse(call.args?.routeIds);
       const displayedRoutes = routeIds.success
         ? routeIds.data.map((id) =>
-            routes.find((candidate) => candidate.id === id && !candidate.blocked),
+            routes.find(
+              (candidate) => candidate.id === id && !candidate.blocked,
+            ),
           )
         : [];
       if (

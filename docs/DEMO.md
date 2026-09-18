@@ -11,7 +11,7 @@ Engineering QA notes only. The user has deferred the submission write-up and rec
 5. Open **Network updates** to show the simulated affected stations, free-bus/shuttle mitigation and next-day maintenance. Select **Planned closure** to show closure avoidance before travel, not just a status label.
 6. Open the companion and read the consent text. Ask “Why this route? Is the risk a probability?” Show the response provider label. Explain the risk is rule-based. Ask “I avoid crowds and need sheltered walks”, review the proposal and apply it. Read a response aloud; do not claim microphone/speech-recognition support.
 7. Tap **Use simulated location** and confirm the origin, status and amber map marker all say the position is simulated. Start the journey and manually advance one step; the simulated marker follows the confirmed step. Explain that Live mode requests browser location only after a tap, foreground tracking stops when the journey closes, and steps never auto-complete. With the app previously loaded, turn on airplane mode and reload. Confirm the map/steps remain and the offline/stale warning is prominent. Turn airplane mode off afterwards.
-8. Switch **Data & sources → Live feeds**. Show real advisory messages, feed freshness, crowd readings and OneMap routing. A quiet live disruption feed is normal; do not relabel the synthetic event as live.
+8. Switch **Data & sources → Live feeds**. Show real advisory messages, feed freshness and crowd readings while the map and routes remain on the bundled OSM snapshot. A quiet live disruption feed is normal; do not relabel the synthetic event as live.
 
 ## Additional profiles
 

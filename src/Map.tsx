@@ -54,9 +54,6 @@ export default function JourneyMap({
   const routes = useRef<L.LayerGroup | null>(null);
   const position = useRef<L.LayerGroup | null>(null);
   const [mapError, setMapError] = useState(false);
-  const [mapDetail, setMapDetail] = useState<
-    "loading" | "detailed" | "offline"
-  >("loading");
   useEffect(() => {
     if (!element.current) return;
     const m = L.map(element.current, {
@@ -74,34 +71,9 @@ export default function JourneyMap({
     m.attributionControl.addAttribution(
       '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
     );
-    m.createPane("offline-basemap");
-    m.getPane("offline-basemap")!.style.zIndex = "190";
-    let loadedTileCount = 0;
-    let failedTileCount = 0;
-    const detailedTiles = L.tileLayer(
-      "https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png",
-      {
-        minZoom: 11,
-        maxZoom: 18,
-        maxNativeZoom: 18,
-        bounds: L.latLngBounds([1.16, 103.5], [1.56, 104.15]),
-        className: "onemap-tiles",
-        attribution:
-          '© <a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a> · Singapore Land Authority',
-      },
-    ).addTo(m);
-    detailedTiles.on("tileload", () => {
-      loadedTileCount += 1;
-      setMapDetail("detailed");
-      element.current?.setAttribute("data-map-detail", "onemap");
-    });
-    detailedTiles.on("tileerror", () => {
-      failedTileCount += 1;
-      if (!loadedTileCount && failedTileCount >= 2) {
-        setMapDetail("offline");
-        element.current?.setAttribute("data-map-detail", "offline");
-      }
-    });
+    m.createPane("local-basemap");
+    m.getPane("local-basemap")!.style.zIndex = "190";
+    element.current.setAttribute("data-map-source", "bundled-osm");
     let alive = true;
     basemapPromise ??= fetch("/data/basemap.json").then((r) => {
       if (!r.ok) throw new Error("Map unavailable");
@@ -112,7 +84,7 @@ export default function JourneyMap({
         if (!alive) return;
         L.geoJSON(data, {
           interactive: false,
-          pane: "offline-basemap",
+          pane: "local-basemap",
           style: (feature) => {
             const kind = feature?.properties.kind;
             const style: L.PathOptions =
@@ -177,15 +149,18 @@ export default function JourneyMap({
     if (!m || !group || !plan) return;
     group.clearLayers();
     const journey = selected ?? plan.recommended;
-    const rainySegments = journey.segments.filter(
-      (segment) => segment.issues?.includes("rain"),
+    const rainySegments = journey.segments.filter((segment) =>
+      segment.issues?.includes("rain"),
     );
     if (plan.conditions.weather.rain) {
       const affected = rainySegments.length
         ? rainySegments
-        : journey.segments.filter((segment) => segment.mode === "walk").slice(0, 1);
+        : journey.segments
+            .filter((segment) => segment.mode === "walk")
+            .slice(0, 1);
       affected.forEach((segment) => {
-        const midpoint = segment.geometry[Math.floor(segment.geometry.length / 2)];
+        const midpoint =
+          segment.geometry[Math.floor(segment.geometry.length / 2)];
         if (!midpoint) return;
         L.circle(midpoint, {
           radius: 850,
@@ -368,7 +343,8 @@ export default function JourneyMap({
   }, [location]);
   const recenter = () => {
     const points =
-      (selected ?? plan?.recommended)?.segments.flatMap((s) => s.geometry) ?? [];
+      (selected ?? plan?.recommended)?.segments.flatMap((s) => s.geometry) ??
+      [];
     if (location) points.push([location.lat, location.lon]);
     if (points?.length)
       map.current?.fitBounds(L.latLngBounds(points), {
@@ -415,7 +391,7 @@ export default function JourneyMap({
         )}
       </div>
       <span className="map-extract">
-        <Layers size={12} /> Offline OSM map
+        <Layers size={12} /> Bundled OSM map
       </span>
       <div className="map-mode-key" aria-label="Map route legend">
         {visibleModes.map((mode) => (
@@ -442,11 +418,6 @@ export default function JourneyMap({
       {mapError && (
         <div className="map-error">
           Map extract unavailable. Your journey steps are still below.
-        </div>
-      )}
-      {mapDetail === "offline" && !mapError && (
-        <div className="map-source-note" role="status">
-          Detailed map unavailable · showing offline roads
         </div>
       )}
     </div>
