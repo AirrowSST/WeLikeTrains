@@ -11,10 +11,13 @@
     "build": "tsc --noEmit && vite build && esbuild server/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist-server/index.js",
     "start": "node dist-server/index.js",
     "test": "vitest run",
-    "test:e2e": "playwright test",
+    "test:e2e:run": "playwright test --project=mobile-chromium && playwright test --project=wide-screen-mobile-ui",
+    "test:e2e": "npm run build && npm run test:e2e:run",
+    "verify": "npm run build && npm test && npm run test:e2e:run",
     "check": "tsc --noEmit",
     "data:osm": "node scripts/import-osm.mjs",
-    "evaluate": "tsx scripts/evaluate.ts"
+    "evaluate": "tsx scripts/evaluate.ts",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@google-cloud/firestore": "^9.2.0",

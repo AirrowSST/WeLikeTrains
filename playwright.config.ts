@@ -1,11 +1,14 @@
 import { defineConfig, devices } from "@playwright/test";
+
+const e2eBaseUrl = "http://localhost:8081";
+
 export default defineConfig({
   testDir: "./tests/browser",
   fullyParallel: false,
   workers: 1,
   timeout: 90000,
   expect: { timeout: 30000 },
-  use: { baseURL: "http://localhost:8080", trace: "retain-on-failure" },
+  use: { baseURL: e2eBaseUrl, trace: "retain-on-failure" },
   projects: [
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] } },
     {
@@ -15,9 +18,9 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm start",
-    url: "http://localhost:8080/api/health",
-    reuseExistingServer: !process.env.CI,
+    url: `${e2eBaseUrl}/api/health`,
+    reuseExistingServer: false,
     timeout: 120000,
-    env: { DISABLE_RATE_LIMITS: "true", NODE_ENV: "e2e" },
+    env: { DISABLE_RATE_LIMITS: "true", NODE_ENV: "e2e", PORT: "8081" },
   },
 });
