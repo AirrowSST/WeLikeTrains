@@ -253,27 +253,62 @@ export function localJourneys(
       request.destination.lon,
     ];
   const all = [...net.stations.values()];
+  const accessLeg = (
+    from: [number, number],
+    to: [number, number],
+    fromName: string,
+    toName: string,
+  ) => {
+    const mapped = walkSegment(from, to, fromName, toName, request.preferences);
+    if (mapped) return mapped;
+    const metres = distance(from, to);
+    // A place returned by search can be just outside the bundled pedestrian
+    // extract. Keep access to a nearby stop usable, but make the approximation
+    // explicit rather than presenting it as a verified walking path.
+    if (metres > Math.max(request.preferences.maxWalk, 2500)) return null;
+    return {
+      id: `walk-${fromName}-${toName}`,
+      mode: "walk" as const,
+      line: "walk",
+      from: fromName,
+      to: toName,
+      minutes: Math.ceil(metres / request.preferences.walkingSpeed),
+      distance: metres,
+      geometry: [from, to],
+      stops: [],
+      crowd: "unknown" as const,
+      affected: false,
+      delay: 0,
+      sheltered: false,
+      accessibility: "unknown" as const,
+      instructions: `Walk about ${Math.round(metres)} m to ${toName}. This access leg is estimated because the local walking map does not cover the full connection.`,
+      source: "Estimated station access outside bundled walking map",
+    };
+  };
   function nearby(c: [number, number]) {
-    return ["rail", "bus"].flatMap((mode) =>
-      all
+    return ["rail", "bus"].flatMap((mode) => {
+      const candidates = all
         .filter(
-          (s) =>
-            s.mode === mode &&
-            distance(c, s.coord) < request.preferences.maxWalk,
+          (s) => s.mode === mode,
         )
         .sort((a, b) => distance(c, a.coord) - distance(c, b.coord))
-        .slice(0, mode === "rail" ? 5 : 3),
-    );
+        .filter((s) => distance(c, s.coord) < request.preferences.maxWalk)
+        .slice(0, mode === "rail" ? 5 : 3);
+      if (candidates.length) return candidates;
+      const closest = all
+        .filter((s) => s.mode === mode)
+        .sort((a, b) => distance(c, a.coord) - distance(c, b.coord))[0];
+      return closest && distance(c, closest.coord) <= 2500 ? [closest] : [];
+    });
   }
   const starts = nearby(origin)
     .map((s) => ({
       s,
-      leg: walkSegment(
+      leg: accessLeg(
         origin,
         s.coord,
         request.origin.name,
         s.name,
-        request.preferences,
       ),
     }))
     .filter((x) => x.leg !== null);
@@ -281,12 +316,11 @@ export function localJourneys(
     nearby(destination)
       .map((s) => [
         s.id,
-        walkSegment(
+        accessLeg(
           s.coord,
           destination,
           s.name,
           request.destination.name,
-          request.preferences,
         ),
       ])
       .filter((x) => x[1] !== null) as [string, Segment][],

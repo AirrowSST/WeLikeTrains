@@ -80,22 +80,39 @@ export async function searchPlaces(query: string): Promise<Place[]> {
   );
   if (query.length < 3) return local;
   try {
-    const auth = await oneMapToken();
+    // OneMap returns useful search matches even when a token is not configured.
+    // Prefer an authenticated request when credentials are available, but retain
+    // that public-search fallback for the local demo and self-hosted installs.
+    let auth: string | undefined;
+    try {
+      auth = await oneMapToken();
+    } catch {
+      // No OneMap credentials: continue with the public search response.
+    }
     const r = await fetch(
       `https://www.onemap.gov.sg/api/common/elastic/search?${new URLSearchParams({ searchVal: query, returnGeom: "Y", getAddrDetails: "Y", pageNum: "1" })}`,
-      { headers: { Authorization: auth }, signal: AbortSignal.timeout(5000) },
+      {
+        headers: auth ? { Authorization: auth } : undefined,
+        signal: AbortSignal.timeout(5000),
+      },
     );
     if (!r.ok) return local;
     const json = await r.json();
     return [
       ...local,
-      ...(json.results ?? []).slice(0, 8).map((p: any) => ({
-        id: `onemap-${p.POSTAL}-${p.LATITUDE}`,
-        name: p.BUILDING && p.BUILDING !== "NIL" ? p.BUILDING : p.SEARCHVAL,
-        subtitle: p.ADDRESS,
-        lat: Number(p.LATITUDE),
-        lon: Number(p.LONGITUDE),
-      })),
+      ...(json.results ?? [])
+        .filter(
+          (p: any) => Number.isFinite(Number(p.LATITUDE)) && Number.isFinite(Number(p.LONGITUDE)),
+        )
+        .slice(0, 8)
+        .map((p: any) => ({
+          id: `onemap-${p.POSTAL}-${p.LATITUDE}`,
+          name:
+            p.BUILDING && p.BUILDING !== "NIL" ? p.BUILDING : p.SEARCHVAL,
+          subtitle: p.ADDRESS,
+          lat: Number(p.LATITUDE),
+          lon: Number(p.LONGITUDE),
+        })),
     ];
   } catch {
     return local;

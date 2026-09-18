@@ -334,6 +334,51 @@ input {
 .status-dot.amber {
   background: #b79d5b;
 }
+.mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  color: #52654d;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mode-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.mode-toggle-track {
+  width: 34px;
+  height: 20px;
+  border-radius: 20px;
+  background: #dce3d2;
+  position: relative;
+  transition: background 0.2s;
+}
+.mode-toggle-track::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 3px;
+  top: 3px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+.mode-toggle input:checked + .mode-toggle-track {
+  background: #537f46;
+}
+.mode-toggle input:checked + .mode-toggle-track::after {
+  transform: translateX(14px);
+}
+.mode-toggle input:focus-visible + .mode-toggle-track {
+  outline: 2px solid #527945;
+  outline-offset: 2px;
+}
 .status-dot.muted {
   background: #a0a49b;
 }

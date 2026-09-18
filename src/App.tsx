@@ -224,6 +224,14 @@ function PlacePicker({
   useEffect(() => setQuery(value.name), [value]);
   useEffect(() => {
     if (!editing) return;
+    const normalized = query.trim().toLowerCase();
+    const localResults = normalized
+      ? places.filter((p) =>
+          `${p.name} ${p.subtitle}`.toLowerCase().includes(normalized),
+        )
+      : places;
+    setResults(localResults);
+    setBusy(false);
     const control = new AbortController();
     const timer = setTimeout(() => {
       setBusy(true);
@@ -235,11 +243,7 @@ function PlacePicker({
           if (Array.isArray(v)) setResults(v);
         })
         .catch(() =>
-          setResults(
-            places.filter((p) =>
-              p.name.toLowerCase().includes(query.toLowerCase()),
-            ),
-          ),
+          setResults(localResults),
         )
         .finally(() => setBusy(false));
     }, 250);
@@ -312,7 +316,7 @@ function PlacePicker({
           ))}
           {!busy && !results.length && (
             <li className="searching">
-              No match. Wider address search needs OneMap.
+              No match. Try a station, landmark, or full address.
             </li>
           )}
         </ul>
@@ -371,13 +375,14 @@ export default function App() {
         signal: control.signal,
       });
       const data = await response.json();
+      if (activeRequest.current !== control) return;
       if (!response.ok)
         throw new Error(data.error ?? "Unable to plan your journey");
       setPlan(data);
       setSelectedId(null);
       persist(PLAN_KEY, data);
     } catch (e: any) {
-      if (e.name !== "AbortError")
+      if (e.name !== "AbortError" && activeRequest.current === control)
         setError(
           navigator.onLine
             ? e.message
@@ -387,6 +392,11 @@ export default function App() {
       if (activeRequest.current === control) setLoading(false);
     }
   }, []);
+  const updateRequestAndPlan = (value: Partial<PlanRequest>) => {
+    const next = { ...request, ...value };
+    setRequest(next);
+    void runPlan(next);
+  };
   useEffect(() => {
     fetch("/api/config")
       .then((r) => r.json())
@@ -660,6 +670,21 @@ export default function App() {
                 : "Official feeds · availability shown below"}
             </small>
           </span>
+          <label className="mode-toggle">
+            <span>Demo</span>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="Use demo mode"
+              checked={request.dataMode === "demo"}
+              onChange={(e) =>
+                updateRequestAndPlan({
+                  dataMode: e.target.checked ? "demo" : "live",
+                })
+              }
+            />
+            <span className="mode-toggle-track" aria-hidden="true" />
+          </label>
           <label className="scenario-select">
             <span className="sr-only">Demo scenario</span>
             <select
@@ -725,13 +750,13 @@ export default function App() {
                         label="FROM"
                         marker="A"
                         value={request.origin}
-                        onChange={(p) => updateRequest({ origin: p })}
+                        onChange={(p) => updateRequestAndPlan({ origin: p })}
                       />
                       <button
                         type="button"
                         className="swap-button"
                         onClick={() =>
-                          updateRequest({
+                          updateRequestAndPlan({
                             origin: request.destination,
                             destination: request.origin,
                           })
@@ -744,7 +769,9 @@ export default function App() {
                         label="TO"
                         marker="B"
                         value={request.destination}
-                        onChange={(p) => updateRequest({ destination: p })}
+                        onChange={(p) =>
+                          updateRequestAndPlan({ destination: p })
+                        }
                       />
                     </div>
                     <div className="time-fields">
@@ -1021,11 +1048,11 @@ export default function App() {
                       <Footprints size={20} />
                     </span>
                     <span>
-                      <small>Door to door</small>
+                      <small>Total walking time</small>
                       <strong>
                         {selected
-                          ? `${Math.ceil(selected.walkMinutes)} min walking`
-                          : "Walking legs included"}
+                          ? `${Math.ceil(selected.walkMinutes)} min across your journey`
+                          : "Included in your journey"}
                       </strong>
                     </span>
                   </div>
@@ -1084,7 +1111,7 @@ export default function App() {
                             </h3>
                             <p>
                               {s.mode === "walk"
-                                ? `${Math.round(s.distance)} m · ${s.sheltered ? "Mapped shelter" : "Shelter not fully verified"}`
+                                ? `${Math.round(s.distance)} m · ${s.sheltered ? "Sheltered route mapped" : "Shelter may vary along this walk"}`
                                 : `From ${s.from}${s.affected ? " · Service affected" : ""}`}
                             </p>
                             {expanded === selected.id && (
