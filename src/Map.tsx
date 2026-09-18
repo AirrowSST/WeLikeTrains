@@ -526,31 +526,19 @@ export default function JourneyMap({
           <LocateFixed size={19} />
         </button>
       </div>
-      <div className="map-legend">
-        {comparing ? (
-          <>
-            <span>
-              <i className="legend-line dashed" /> Original route
-            </span>
-            <span>
-              <i className="legend-line affected" /> Affected original
-            </span>
-            <span>
-              <i className="legend-line" /> Revised route
-            </span>
-          </>
-        ) : (
+      {comparing && (
+        <div className="map-legend">
           <span>
-            <i className="legend-line" /> Selected route
+            <i className="legend-line dashed" /> Original route
           </span>
-        )}
-        {location && (
           <span>
-            <i className={`legend-location ${location.source}`} />
-            {location.source === "demo" ? "Simulated" : "You"}
+            <i className="legend-line affected" /> Affected original
           </span>
-        )}
-      </div>
+          <span>
+            <i className="legend-line" /> Revised route
+          </span>
+        </div>
+      )}
       <span className="map-extract">
         <Layers size={12} />
         {mapDetail === "detailed"
