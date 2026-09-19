@@ -1133,6 +1133,7 @@ function PlacePicker({
   placeholder,
   googlePlacesApiKey,
   online,
+  onActivate,
 }: {
   label: string;
   value: Place;
@@ -1141,6 +1142,7 @@ function PlacePicker({
   placeholder?: string;
   googlePlacesApiKey?: string;
   online: boolean;
+  onActivate?: () => void;
 }) {
   const [query, setQuery] = useState(value.name);
   const [editing, setEditing] = useState(false);
@@ -1190,6 +1192,9 @@ function PlacePicker({
     <div
       className="place-field"
       ref={container}
+      onFocusCapture={(event) => {
+        if (event.target instanceof HTMLInputElement) onActivate?.();
+      }}
       onPointerDown={(event) => {
         const target = event.target as HTMLElement;
         if (target.closest("input, button, .place-results")) return;
@@ -2596,6 +2601,7 @@ export default function App() {
                               fieldKey="A"
                               value={request.origin}
                               placeholder="Current location"
+                              onActivate={() => snapJourneySheet(0)}
                               googlePlacesApiKey={
                                 request.dataMode === "live"
                                   ? config?.googlePlacesApiKey
@@ -2685,21 +2691,16 @@ export default function App() {
                                 })
                               }
                             />
+                            <button
+                              type="button"
+                              className="location-button time-location-button"
+                              onClick={useCurrentLocation}
+                            >
+                              Retry location
+                            </button>
                           </div>
                         </div>
                         <div className="location-control">
-                          {(request.dataMode === "demo" ||
-                            (!locationBusy && !currentLocation)) && (
-                            <button
-                              type="button"
-                              className="location-button"
-                              onClick={useCurrentLocation}
-                            >
-                              {request.dataMode === "demo"
-                                ? "Use simulated location"
-                                : "Retry location"}
-                            </button>
-                          )}
                           {locationBusy && (
                             <span className="location-status" role="status">
                               <LoaderCircle className="spin" size={14} />{" "}
