@@ -134,8 +134,12 @@ async function setup(page: Page) {
 }
 const nav = (page: Page, name: string) =>
   page.getByRole("navigation").getByRole("button", { name, exact: true });
+async function selectFirstRoute(page: Page) {
+  await page.locator(".route-select").first().click();
+  return page.getByRole("button", { name: /^Start / }).first();
+}
 async function finish(page: Page) {
-  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await (await selectFirstRoute(page)).click();
   await page.getByRole("button", { name: "I’m here" }).click();
 }
 
@@ -161,7 +165,7 @@ test("previews points, credits only completion, redeems demo rewards and persist
     page.getByRole("heading", { name: "Account", exact: true }),
   ).toBeVisible();
   await nav(page, "Journey").click();
-  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await (await selectFirstRoute(page)).click();
   await expect(page.locator(".points-counter")).toContainText("0");
   await page.getByRole("button", { name: "Close dialog" }).click();
   await expect(page.locator(".points-counter")).toContainText("0");
@@ -202,9 +206,8 @@ test("previews points, credits only completion, redeems demo rewards and persist
     page.getByRole("button", { name: "50 more points to go" }),
   ).toBeDisabled();
   await page.reload();
-  await expect(
-    page.getByRole("button", { name: "Start", exact: true }),
-  ).toBeEnabled();
+  await expect(page.getByRole("button", { name: /^Start / })).toHaveCount(0);
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   await finish(page);
   await expect(page.locator(".journey-points-earned")).toContainText(
     "No new points",

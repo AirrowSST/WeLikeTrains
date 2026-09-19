@@ -143,6 +143,12 @@ async function setup(page: Page) {
     }),
   );
 }
+
+async function selectFirstRoute(page: Page) {
+  await page.locator(".route-select").first().click();
+  return page.getByRole("button", { name: /^Start / }).first();
+}
+
 test("shows upcoming bus and train times, refreshes only while open and handles stale/offline data", async ({
   page,
   context,
@@ -185,11 +191,10 @@ test("shows upcoming bus and train times, refreshes only while open and handles 
   });
   await page.clock.install();
   await page.goto("/");
-  await expect(
-    page.getByRole("button", { name: "Start", exact: true }),
-  ).toBeEnabled();
+  await expect(page.getByRole("button", { name: /^Start / })).toHaveCount(0);
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   expect(busCalls).toBe(0);
-  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await page.getByRole("button", { name: /^Start / }).click();
   const busBoard = page.getByRole("region", { name: "Bus arrival times" });
   await expect(busBoard).toContainText("Next boarding · Tampines stop (76141)");
   await expect(busBoard.locator(".arrival-times li")).toHaveCount(3);
@@ -273,7 +278,7 @@ test("uses demo time for train schedules and never fetches live buses in a demo"
   await page.getByLabel("Developer mode").check();
   await page.getByRole("button", { name: "Open demo presets" }).click();
   await page.getByRole("button", { name: "Start demo" }).click();
-  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await (await selectFirstRoute(page)).click();
   await expect(
     page.getByRole("region", { name: "Bus arrival times" }),
   ).toContainText("Demo clock · Simulated");

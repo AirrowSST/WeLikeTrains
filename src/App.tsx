@@ -579,6 +579,63 @@ function Modal({
     </dialog>
   );
 }
+
+const sheetSnapNames = ["expanded", "middle", "collapsed"] as const;
+const sheetSnapDescriptions = ["expanded", "half open", "collapsed"] as const;
+
+function SheetDragHandle({
+  controls,
+  label,
+  sheetSnap,
+  sheetMoved,
+  snapJourneySheet,
+  startSheetDrag,
+}: {
+  controls: string;
+  label: string;
+  sheetSnap: ReturnType<typeof useJourneySheet>["sheetSnap"];
+  sheetMoved: ReturnType<typeof useJourneySheet>["sheetMoved"];
+  snapJourneySheet: ReturnType<typeof useJourneySheet>["snapJourneySheet"];
+  startSheetDrag: ReturnType<typeof useJourneySheet>["startSheetDrag"];
+}) {
+  return (
+    <button
+      type="button"
+      className="sheet-drag-handle"
+      aria-label={`Resize ${label}, ${sheetSnapDescriptions[sheetSnap]}`}
+      aria-controls={controls}
+      data-sheet-snap={sheetSnapNames[sheetSnap]}
+      title={`Drag to resize ${label}`}
+      onPointerDown={startSheetDrag}
+      onClick={(event) => {
+        if (sheetMoved.current) {
+          sheetMoved.current = false;
+          event.preventDefault();
+          return;
+        }
+        snapJourneySheet(sheetSnap === 0 ? 2 : 0);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          snapJourneySheet(sheetSnap - 1);
+        } else if (event.key === "ArrowDown") {
+          event.preventDefault();
+          snapJourneySheet(sheetSnap + 1);
+        } else if (event.key === "Home") {
+          event.preventDefault();
+          snapJourneySheet(0);
+        } else if (event.key === "End") {
+          event.preventDefault();
+          snapJourneySheet(2);
+        }
+      }}
+    >
+      <span aria-hidden="true" />
+    </button>
+  );
+}
+
 function Onboarding({
   preferences,
   largeText,
@@ -955,6 +1012,20 @@ export default function App() {
   } = useJourneySheet(
     tab === "today" && modal !== "preferences" && modal !== "profile",
   );
+  const {
+    journeyLayout: activeJourneyLayout,
+    sheetSnap: activeJourneySheetSnap,
+    sheetDragging: activeJourneySheetDragging,
+    sheetMoved: activeJourneySheetMoved,
+    snapJourneySheet: snapActiveJourneySheet,
+    startSheetDrag: startActiveJourneySheetDrag,
+  } = useJourneySheet(modal === "journey", {
+    sheetSelector: ".active-journey-sheet",
+    scrollSelector: ".active-journey-scroll",
+    lockDocument: false,
+    middleRatio: 0.48,
+    middleMaxHeight: 390,
+  });
   const [hardPreferences, setHardPreferences] = useState<Partial<Preferences>>(
     guest.current.hardPreferences,
   );
@@ -1769,6 +1840,29 @@ export default function App() {
   const pointsAlreadyCollected =
     !!plan &&
     wallet.entries.some((entry) => entry.id === pointsJourneyId(plan));
+  const beginJourney = (journey: Journey) => {
+    if (!plan || journey.blocked) return;
+    completionRecorded.current = false;
+    setCompletionPoints(null);
+    setActiveJourney({
+      route: journey,
+      entry: {
+        ...journeyPoints(journey, plan.original),
+        id: pointsJourneyId(plan),
+        title: journey.title,
+        completedAt: "",
+      },
+      demo: request.dataMode === "demo",
+      scope: pointsScope,
+      destination: plan.request.destination.name,
+      departure: plan.request.departure,
+      buses: plan.conditions.buses,
+    });
+    setStarted(true);
+    setJourneyProgress(0);
+    if (request.dataMode === "demo") setTrackingLocation(true);
+    setModal("journey");
+  };
   return (
     <div className="app-shell">
       <a href="#main" className="skip-link">
@@ -1931,42 +2025,14 @@ export default function App() {
                 />
               </div>
               <section className="journey-sheet" aria-label="Journey panel">
-                <button
-                  type="button"
-                  className="sheet-drag-handle"
-                  aria-label={`Resize journey panel, ${["expanded", "half open", "collapsed"][sheetSnap]}`}
-                  aria-controls="journey-sheet-content"
-                  data-sheet-snap={
-                    ["expanded", "middle", "collapsed"][sheetSnap]
-                  }
-                  title="Drag to resize the journey panel"
-                  onPointerDown={startSheetDrag}
-                  onClick={(event) => {
-                    if (sheetMoved.current) {
-                      sheetMoved.current = false;
-                      event.preventDefault();
-                      return;
-                    }
-                    snapJourneySheet(sheetSnap === 0 ? 2 : 0);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "ArrowUp") {
-                      event.preventDefault();
-                      snapJourneySheet(sheetSnap - 1);
-                    } else if (event.key === "ArrowDown") {
-                      event.preventDefault();
-                      snapJourneySheet(sheetSnap + 1);
-                    } else if (event.key === "Home") {
-                      event.preventDefault();
-                      snapJourneySheet(0);
-                    } else if (event.key === "End") {
-                      event.preventDefault();
-                      snapJourneySheet(2);
-                    }
-                  }}
-                >
-                  <span aria-hidden="true" />
-                </button>
+                <SheetDragHandle
+                  controls="journey-sheet-content"
+                  label="journey panel"
+                  sheetSnap={sheetSnap}
+                  sheetMoved={sheetMoved}
+                  snapJourneySheet={snapJourneySheet}
+                  startSheetDrag={startSheetDrag}
+                />
                 {sheetSnap === 0 && (
                   <button
                     type="button"
@@ -2223,14 +2289,14 @@ export default function App() {
                       {plan &&
                         visibleRouteChoices.map((journey, i) => (
                           <article
-                            className={`route-card ${selected?.id === journey.id ? "selected" : ""} ${journey.blocked ? "blocked" : ""}`}
+                            className={`route-card ${selectedId === journey.id ? "selected" : ""} ${journey.blocked ? "blocked" : ""}`}
                             key={journey.id}
                           >
                             <button
                               className="route-select"
                               onClick={() => setSelectedId(journey.id)}
                               aria-label={`View ${journey.title}, ${journey.duration} minutes`}
-                              aria-pressed={selected?.id === journey.id}
+                              aria-pressed={selectedId === journey.id}
                             >
                               <div className="route-card-top">
                                 <span
@@ -2256,7 +2322,7 @@ export default function App() {
                                   )}
                                 </span>
                                 <span className="selection-circle">
-                                  {selected?.id === journey.id && (
+                                  {selectedId === journey.id && (
                                     <Check size={11} />
                                   )}
                                 </span>
@@ -2323,6 +2389,24 @@ export default function App() {
                                 </span>
                               )}
                             </button>
+                            {selectedId === journey.id && !journey.blocked && (
+                              <div className="route-start-action">
+                                <span>
+                                  <Check size={14} aria-hidden="true" />{" "}
+                                  Selected route
+                                </span>
+                                <button
+                                  type="button"
+                                  className="primary-button"
+                                  aria-label={`Start ${journey.title}`}
+                                  onClick={() => beginJourney(journey)}
+                                >
+                                  <Navigation size={17} aria-hidden="true" />
+                                  Start {journey.title}
+                                  <ArrowRight size={17} aria-hidden="true" />
+                                </button>
+                              </div>
+                            )}
                           </article>
                         ))}
                     </div>
@@ -2416,39 +2500,6 @@ export default function App() {
                     </div>
                     {selected && (
                       <>
-                        <div className="start-journey single">
-                          <button
-                            className="primary-button"
-                            disabled={selected.blocked}
-                            onClick={() => {
-                              if (!plan || selected.blocked) return;
-                              completionRecorded.current = false;
-                              setCompletionPoints(null);
-                              setActiveJourney({
-                                route: selected,
-                                entry: {
-                                  ...journeyPoints(selected, plan.original),
-                                  id: pointsJourneyId(plan),
-                                  title: selected.title,
-                                  completedAt: "",
-                                },
-                                demo: request.dataMode === "demo",
-                                scope: pointsScope,
-                                destination: plan.request.destination.name,
-                                departure: plan.request.departure,
-                                buses: plan.conditions.buses,
-                              });
-                              setStarted(true);
-                              setJourneyProgress(0);
-                              if (request.dataMode === "demo")
-                                setTrackingLocation(true);
-                              setModal("journey");
-                            }}
-                          >
-                            <Navigation size={16} /> Start{" "}
-                            <ArrowRight size={16} />
-                          </button>
-                        </div>
                         <section className="steps-card">
                           <div className="section-title">
                             <h2>Directions</h2>
@@ -3493,169 +3544,229 @@ export default function App() {
           </div>
         </Modal>
       )}
-      {modal === "journey" && selected && (
+      {modal === "journey" && activeJourney && (
         <Modal
           title={
-            journeyStep >= selected.segments.length
+            journeyStep >= activeJourney.route.segments.length
               ? "You’ve made it."
               : "One step at a time"
           }
           onClose={closeJourney}
+          className="journey-navigation-modal"
         >
-          <div className="modal-body active-journey">
-            <span className="tag">
-              {request.dataMode === "demo" ? "DEMO JOURNEY" : "YOUR JOURNEY"} ·{" "}
-              {online ? "SAVED FOR OFFLINE" : "OFFLINE · LAST SAVED PLAN"}
-            </span>
-            {journeyStep < selected.segments.length ? (
-              <>
-                <span className="active-step-icon">
-                  <ModeIcon
-                    mode={selected.segments[journeyStep].mode}
-                    size={44}
-                  />
+          <div
+            ref={activeJourneyLayout}
+            className={`journey-navigation-stage sheet-${
+              sheetSnapNames[activeJourneySheetSnap]
+            } ${activeJourneySheetDragging ? "sheet-dragging" : ""}`}
+          >
+            <JourneyMap
+              plan={plan}
+              selected={activeJourney.route}
+              location={currentLocation}
+              onViewAlerts={() => setModal("alerts")}
+              hasAlerts={disruptionAlerts.length > 0}
+              navigationMode
+              focusSegmentId={activeJourney.route.segments[journeyStep]?.id}
+            />
+            <section
+              className={`active-journey-sheet ${
+                journeyStep >= activeJourney.route.segments.length
+                  ? "complete"
+                  : ""
+              }`}
+              aria-label="One step at a time guidance"
+            >
+              <SheetDragHandle
+                controls="active-journey-content"
+                label="One step at a time panel"
+                sheetSnap={activeJourneySheetSnap}
+                sheetMoved={activeJourneySheetMoved}
+                snapJourneySheet={snapActiveJourneySheet}
+                startSheetDrag={startActiveJourneySheetDrag}
+              />
+              <div
+                id="active-journey-content"
+                className="active-journey active-journey-scroll"
+              >
+                <span className="tag">
+                  {request.dataMode === "demo"
+                    ? "DEMO JOURNEY"
+                    : "YOUR JOURNEY"}
+                  {online ? " · SAVED OFFLINE" : " · OFFLINE PLAN"}
                 </span>
-                <p className="eyebrow">
-                  STEP {journeyStep + 1} OF {selected.segments.length}
-                </p>
-                <h2>{selected.segments[journeyStep].to}</h2>
-                <p>{selected.segments[journeyStep].instructions}</p>
-                {selected.segments[journeyStep].geometryKind ===
-                  "schematic" && (
-                  <p>Schematic bus line · not the roads travelled</p>
+                {journeyStep < activeJourney.route.segments.length ? (
+                  <>
+                    <div className="active-step-summary">
+                      <span className="active-step-icon">
+                        <ModeIcon
+                          mode={activeJourney.route.segments[journeyStep].mode}
+                          size={28}
+                        />
+                      </span>
+                      <div>
+                        <p className="eyebrow">
+                          STEP {journeyStep + 1} OF{" "}
+                          {activeJourney.route.segments.length}
+                        </p>
+                        <h2>{activeJourney.route.segments[journeyStep].to}</h2>
+                        <p>
+                          {
+                            activeJourney.route.segments[journeyStep]
+                              .instructions
+                          }
+                        </p>
+                      </div>
+                    </div>
+                    <div className="active-step-details">
+                      <div className="active-step-meta">
+                        <Clock3 size={17} />
+                        {Math.ceil(
+                          activeJourney.route.segments[journeyStep].minutes,
+                        )}{" "}
+                        min ·{" "}
+                        {Math.round(
+                          activeJourney.route.segments[journeyStep].distance,
+                        )}{" "}
+                        m
+                      </div>
+                      {["bus", "rail"].includes(
+                        activeJourney.route.segments[journeyStep].mode,
+                      ) && (
+                        <p className="segment-crowding">
+                          <UsersRound size={15} aria-hidden="true" />
+                          {crowdDescription(
+                            activeJourney.route.segments[journeyStep],
+                          )}
+                        </p>
+                      )}
+                    </div>
+                    {activeJourney.route.segments[journeyStep].geometryKind ===
+                      "schematic" && (
+                      <p className="active-journey-note">
+                        Schematic bus line · not the roads travelled
+                      </p>
+                    )}
+                    <TransitArrivals
+                      segments={activeJourney.route.segments}
+                      step={journeyStep}
+                      demo={activeJourney.demo}
+                      departure={activeJourney.departure}
+                      demoBuses={activeJourney.buses}
+                    />
+                    <div className="journey-location" aria-live="polite">
+                      <span>
+                        <LocateFixed size={16} />
+                        {trackingLocation
+                          ? request.dataMode === "demo"
+                            ? "Simulated position follows each confirmed step"
+                            : currentLocation
+                              ? `Live location on · ±${Math.round(currentLocation.accuracy)} m`
+                              : "Finding your live location…"
+                          : currentLocation
+                            ? "Last location shown on the map"
+                            : "Location is off"}
+                      </span>
+                      {trackingLocation ? (
+                        <button
+                          className="text-button"
+                          onClick={stopLocationTracking}
+                        >
+                          Stop location
+                        </button>
+                      ) : (
+                        <button
+                          className="text-button"
+                          onClick={startLocationTracking}
+                          disabled={locationBusy}
+                        >
+                          {request.dataMode === "demo"
+                            ? "Restart simulation"
+                            : "Start live location"}
+                        </button>
+                      )}
+                    </div>
+                    {locationError && (
+                      <p className="location-error" role="alert">
+                        <TriangleAlert size={14} /> {locationError}
+                      </p>
+                    )}
+                    <p className="active-journey-note">
+                      Manual progress · foreground location stops when this
+                      journey closes · timings are estimates.
+                    </p>
+                    <div className="journey-progress">
+                      {activeJourney.route.segments.map((_, i) => (
+                        <i key={i} className={i <= journeyStep ? "done" : ""} />
+                      ))}
+                    </div>
+                    <div className="journey-controls">
+                      <button
+                        className="secondary-button"
+                        disabled={!journeyStep}
+                        onClick={() => setJourneyProgress(journeyStep - 1)}
+                      >
+                        <ArrowLeft size={16} /> Back
+                      </button>
+                      <button
+                        className="primary-button"
+                        onClick={() => setJourneyProgress(journeyStep + 1)}
+                      >
+                        I’m here <ArrowRight size={16} />
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="active-step-summary completion-summary">
+                      <span className="active-step-icon">
+                        <CheckCheck size={28} />
+                      </span>
+                      <div>
+                        <h2>A little less rush. A little more day.</h2>
+                        <p>
+                          You’ve reached {activeJourney.destination}. Your
+                          routine is ready for next time.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="journey-points-earned" role="status">
+                      <Leaf size={25} aria-hidden="true" />
+                      <strong>
+                        {completionPoints
+                          ? `+${completionPoints} ${request.dataMode === "demo" ? "demo " : ""}points earned`
+                          : "Journey complete"}
+                      </strong>
+                      <p>
+                        {completionPoints
+                          ? "Your good choices are adding up."
+                          : "No new points for this journey. Points are awarded once per planned trip."}
+                      </p>
+                    </div>
+                    <div className="journey-controls completion-controls">
+                      <button
+                        className="secondary-button"
+                        onClick={() => {
+                          closeJourney();
+                          setTab("rewards");
+                        }}
+                      >
+                        View rewards <Gift size={17} />
+                      </button>
+                      <button
+                        className="primary-button"
+                        onClick={() => {
+                          saveCommute();
+                          closeJourney();
+                        }}
+                      >
+                        Save commute <Heart size={17} />
+                      </button>
+                    </div>
+                  </>
                 )}
-                {["bus", "rail"].includes(
-                  selected.segments[journeyStep].mode,
-                ) && (
-                  <p className="segment-crowding">
-                    <UsersRound size={16} aria-hidden="true" />
-                    {crowdDescription(selected.segments[journeyStep])}
-                  </p>
-                )}
-                <div className="active-step-meta">
-                  <Clock3 size={19} />
-                  {Math.ceil(selected.segments[journeyStep].minutes)} min ·{" "}
-                  {Math.round(selected.segments[journeyStep].distance)} m
-                </div>
-                {activeJourney && (
-                  <TransitArrivals
-                    segments={activeJourney.route.segments}
-                    step={journeyStep}
-                    demo={activeJourney.demo}
-                    departure={activeJourney.departure}
-                    demoBuses={activeJourney.buses}
-                  />
-                )}
-                <div className="journey-location" aria-live="polite">
-                  <span>
-                    <LocateFixed size={16} />
-                    {trackingLocation
-                      ? request.dataMode === "demo"
-                        ? "Simulated position follows each confirmed step"
-                        : currentLocation
-                          ? `Live location on · ±${Math.round(currentLocation.accuracy)} m`
-                          : "Finding your live location…"
-                      : currentLocation
-                        ? "Last location shown on the map"
-                        : "Location is off"}
-                  </span>
-                  {trackingLocation ? (
-                    <button
-                      className="text-button"
-                      onClick={stopLocationTracking}
-                    >
-                      Stop location
-                    </button>
-                  ) : (
-                    <button
-                      className="text-button"
-                      onClick={startLocationTracking}
-                      disabled={locationBusy}
-                    >
-                      {request.dataMode === "demo"
-                        ? "Restart simulation"
-                        : "Start live location"}
-                    </button>
-                  )}
-                </div>
-                {locationError && (
-                  <p className="location-error" role="alert">
-                    <TriangleAlert size={14} /> {locationError}
-                  </p>
-                )}
-                <p className="privacy-note">
-                  Progress stays manual. Location is used only in this app and
-                  stops when this journey closes. Access and timing remain
-                  estimates.
-                </p>
-                <div className="journey-progress">
-                  {selected.segments.map((_, i) => (
-                    <i key={i} className={i <= journeyStep ? "done" : ""} />
-                  ))}
-                </div>
-                <div className="journey-controls">
-                  <button
-                    className="secondary-button"
-                    disabled={!journeyStep}
-                    onClick={() => setJourneyProgress(journeyStep - 1)}
-                  >
-                    <ArrowLeft size={16} /> Back
-                  </button>
-                  <button
-                    className="primary-button"
-                    onClick={() => setJourneyProgress(journeyStep + 1)}
-                  >
-                    I’m here <ArrowRight size={16} />
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <span className="active-step-icon">
-                  <CheckCheck size={44} />
-                </span>
-                <h2>
-                  A little less rush.
-                  <br />A little more day.
-                </h2>
-                <p>
-                  You’ve reached{" "}
-                  {activeJourney?.destination ?? request.destination.name}. Your
-                  routine is ready for next time.
-                </p>
-                <div className="journey-points-earned" role="status">
-                  <Leaf size={25} aria-hidden="true" />
-                  <strong>
-                    {completionPoints
-                      ? `+${completionPoints} ${request.dataMode === "demo" ? "demo " : ""}points earned`
-                      : "Journey complete"}
-                  </strong>
-                  <p>
-                    {completionPoints
-                      ? "Your good choices are adding up."
-                      : "No new points for this journey. Points are awarded once per planned trip."}
-                  </p>
-                </div>
-                <button
-                  className="secondary-button full"
-                  onClick={() => {
-                    closeJourney();
-                    setTab("rewards");
-                  }}
-                >
-                  View rewards <Gift size={17} />
-                </button>
-                <button
-                  className="primary-button full"
-                  onClick={() => {
-                    saveCommute();
-                    closeJourney();
-                  }}
-                >
-                  Save this commute <Heart size={17} />
-                </button>
-              </>
-            )}
+              </div>
+            </section>
           </div>
         </Modal>
       )}
