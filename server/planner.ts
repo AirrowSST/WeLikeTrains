@@ -69,6 +69,66 @@ export function segmentAffected(n: Notice, s: Segment) {
         )
     : !!n.line && n.line === s.line;
 }
+
+export function expandRailNoticeSector(notice: Notice): Notice {
+  if (!notice.line || notice.stations.length !== 2) return notice;
+  const [startCode, endCode] = notice.stations;
+  const startPrefix = startCode.match(/^([A-Z]+)\d+$/)?.[1];
+  const endPrefix = endCode.match(/^([A-Z]+)\d+$/)?.[1];
+  if (!startPrefix || startPrefix !== endPrefix) return notice;
+
+  const net = getNetwork();
+  const stations = [...net.stations.values()];
+  const start = stations.find(
+    (station) => station.mode === "rail" && station.codes.includes(startCode),
+  );
+  const end = stations.find(
+    (station) => station.mode === "rail" && station.codes.includes(endCode),
+  );
+  if (!start || !end || start.id === end.id) return notice;
+
+  const queue = [start.id];
+  const previous = new Map<string, string | null>([[start.id, null]]);
+  for (let index = 0; index < queue.length && !previous.has(end.id); index++) {
+    const stationId = queue[index];
+    for (const edge of net.transit.get(stationId) ?? []) {
+      if (
+        edge.mode !== "rail" ||
+        edge.line !== notice.line ||
+        previous.has(edge.to)
+      )
+        continue;
+      previous.set(edge.to, stationId);
+      queue.push(edge.to);
+    }
+  }
+  if (!previous.has(end.id)) return notice;
+
+  const stationIds: string[] = [];
+  for (let current: string | null = end.id; current;) {
+    stationIds.push(current);
+    current = previous.get(current) ?? null;
+  }
+  stationIds.reverse();
+  const sectorStations = stationIds
+    .map((id) => net.stations.get(id))
+    .filter((station): station is NonNullable<typeof station> => !!station);
+  const sectorCodes = sectorStations
+    .map((station) =>
+      station.codes.find(
+        (code) => code.match(/^([A-Z]+)\d+$/)?.[1] === startPrefix,
+      ),
+    )
+    .filter((code): code is string => !!code);
+  if (sectorCodes[0] !== startCode || sectorCodes.at(-1) !== endCode)
+    return notice;
+
+  return {
+    ...notice,
+    stations: sectorCodes,
+    stationNames: sectorStations.map((station) => station.name),
+  };
+}
 const worstCrowd = (values: Crowd[]): Crowd =>
   values.includes("high")
     ? "high"
@@ -169,7 +229,9 @@ export function journeyDurationRange(
 
     if (segment.mode === "bus" && segment.waitMinutes !== undefined) {
       const wait = Math.max(0, segment.waitMinutes);
-      if (/LTA DataMall BusArrival \((?:simulated|live)\)/.test(segment.source)) {
+      if (
+        /LTA DataMall BusArrival \((?:simulated|live)\)/.test(segment.source)
+      ) {
         upperDelta += 2;
       } else {
         const publishedRange = referenceWaitRange(segment, clock);
@@ -179,11 +241,7 @@ export function journeyDurationRange(
       }
     }
 
-    if (
-      segment.mode === "walk" &&
-      transitMode(previous) &&
-      transitMode(next)
-    ) {
+    if (segment.mode === "walk" && transitMode(previous) && transitMode(next)) {
       const walk = Math.max(1, segment.minutes - (segment.delay ?? 0));
       const lowerWalk = walk * 0.8 + 1;
       const upperWalk = walk * 1.2 + 3;
@@ -306,6 +364,7 @@ export function applyConditions(
 ): Journey {
   const seenDelay = new Set<string>();
   let blocked = false;
+  let hardBlocked = false;
   let elapsedMinutes = 0;
   let liveBusSegments = 0;
   let fallbackBusSegments = 0;
@@ -380,6 +439,7 @@ export function applyConditions(
     segment.issues = segment.sheltered && s.mode === "walk" ? ["shelter"] : [];
     if (segment.unavailable) {
       blocked = true;
+      hardBlocked = true;
       warnings.push(segment.instructions);
     }
     if (s.mode === "bus") {
@@ -429,14 +489,21 @@ export function applyConditions(
         );
         segment.affectedGeometry.push(
           ...(s.hops
-            ?.filter((h) =>
-              segmentAffected(notice, {
+            ?.filter((h) => {
+              if (notice.kind === "disruption" && notice.stations.length > 1) {
+                const hopCodes = new Set(h.codes);
+                return (
+                  notice.stations.filter((code) => hopCodes.has(code)).length >=
+                  2
+                );
+              }
+              return segmentAffected(notice, {
                 ...s,
                 from: h.from,
                 to: h.to,
                 stops: h.codes,
-              }),
-            )
+              });
+            })
             .map((h) => h.geometry) ?? [s.geometry]),
         );
         if (!seenDelay.has(notice.id)) {
@@ -448,8 +515,10 @@ export function applyConditions(
           notice.kind === "flood" ||
           notice.kind === "planned" ||
           notice.kind === "lift"
-        )
+        ) {
           blocked = true;
+          hardBlocked = true;
+        }
         if (
           notice.kind === "disruption" &&
           notice.freeBus &&
@@ -501,7 +570,10 @@ export function applyConditions(
           seenDelay.add(traffic.id);
           reasons.push(traffic.description);
         }
-        if (traffic.kind === "road-closure") blocked = true;
+        if (traffic.kind === "road-closure") {
+          blocked = true;
+          hardBlocked = true;
+        }
       }
     }
     if (segment.crowd === "high" && s.mode === "rail") {
@@ -561,7 +633,10 @@ export function applyConditions(
       ? exposed * 0.8
       : 0) +
     (request.preferences.stepFree ? walkMinutes * 0.6 : 0) +
-    (blocked ? 10000 : 0);
+    (blocked ? 10000 : 0) +
+    // If every route is weather-blocked, still rank a weather-only route ahead
+    // of one with a physical closure, flood, unavailable segment or lift outage.
+    (hardBlocked ? 10000 : 0);
   if (request.preferences.stepFree)
     warnings.push(
       "Step-free access is not fully verified. Mapped stairs and known lift outages are excluded. Confirm station lifts and final access before travelling.",
@@ -1075,6 +1150,7 @@ export class NoUsableRouteError extends Error {
 
 export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
   const conditions = await getConditions(request);
+  conditions.notices = conditions.notices.map(expandRailNoticeSector);
   // Limited weather temporarily prefers shelter for this plan. It never turns
   // that preference into a strict requirement or changes the saved setting.
   const routingRequest: PlanRequest = {
@@ -1228,8 +1304,7 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
   const hasExposedRainWalk =
     conditions.weather.rain &&
     recommended.segments.some(
-      (segment) =>
-        segment.mode === "walk" && shelterExposureRatio(segment) > 0,
+      (segment) => segment.mode === "walk" && shelterExposureRatio(segment) > 0,
     );
   const risk = estimateRisk(conditions, original);
   const date = Date.parse(request.departure);

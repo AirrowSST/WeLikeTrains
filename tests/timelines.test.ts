@@ -80,6 +80,40 @@ describe("profile timeline playback", () => {
       const controlPlan = await planJourney(request(`${persona}-control`, 0));
       const eventPlan = await planJourney(request(`${persona}-eventful`, 0));
       expect(controlPlan.travelDecision).toBe("travel");
+      if (persona === "arjun") {
+        const notice = eventPlan.conditions.notices.find(
+          (candidate) => candidate.line === "NEL",
+        );
+        expect(notice?.stations).toEqual([
+          "NE12",
+          "NE13",
+          "NE14",
+          "NE15",
+          "NE16",
+          "NE17",
+        ]);
+        const nelSegment = eventPlan.original.segments.find(
+          (segment) => segment.line === "NEL",
+        );
+        const affectedGeometry = new Set(
+          nelSegment?.affectedGeometry?.map((geometry) =>
+            JSON.stringify(geometry),
+          ) ?? [],
+        );
+        const affectedHops = nelSegment?.hops
+          ?.filter((hop) => affectedGeometry.has(JSON.stringify(hop.geometry)))
+          .map((hop) => [hop.from, hop.to].sort().join("–"))
+          .sort();
+        expect(affectedHops).toEqual(
+          [
+            "Kovan–Serangoon",
+            "Hougang–Kovan",
+            "Buangkok–Hougang",
+            "Buangkok–Sengkang",
+            "Punggol–Sengkang",
+          ].sort(),
+        );
+      }
       if (persona === "lim")
         expect(
           eventPlan.recommended.segments.some((s) => s.stops.includes("EW16")),

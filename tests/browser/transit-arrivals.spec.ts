@@ -179,12 +179,15 @@ test("shows upcoming bus and train times, refreshes only while open and handles 
   let trainRequest: any;
   await page.route("**/api/train-arrivals", (route) => {
     trainRequest = route.request().postDataJSON();
+    const plannedDeparture = Date.parse(trainRequest.at);
     return route.fulfill({
       json: {
         status: "scheduled",
         accessedOn: "2026-09-19",
-        departures: [2, 6, 10].map((minutes) => ({
-          departureAt: new Date(Date.now() + minutes * 60000).toISOString(),
+        departures: [0, 4, 8].map((minutes) => ({
+          departureAt: new Date(
+            plannedDeparture + minutes * 60000,
+          ).toISOString(),
         })),
       },
     });
@@ -215,10 +218,19 @@ test("shows upcoming bus and train times, refreshes only while open and handles 
   });
   await expect(trainBoard.locator(".arrival-times li")).toHaveCount(3);
   await expect(trainBoard).toContainText(
-    "Timetable only, not live train tracking",
+    "Timetable for the journey time selected on the planning screen",
   );
-  expect(trainRequest).toMatchObject({ line: "EWL", stops: ["EW2", "EW14"] });
-  expect(trainRequest.at).toBeUndefined();
+  await expect(trainBoard).toContainText(
+    "Scheduled departures · Journey leaves 07:40",
+  );
+  await expect(trainBoard.locator(".arrival-times li").first()).toContainText(
+    "07:50",
+  );
+  expect(trainRequest).toMatchObject({
+    line: "EWL",
+    stops: ["EW2", "EW14"],
+    at: "2026-09-20T23:50:00.000Z",
+  });
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -264,7 +276,7 @@ test("uses demo time for train schedules and never fetches live buses in a demo"
         status: "scheduled",
         departures: [
           {
-            departureAt: new Date(Date.parse(queriedAt) + 120000).toISOString(),
+            departureAt: queriedAt,
           },
         ],
       },
@@ -287,7 +299,8 @@ test("uses demo time for train schedules and never fetches live buses in a demo"
   await page.getByRole("button", { name: "I’m here" }).click();
   const board = page.getByRole("region", { name: "Train departure times" });
   await expect(board).toContainText("Demo clock · Scheduled departures");
-  await expect(board).toContainText("2 min");
-  expect(queriedAt).toBe("2026-09-20T23:46:00.000Z");
+  await expect(board).toContainText("4 min");
+  await expect(board).toContainText("Journey leaves 07:40");
+  expect(queriedAt).toBe("2026-09-20T23:50:00.000Z");
   expect(busCalls).toBe(0);
 });

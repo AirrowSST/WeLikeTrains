@@ -3,6 +3,7 @@ import { places, profiles } from "../shared/catalog";
 import {
   applyBusArrivalTiming,
   applyConditions,
+  expandRailNoticeSector,
   journeyDurationRange,
   planJourney,
   segmentAffected,
@@ -15,6 +16,41 @@ import type {
   Scenario,
   Segment,
 } from "../shared/types";
+
+describe("rail disruption sectors", () => {
+  it("expands NEL endpoint pairs across every intermediate station", () => {
+    const expanded = expandRailNoticeSector({
+      id: "nel-sector",
+      title: "NEL service disruption",
+      description: "Test disruption",
+      line: "NEL",
+      stations: ["NE12", "NE17"],
+      severity: "critical",
+      kind: "disruption",
+      startsAt: "2026-09-21T00:00:00.000Z",
+      delayMinutes: 15,
+      source: "test",
+    });
+
+    expect(expanded.stations).toEqual([
+      "NE12",
+      "NE13",
+      "NE14",
+      "NE15",
+      "NE16",
+      "NE17",
+    ]);
+    expect(expanded.stationNames).toEqual([
+      "Serangoon",
+      "Kovan",
+      "Hougang",
+      "Buangkok",
+      "Sengkang",
+      "Punggol",
+    ]);
+  });
+});
+
 const request = (
   persona: Persona = "rachel",
   scenario: Scenario = "normal",

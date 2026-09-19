@@ -784,6 +784,17 @@ input {
   justify-content: center;
   text-align: center;
 }
+.route-start-action .weather-warning-button,
+.route-override-warning .weather-warning-button {
+  background: #98502f;
+}
+.route-start-action .weather-warning-button:hover:not(:disabled),
+.route-override-warning .weather-warning-button:hover:not(:disabled) {
+  background: #7c3f24;
+}
+.route-card.blocked .route-start-action > span {
+  color: #8d4b2d;
+}
 .route-card-top {
   display: flex;
   justify-content: space-between;
@@ -1305,6 +1316,15 @@ input {
   height: 18px;
   border-radius: 50%;
   background: #6852b8;
+}
+.transit-stop-marker.rail.affected {
+  z-index: 520 !important;
+}
+.transit-stop-marker.rail.affected .transit-stop-symbol {
+  background: #ad4437;
+  box-shadow:
+    0 0 0 4px #ffe7df,
+    0 2px 8px #7a2f2766;
 }
 .transit-stop-symbol svg {
   width: 12px;
@@ -3620,6 +3640,17 @@ input {
   font-size: 9px;
   letter-spacing: 0.7px;
 }
+.active-journey .route-condition-warnings {
+  margin: 0 0 12px;
+}
+.route-condition-warnings.compact .route-condition-warning {
+  padding: 9px 10px;
+  font-size: 10px;
+  line-height: 1.35;
+}
+.route-condition-warnings.compact .route-condition-warning small {
+  font-size: 9px;
+}
 .active-step-summary {
   display: grid;
   grid-template-columns: 50px minmax(0, 1fr);
@@ -5414,6 +5445,72 @@ body {
 .proactive-warning .primary-button {
   width: 100%;
 }
+.route-override-warning {
+  align-items: stretch;
+  text-align: left;
+}
+.route-override-warning p {
+  margin: 0;
+  line-height: 1.5;
+}
+.route-condition-warnings {
+  display: grid;
+  gap: 8px;
+}
+.route-condition-warning {
+  padding: 11px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid #e5c4b1;
+  border-radius: 9px;
+  background: #fff3ec;
+  color: #774128;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.route-condition-warning.disruption {
+  border-color: #e2b8ad;
+  background: #fff0ed;
+  color: #71372c;
+}
+.route-condition-warning > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.route-condition-warning > span,
+.route-condition-title {
+  min-width: 0;
+  display: flex;
+}
+.route-condition-warning > span {
+  flex-direction: column;
+  gap: 3px;
+}
+.route-condition-title {
+  align-items: center;
+  gap: 6px;
+}
+.route-condition-title strong {
+  color: #6f351d;
+}
+.route-condition-title em {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #f0d4c9;
+  color: #74412d;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 750;
+  letter-spacing: 0.45px;
+  text-transform: uppercase;
+}
+.route-condition-warning small {
+  display: block;
+  color: inherit;
+  font-size: 10px;
+  font-weight: 650;
+}
 
 /* Keep the destination fields visually connected to Navigate and fully readable. */
 .planner-card .section-title {
@@ -5607,6 +5704,74 @@ body {
   margin: 0;
   padding: 0;
   opacity: 0;
+}
+.demo-time-card {
+  min-width: 0;
+  min-height: 92px;
+  padding: 11px 9px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #c8d8cf;
+  border-radius: 10px;
+  background: #edf4ef;
+  color: #234f3d;
+  text-align: center;
+}
+.demo-time-heading {
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: #2c624a;
+  line-height: 1;
+}
+.demo-time-heading > svg {
+  flex: 0 0 auto;
+  color: #4f856b;
+}
+.demo-time-heading > strong {
+  font-size: 14px;
+  font-weight: 550;
+}
+.demo-time-heading > span {
+  padding: 3px 5px;
+  border-radius: 999px;
+  background: #d7e6dc;
+  color: #496456;
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.45px;
+  text-transform: uppercase;
+}
+.demo-time-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  color: #193f31;
+  font-size: clamp(19px, 4.7vw, 23px);
+  font-weight: 550;
+  letter-spacing: -0.45px;
+  line-height: 1;
+}
+.demo-time-value small {
+  color: #567064;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.35px;
+}
+.demo-time-helper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: #607468;
+  font-size: 9px;
+  line-height: 1;
 }
 .time-label {
   font-size: 15px;

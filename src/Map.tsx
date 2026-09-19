@@ -269,6 +269,8 @@ export default function JourneyMap({
   const activeSegmentId = useRef<string | null>(null);
   const activeSegmentPath = useRef<L.Polyline | null>(null);
   const segmentPaths = useRef(new Map<string, L.Polyline>());
+  const transitMarkers = useRef(new Map<string, L.Marker>());
+  const affectedRailCodes = useRef(new Set<string>());
   const centeredOnLocation = useRef(false);
   const labelledRailCodes = useRef(new Set<string>());
   const updateTransitStopsRef = useRef<() => void>(() => undefined);
@@ -535,7 +537,6 @@ export default function JourneyMap({
     );
     const transitLayer = L.layerGroup().addTo(m);
     let transitStops: TransitStop[] = [];
-    const transitMarkers = new Map<string, L.Marker>();
     const updateTransitStops = () => {
       if (!alive) return;
       const zoom = m.getZoom();
@@ -553,36 +554,57 @@ export default function JourneyMap({
               .sort(
                 (a, b) =>
                   Number(a.mode === "bus") - Number(b.mode === "bus") ||
+                  Number(
+                    !a.codes.some((code) =>
+                      affectedRailCodes.current.has(code),
+                    ),
+                  ) -
+                    Number(
+                      !b.codes.some((code) =>
+                        affectedRailCodes.current.has(code),
+                      ),
+                    ) ||
                   m.distance(m.getCenter(), [a.lat, a.lon]) -
                     m.distance(m.getCenter(), [b.lat, b.lon]),
               );
       // Rail stations remain individually discoverable even when their icons
       // overlap at the current zoom level.
       const visibleStops = new Set(candidates.map((stop) => stop.id));
-      for (const [id, marker] of transitMarkers)
+      for (const [id, marker] of transitMarkers.current)
         if (!visibleStops.has(id) && !marker.isPopupOpen()) {
           transitLayer.removeLayer(marker);
-          transitMarkers.delete(id);
+          transitMarkers.current.delete(id);
         }
       for (const stop of transitStops) {
         if (!visibleStops.has(stop.id)) continue;
+        const affected =
+          stop.mode === "rail" &&
+          stop.codes.some((code) => affectedRailCodes.current.has(code));
         const showLabel =
           stop.mode === "rail" &&
           (zoom >= 14 ||
+            affected ||
             stop.codes.some((code) => labelledRailCodes.current.has(code)));
-        const existing = transitMarkers.get(stop.id);
+        const existing = transitMarkers.current.get(stop.id);
         if (existing) {
-          existing.getElement()?.classList.toggle("show-label", showLabel);
+          const existingElement = existing.getElement();
+          existingElement?.classList.toggle("show-label", showLabel);
+          existingElement?.classList.toggle("affected", affected);
+          existingElement?.setAttribute(
+            "aria-label",
+            `${existingElement.dataset.transitLabel ?? "Rail station"}${affected ? ", affected by service disruption" : ""}`,
+          );
           continue;
         }
         const kind = stop.mode === "rail" ? "MRT / LRT station" : "bus stop";
+        const markerLabel = `${stop.name} ${kind}`;
         const marker = L.marker([stop.lat, stop.lon], {
           keyboard: true,
           title: `Open ${stop.name} ${kind} details`,
           alt: `${stop.name} ${kind}`,
           zIndexOffset: stop.mode === "rail" ? 220 : 180,
           icon: L.divIcon({
-            className: `transit-stop-marker ${stop.mode}${showLabel ? " show-label" : ""}`,
+            className: `transit-stop-marker ${stop.mode}${showLabel ? " show-label" : ""}${affected ? " affected" : ""}`,
             html: transitStopIcon(stop),
             iconSize: [44, 44],
             iconAnchor: [22, 22],
@@ -605,9 +627,16 @@ export default function JourneyMap({
           .addTo(transitLayer);
         marker.on("popupclose", updateTransitStops);
         const markerElement = marker.getElement();
-        markerElement?.setAttribute("aria-label", `${stop.name} ${kind}`);
-        if (markerElement) markerElement.dataset.transitStopId = stop.id;
-        transitMarkers.set(stop.id, marker);
+        markerElement?.setAttribute(
+          "aria-label",
+          `${markerLabel}${affected ? ", affected by service disruption" : ""}`,
+        );
+        if (markerElement) {
+          markerElement.dataset.transitStopId = stop.id;
+          markerElement.dataset.transitCodes = stop.codes.join(" ");
+          markerElement.dataset.transitLabel = markerLabel;
+        }
+        transitMarkers.current.set(stop.id, marker);
       }
     };
     updateTransitStopsRef.current = updateTransitStops;
@@ -653,9 +682,17 @@ export default function JourneyMap({
       updateTransitStopsRef.current = () => undefined;
       m.remove();
       map.current = null;
+      transitMarkers.current.clear();
     };
   }, []);
   useEffect(() => {
+    affectedRailCodes.current = new Set(
+      plan?.conditions.notices
+        .filter((notice) =>
+          ["disruption", "planned", "lift", "bridging"].includes(notice.kind),
+        )
+        .flatMap((notice) => notice.stations) ?? [],
+    );
     updateTransitStopsRef.current();
   }, [plan, selected]);
   useEffect(() => {
@@ -814,7 +851,7 @@ export default function JourneyMap({
           label.textContent = `${index + 1}. ${stop.name} · Bus ${s.line}`;
           const number = document.createElement("span");
           number.textContent = String(index + 1);
-          L.marker(stop.coord, {
+          const marker = L.marker(stop.coord, {
             title: label.textContent,
             zIndexOffset: 350,
             icon: L.divIcon({
@@ -833,6 +870,9 @@ export default function JourneyMap({
               autoPanPaddingBottomRight: [16, 120],
             })
             .addTo(group);
+          marker
+            .getElement()
+            ?.setAttribute("aria-label", label.textContent ?? `Bus ${s.line}`);
         });
         return;
       }

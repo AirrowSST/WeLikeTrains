@@ -52,18 +52,26 @@ export default function TransitArrivals({
       i >= step && (segment.mode === "bus" || segment.mode === "rail"),
   );
   if (index < 0) return null;
-  const demoAt =
+  const journeyAt =
     Date.parse(departure) +
     segments
       .slice(0, step)
       .reduce((sum, segment) => sum + segment.minutes * 60000, 0);
+  const segmentAt =
+    Date.parse(departure) +
+    segments
+      .slice(0, index)
+      .reduce((sum, segment) => sum + segment.minutes * 60000, 0);
+  const scheduledAt = segmentAt + (segments[index].waitMinutes ?? 0) * 60000;
   return (
     <Board
       key={`${step}:${index}:${segments[index].id}`}
       segment={segments[index]}
       upcoming={index > step}
       demo={demo}
-      demoAt={demoAt}
+      departure={departure}
+      journeyAt={journeyAt}
+      scheduledAt={scheduledAt}
       demoBuses={demoBuses}
     />
   );
@@ -73,13 +81,17 @@ function Board({
   segment,
   upcoming,
   demo,
-  demoAt,
+  departure,
+  journeyAt,
+  scheduledAt,
   demoBuses,
 }: {
   segment: Segment;
   upcoming: boolean;
   demo: boolean;
-  demoAt: number;
+  departure: string;
+  journeyAt: number;
+  scheduledAt: number;
   demoBuses: BusArrival[];
 }) {
   const [now, setNow] = useState(Date.now());
@@ -87,8 +99,8 @@ function Board({
   const [board, setBoard] = useState<ArrivalBoard | null>(null);
   const [busy, setBusy] = useState(false);
   const [refresh, setRefresh] = useState(0);
-  const clock = demo ? demoAt : now;
   const bus = segment.mode === "bus";
+  const clock = bus && !demo ? now : journeyAt;
   const stop =
     segment.hops?.[0]?.codes.find((code) => /^\d{5}$/.test(code)) ??
     segment.stops.find((code) => /^\d{5}$/.test(code));
@@ -117,7 +129,7 @@ function Board({
         setBoard({
           status: "demo",
           times: stop
-            ? matchingBusTimes(demoBuses, stop, segment.line, demoAt)
+            ? matchingBusTimes(demoBuses, stop, segment.line, journeyAt)
             : [],
         });
         return;
@@ -144,7 +156,7 @@ function Board({
                     from: segment.from,
                     to: segment.to,
                     stops: segment.stops,
-                    ...(demo ? { at: new Date(demoAt).toISOString() } : {}),
+                    at: new Date(scheduledAt).toISOString(),
                   }),
                 }),
             signal: active.signal,
@@ -208,7 +220,17 @@ function Board({
       clearInterval(timer);
       document.removeEventListener("visibilitychange", visible);
     };
-  }, [segment, stop, demo, demoAt, demoBuses, bus, online, refresh]);
+  }, [
+    segment,
+    stop,
+    demo,
+    journeyAt,
+    scheduledAt,
+    demoBuses,
+    bus,
+    online,
+    refresh,
+  ]);
 
   const stale =
     board?.status === "stale" ||
@@ -265,6 +287,7 @@ function Board({
       <span className="arrival-source">
         {demo ? "Demo clock · " : ""}
         {label}
+        {!bus ? ` · Journey leaves ${sgTime(departure)}` : ""}
       </span>
       {times.length > 0 ? (
         <ol className="arrival-times">
@@ -299,8 +322,8 @@ function Board({
       )}
       {!bus && (
         <p className="arrival-note">
-          Timetable only, not live train tracking. Delays may change these
-          times.
+          Timetable for the journey time selected on the planning screen, not
+          live train tracking. Delays may change these times.
           {board?.accessedOn ? ` Schedule accessed ${board.accessedOn}.` : ""}
         </p>
       )}

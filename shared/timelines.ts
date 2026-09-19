@@ -56,7 +56,9 @@ export function timelineInputs(selection: TimelineSelection) {
   const disrupted = definition.eventful && selection.minute < 40;
   const rain = definition.eventful && selection.minute < 25;
   const line = definition.persona === "arjun" ? "NEL" : "EWL";
-  const stations = line === "NEL" ? "NE17,NE12,NE1" : "EW2,EW8,EW14";
+  // DataMall disruption sectors are authored as endpoint pairs. The planner
+  // expands these across the committed rail graph before matching/highlighting.
+  const stations = line === "NEL" ? "NE12,NE17" : "EW2,EW14";
   const eventStart = new Date(Date.parse(definition.start)).toISOString();
   const eventEnd = new Date(
     Date.parse(definition.start) + 40 * 60000,

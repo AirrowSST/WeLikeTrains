@@ -166,6 +166,7 @@ type ModalName =
   | "proactive"
   | "alerts"
   | "weather"
+  | "route-warning"
   | null;
 interface LegacySaved {
   profile: "profile-1";
@@ -437,6 +438,36 @@ function TimeScrollPicker({
     </div>
   );
 }
+
+function TimelineTimeCard({ value }: { value: string }) {
+  const [hourText = "00", minuteText = "00"] = sgTime(value).split(":");
+  const hour24 = Number(hourText);
+  const hour12 = hour24 % 12 || 12;
+  const period = hour24 >= 12 ? "PM" : "AM";
+  const displayHour = String(hour12).padStart(2, "0");
+
+  return (
+    <div
+      className="time-control demo-time-card"
+      role="group"
+      aria-label={`Simulated leave time ${displayHour}:${minuteText} ${period}`}
+    >
+      <span className="demo-time-heading">
+        <Clock3 size={18} aria-hidden="true" />
+        <strong>Leave</strong>
+        <span>Simulated</span>
+      </span>
+      <strong className="demo-time-value">
+        {displayHour}:{minuteText}
+        <small>{period}</small>
+      </strong>
+      <span className="demo-time-helper">
+        <Radio size={13} aria-hidden="true" /> Timeline controlled
+      </span>
+    </div>
+  );
+}
+
 function makeRequest(
   persona: Persona = "rachel",
   dataMode: "demo" | "live" = "live",
@@ -568,6 +599,102 @@ function CrowdBadge({ crowd }: { crowd: Journey["crowd"] }) {
     </span>
   );
 }
+
+function canStartWithWeatherWarning(journey: Journey, plan: PlanResponse) {
+  const severeWeather =
+    plan.conditions.weather.walkStatus === "invalid" ||
+    plan.conditions.weather.cycleStatus === "invalid";
+  const hasWeatherAffectedSection = journey.segments.some(
+    (segment) =>
+      segment.issues?.some((issue) => issue === "rain" || issue === "heat") ||
+      (segment.mode === "cycle" &&
+        plan.conditions.weather.cycleStatus === "invalid"),
+  );
+  const hasHardBlock = journey.segments.some(
+    (segment) =>
+      segment.unavailable ||
+      segment.issues?.some(
+        (issue) => issue === "flood" || issue === "road-closure",
+      ),
+  );
+  return severeWeather && hasWeatherAffectedSection && !hasHardBlock;
+}
+
+function routeTransitNotices(journey: Journey, plan: PlanResponse) {
+  const reasons = new Set(journey.reasons);
+  return plan.conditions.notices.filter(
+    (notice) =>
+      ["disruption", "planned", "lift", "bridging"].includes(notice.kind) &&
+      reasons.has(notice.title),
+  );
+}
+
+function withoutSimulatedPrefix(value: string) {
+  const clean = value.replace(/^SIMULATED\s*(?:[·:–—-]\s*)?/i, "").trim();
+  return clean ? `${clean[0].toUpperCase()}${clean.slice(1)}` : value;
+}
+
+function RouteConditionWarnings({
+  journey,
+  plan,
+  compact = false,
+}: {
+  journey: Journey;
+  plan: PlanResponse;
+  compact?: boolean;
+}) {
+  const transitNotices = routeTransitNotices(journey, plan);
+  const simulated = plan.conditions.mode === "demo";
+  const showWeather = canStartWithWeatherWarning(journey, plan);
+
+  return (
+    <div
+      className={`route-condition-warnings ${compact ? "compact" : ""}`}
+      aria-label="Current route warnings"
+    >
+      {showWeather && (
+        <div className="route-condition-warning weather">
+          <TriangleAlert size={compact ? 17 : 20} aria-hidden="true" />
+          <span>
+            <span className="route-condition-title">
+              <strong>Severe weather warning</strong>
+              {simulated && <em>Simulated</em>}
+            </span>
+            <span>
+              Exposed sections remain affected. Check current conditions and
+              official safety advice as you travel.
+            </span>
+          </span>
+        </div>
+      )}
+      {transitNotices.map((notice) => (
+        <div
+          className="route-condition-warning disruption"
+          data-notice-id={notice.id}
+          key={notice.id}
+        >
+          <TrainFront size={compact ? 17 : 20} aria-hidden="true" />
+          <span>
+            <span className="route-condition-title">
+              <strong>{withoutSimulatedPrefix(notice.title)}</strong>
+              {simulated && <em>Simulated</em>}
+            </span>
+            <span>{withoutSimulatedPrefix(notice.description)}</span>
+            {!!notice.stations.length && (
+              <small>Affected stations: {notice.stations.join(", ")}.</small>
+            )}
+            {notice.delayMinutes > 0 && (
+              <small>Allow about {notice.delayMinutes} extra minutes.</small>
+            )}
+            {notice.freeBus && <small>{notice.freeBus}.</small>}
+            {notice.shuttle && <small>Shuttle: {notice.shuttle}.</small>}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Modal({
   title,
   children,
@@ -2115,6 +2242,9 @@ export default function App() {
   const visibleRouteChoices = showAllRoutes
     ? routeChoices
     : routeChoices.slice(0, 2);
+  const selectedJourney = routeChoices.find(
+    (journey) => journey.id === selectedId,
+  );
   // The bell is intentionally narrower than the full Disruptions tab. It is
   // reserved for service interruptions (including scheduled closures), not
   // weather, crowds, accessibility notices, or feed diagnostics.
@@ -2170,8 +2300,17 @@ export default function App() {
     hour12: true,
     timeZone: "Asia/Singapore",
   }).format(clockDate);
-  const beginJourney = (journey: Journey) => {
-    if (!plan || journey.blocked) return;
+  const beginJourney = (
+    journey: Journey,
+    acknowledgeWeatherWarning = false,
+  ) => {
+    if (
+      !plan ||
+      (journey.blocked &&
+        (!acknowledgeWeatherWarning ||
+          !canStartWithWeatherWarning(journey, plan)))
+    )
+      return;
     completionRecorded.current = false;
     setCompletionPoints(null);
     setActiveJourney({
@@ -2480,11 +2619,7 @@ export default function App() {
                           </div>
                           <div className="time-fields time-sequence">
                             {request.timeline ? (
-                              <div className="time-control">
-                                <span>Leave · simulated</span>
-                                <strong>{sgTime(request.departure)}</strong>
-                                <small>Use timeline controls</small>
-                              </div>
+                              <TimelineTimeCard value={request.departure} />
                             ) : (
                               <TimeScrollPicker
                                 label="Leave"
@@ -2669,7 +2804,13 @@ export default function App() {
                                       : "alternative-label"
                                   }
                                 >
-                                  {i === 0 && journey.blocked ? (
+                                  {i === 0 &&
+                                  canStartWithWeatherWarning(journey, plan) ? (
+                                    <>
+                                      <TriangleAlert size={12} /> WEATHER
+                                      WARNING
+                                    </>
+                                  ) : i === 0 && journey.blocked ? (
                                     <>
                                       <TriangleAlert size={12} /> WAIT FOR SAFER
                                       CONDITIONS
@@ -2739,10 +2880,13 @@ export default function App() {
                                     )}
                                 </span>
                               )}
-                              {journey.blocked && (
+                              {(journey.blocked ||
+                                canStartWithWeatherWarning(journey, plan)) && (
                                 <span className="route-warning">
-                                  <TriangleAlert size={13} /> Affected by
-                                  closure or access restriction
+                                  <TriangleAlert size={13} />
+                                  {canStartWithWeatherWarning(journey, plan)
+                                    ? "Severe weather affects exposed sections"
+                                    : "Affected by closure or access restriction"}
                                 </span>
                               )}
                               {journey.duration > journey.baselineDuration && (
@@ -2752,24 +2896,48 @@ export default function App() {
                                 </span>
                               )}
                             </button>
-                            {selectedId === journey.id && !journey.blocked && (
-                              <div className="route-start-action">
-                                <span>
-                                  <Check size={14} aria-hidden="true" />{" "}
-                                  Selected route
-                                </span>
-                                <button
-                                  type="button"
-                                  className="primary-button"
-                                  aria-label={`Start ${journey.title}`}
-                                  onClick={() => beginJourney(journey)}
-                                >
-                                  <Navigation size={17} aria-hidden="true" />
-                                  Start {journey.title}
-                                  <ArrowRight size={17} aria-hidden="true" />
-                                </button>
-                              </div>
-                            )}
+                            {selectedId === journey.id &&
+                              (!journey.blocked ||
+                                canStartWithWeatherWarning(journey, plan)) && (
+                                <div className="route-start-action">
+                                  <span>
+                                    {canStartWithWeatherWarning(
+                                      journey,
+                                      plan,
+                                    ) ? (
+                                      <TriangleAlert
+                                        size={14}
+                                        aria-hidden="true"
+                                      />
+                                    ) : (
+                                      <Check size={14} aria-hidden="true" />
+                                    )}{" "}
+                                    {canStartWithWeatherWarning(journey, plan)
+                                      ? "Weather-affected route selected"
+                                      : "Selected route"}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className={`primary-button ${canStartWithWeatherWarning(journey, plan) ? "weather-warning-button" : ""}`}
+                                    aria-label={
+                                      canStartWithWeatherWarning(journey, plan)
+                                        ? `Start ${journey.title} despite current weather warning`
+                                        : `Start ${journey.title}`
+                                    }
+                                    onClick={() =>
+                                      canStartWithWeatherWarning(journey, plan)
+                                        ? setModal("route-warning")
+                                        : beginJourney(journey)
+                                    }
+                                  >
+                                    <Navigation size={17} aria-hidden="true" />
+                                    {canStartWithWeatherWarning(journey, plan)
+                                      ? `Review & start ${journey.title}`
+                                      : `Start ${journey.title}`}
+                                    <ArrowRight size={17} aria-hidden="true" />
+                                  </button>
+                                </div>
+                              )}
                           </article>
                         ))}
                     </div>
@@ -2824,7 +2992,12 @@ export default function App() {
                         <h2>
                           {plan
                             ? plan.recommended.blocked
-                              ? "Route unavailable"
+                              ? canStartWithWeatherWarning(
+                                  plan.recommended,
+                                  plan,
+                                )
+                                ? "Severe weather on this route"
+                                : "Route unavailable"
                               : `Routes · Use ${plan.recommended.title}`
                             : "Where to?"}
                         </h2>
@@ -3334,6 +3507,39 @@ export default function App() {
           </button>
         </div>
       )}
+      {modal === "route-warning" &&
+        plan &&
+        selectedJourney &&
+        canStartWithWeatherWarning(selectedJourney, plan) && (
+          <Modal title="Review route warnings" onClose={() => setModal(null)}>
+            <div className="modal-body route-override-warning">
+              <RouteConditionWarnings journey={selectedJourney} plan={plan} />
+              <p>
+                <strong>{selectedJourney.title}</strong> includes exposed travel
+                during severe weather. Wayce recommends waiting and cannot
+                verify that those sections are safe right now.
+              </p>
+              <p>
+                If you choose to continue, both weather and service warnings
+                will remain visible during navigation.
+              </p>
+              <button
+                type="button"
+                className="primary-button weather-warning-button full"
+                onClick={() => beginJourney(selectedJourney, true)}
+              >
+                I understand — start {selectedJourney.title}
+              </button>
+              <button
+                type="button"
+                className="secondary-button full"
+                onClick={() => setModal(null)}
+              >
+                Keep waiting
+              </button>
+            </div>
+          </Modal>
+        )}
       {modal === "proactive" && proactiveWarning && (
         <Modal
           title="Leave earlier or change route"
@@ -3677,8 +3883,8 @@ export default function App() {
               <span>
                 <strong>Sheltered walking</strong>
                 <small>
-                  Prefer shelter, or require complete mapped coverage with
-                  only a short coordinate tolerance.
+                  Prefer shelter, or require complete mapped coverage with only
+                  a short coordinate tolerance.
                 </small>
               </span>
               <select
@@ -3686,9 +3892,7 @@ export default function App() {
                 value={effectiveShelterMode(request.preferences)}
                 onChange={(event) => {
                   const mode = event.target.value as
-                    | "none"
-                    | "prefer"
-                    | "require";
+                    "none" | "prefer" | "require";
                   updatePreferences({
                     sheltered: mode !== "none",
                     shelterMode: mode === "require" ? "require" : "prefer",
@@ -4081,6 +4285,16 @@ export default function App() {
                     : "YOUR JOURNEY"}
                   {online ? " · SAVED OFFLINE" : " · OFFLINE PLAN"}
                 </span>
+                {plan &&
+                  (canStartWithWeatherWarning(activeJourney.route, plan) ||
+                    routeTransitNotices(activeJourney.route, plan).length >
+                      0) && (
+                    <RouteConditionWarnings
+                      journey={activeJourney.route}
+                      plan={plan}
+                      compact
+                    />
+                  )}
                 {journeyStep < activeJourney.route.segments.length ? (
                   <>
                     <div className="active-step-summary">

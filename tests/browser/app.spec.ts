@@ -412,6 +412,59 @@ test("keeps recommendation copy above the route options", async ({
   });
 });
 
+test("formats the simulated leave time as a readable card", async ({
+  page,
+}, testInfo) => {
+  await useDeterministicPlans(page);
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto("/");
+  await openDeveloperDemos(page);
+  await page.getByRole("button", { name: "Start demo" }).click();
+  await expect(page.getByLabel("Timeline minute")).toHaveValue("0");
+  await expect(page.locator(".route-options")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+
+  const card = page.locator(".demo-time-card");
+  await expect(card).toBeVisible();
+  await expect(card).toHaveAttribute(
+    "aria-label",
+    "Simulated leave time 07:40 AM",
+  );
+  await expect(card).toContainText("Leave");
+  await expect(card).toContainText("Simulated");
+  await expect(card).toContainText("07:40");
+  await expect(card).toContainText("AM");
+  await expect(card).toContainText("Timeline controlled");
+  await expect(card).not.toContainText("Use timeline controls");
+
+  const [cardBox, headingBox, valueBox, helperBox] = await Promise.all([
+    card.boundingBox(),
+    card.locator(".demo-time-heading").boundingBox(),
+    card.locator(".demo-time-value").boundingBox(),
+    card.locator(".demo-time-helper").boundingBox(),
+  ]);
+  expect(cardBox).not.toBeNull();
+  expect(headingBox).not.toBeNull();
+  expect(valueBox).not.toBeNull();
+  expect(helperBox).not.toBeNull();
+  expect(headingBox!.y + headingBox!.height).toBeLessThanOrEqual(valueBox!.y);
+  expect(valueBox!.y + valueBox!.height).toBeLessThanOrEqual(helperBox!.y);
+  expect(headingBox!.x).toBeGreaterThanOrEqual(cardBox!.x);
+  expect(headingBox!.x + headingBox!.width).toBeLessThanOrEqual(
+    cardBox!.x + cardBox!.width,
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: `test-results/${testInfo.project.name}-demo-time-card.png`,
+  });
+});
+
 test("makes the active journey map the hero with guidance docked below", async ({
   page,
 }, testInfo) => {
@@ -584,6 +637,10 @@ test("plays profile timelines, jumps through recovery and restores the guest", a
   await page.getByLabel("Jump to timeline event").selectOption("40");
   await expect(page.locator(".timeline-controls")).toContainText(
     "Service and lifts restored",
+  );
+  await expect(page.locator(".route-options")).toHaveAttribute(
+    "aria-busy",
+    "false",
   );
   await expect(await selectFirstRoute(page)).toBeEnabled();
   await page.getByRole("button", { name: "Restart timeline" }).click();
@@ -968,7 +1025,9 @@ test("opens transit details when a selected journey path is chosen", async ({
     page.locator(".timeline .segment-crowding").first(),
   ).toContainText("Station/platform crowding:");
 });
-test("opens bus details from the path on a narrow phone", async ({ page }) => {
+test("opens schematic bus details from a served-stop marker on a narrow phone", async ({
+  page,
+}) => {
   await useDeterministicPlans(page, true, false, false, true);
   await page.setViewportSize({ width: 320, height: 700 });
   await page.goto("/");
@@ -981,14 +1040,11 @@ test("opens bus details from the path on a narrow phone", async ({ page }) => {
     .click();
   await expect(page.locator(".bus-route-schematic")).toBeAttached();
 
-  const busPath = page.locator(".route-segment-hit.bus").first();
-  await expect(busPath).toHaveAttribute("role", "button");
-  await expect(busPath).toHaveAttribute(
-    "aria-label",
-    /Open Bus .+ journey section details/,
-  );
-  await busPath.focus();
-  await busPath.press("Enter");
+  const busStop = page.locator(".bus-route-stop").first();
+  await expect(busStop).toHaveAttribute("role", "button");
+  await expect(busStop).toHaveAttribute("aria-label", /Bus 31/);
+  await busStop.focus();
+  await busStop.press("Enter");
 
   const details = page.locator(".route-segment-popup");
   await expect(details).toBeVisible();
@@ -1330,9 +1386,9 @@ test("compares original, affected and revised routes with complete crowd labels"
     currentPlan()!.advice,
   );
 });
-test("keeps Rachel's rainy journey usable with visible walking precautions", async ({
+test("keeps the rainy journey usable while confirming weather and rail warnings", async ({
   page,
-}) => {
+}, testInfo) => {
   await useDeterministicPlans(page, true);
   await page.goto("/");
   await openDeveloperDemos(page);
@@ -1349,8 +1405,94 @@ test("keeps Rachel's rainy journey usable with visible walking precautions", asy
   await expect(page.locator(".route-card").first()).not.toContainText(
     "WAIT FOR SAFER CONDITIONS",
   );
-  await page.locator(".route-select").first().click();
-  await expect(startJourneyButton(page)).toBeVisible();
+  await expect(page.locator(".route-card").first()).toContainText(
+    "WEATHER WARNING",
+  );
+  await expect(page.locator(".route-card").first()).toContainText(
+    "Severe weather affects exposed sections",
+  );
+  await page.getByRole("button", { name: /^View EWL, \d+ minutes$/ }).click();
+  const startWithWarning = page.getByRole("button", {
+    name: "Start EWL despite current weather warning",
+  });
+  await expect(startWithWarning).toBeVisible();
+  await startWithWarning.click();
+
+  const warning = page.getByRole("dialog", {
+    name: "Review route warnings",
+  });
+  await expect(warning).toContainText("cannot verify");
+  await expect(warning).toContainText("Severe weather warning");
+  await expect(warning).toContainText("EWL service disruption");
+  const disruptionWarning = warning.locator('[data-notice-id="lta-train-0"]');
+  await expect(disruptionWarning.locator("strong")).toHaveText(
+    "EWL service disruption",
+  );
+  await expect(disruptionWarning.locator("em")).toHaveText("Simulated");
+  await expect(disruptionWarning).toContainText(
+    "Affected stations: EW2, EW3, EW4, EW5, EW6, EW7, EW8, EW9, EW10, EW11, EW12, EW13, EW14",
+  );
+  await page.screenshot({
+    path: `test-results/${testInfo.project.name}-weather-route-start.png`,
+  });
+  await warning
+    .getByRole("button", { name: "I understand — start EWL" })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "One step at a time" }),
+  ).toBeVisible();
+  const activeWarnings = page.getByLabel("Current route warnings");
+  await expect(activeWarnings).toContainText("Severe weather warning");
+  await expect(activeWarnings).toContainText("EWL service disruption");
+});
+
+test("highlights every station across the affected NEL sector", async ({
+  page,
+}, testInfo) => {
+  await useDeterministicPlans(page, true);
+  await page.setViewportSize({ width: 320, height: 750 });
+  await page.goto("/");
+  await openDeveloperDemos(page);
+  await page
+    .getByRole("dialog", { name: "Developer demos" })
+    .getByRole("button", { name: /Arjun/ })
+    .click();
+  await startTimelineAt(page, 0);
+
+  const nelRoute = page.getByRole("button", {
+    name: /^View NEL.*\d+ minutes$/,
+  });
+  await nelRoute.click();
+
+  for (const code of ["NE12", "NE13", "NE14", "NE15", "NE16", "NE17"]) {
+    await expect(
+      page.locator(
+        `.transit-stop-marker.rail.affected[data-transit-codes~="${code}"]`,
+      ),
+    ).toHaveCount(1);
+  }
+  await expect(
+    page.locator(
+      '.transit-stop-marker.rail.affected[data-transit-codes~="NE11"]',
+    ),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: `test-results/${testInfo.project.name}-nel-sector-map.png`,
+  });
+
+  await page
+    .getByRole("button", {
+      name: /^Start NEL.*despite current weather warning$/,
+    })
+    .click();
+  const warning = page.getByRole("dialog", { name: "Review route warnings" });
+  await expect(warning).toContainText(
+    "Affected stations: NE12, NE13, NE14, NE15, NE16, NE17",
+  );
+  await expect(warning).not.toContainText("NE1,");
+  await page.screenshot({
+    path: `test-results/${testInfo.project.name}-nel-sector-warning.png`,
+  });
 });
 test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
   await useDeterministicPlans(page);
@@ -1608,15 +1750,15 @@ test("resizes the mobile journey sheet by drag and keyboard", async ({
     .poll(async () => (await sheet.boundingBox())!.height)
     .toBeCloseTo(initialMapHeight, 0);
 
-  const expandedDragSurfaceBox = await dragSurface.boundingBox();
+  const expandedHandle = await handle.boundingBox();
   await page.mouse.move(
-    expandedDragSurfaceBox!.x + expandedDragSurfaceBox!.width / 3,
-    expandedDragSurfaceBox!.y + expandedDragSurfaceBox!.height / 2,
+    expandedHandle!.x + expandedHandle!.width / 2,
+    expandedHandle!.y + expandedHandle!.height / 2,
   );
   await page.mouse.down();
   await page.mouse.move(
-    expandedDragSurfaceBox!.x + expandedDragSurfaceBox!.width / 3,
-    expandedDragSurfaceBox!.y + 450,
+    expandedHandle!.x + expandedHandle!.width / 2,
+    expandedHandle!.y + 450,
     { steps: 5 },
   );
   await page.mouse.up();
@@ -1742,9 +1884,7 @@ test("keeps unfinished guest route context out of companion requests", async ({
     });
   });
   await page.goto("/");
-  await page
-    .getByRole("button", { name: "A little help for the journey" })
-    .click();
+  await page.getByRole("button", { name: "Open Chatbot" }).click();
   await page
     .getByRole("checkbox", {
       name: "I agree to this companion and voice data use.",
@@ -1779,9 +1919,7 @@ test("shows the companion service error when a request is rejected", async ({
   });
   await page.goto("/");
   await expect(await selectFirstRoute(page)).toBeEnabled();
-  await page
-    .getByRole("button", { name: "A little help for the journey" })
-    .click();
+  await page.getByRole("button", { name: "Open Chatbot" }).click();
   await page
     .getByRole("checkbox", {
       name: "I agree to this companion and voice data use.",
@@ -1905,9 +2043,7 @@ test("transcribes voice input into a reviewable chat draft", async ({
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 320, height: 700 });
   await page.goto("/");
-  await page
-    .getByRole("button", { name: "A little help for the journey" })
-    .click();
+  await page.getByRole("button", { name: "Open Chatbot" }).click();
   await page
     .getByRole("checkbox", {
       name: "I agree to this companion and voice data use.",
