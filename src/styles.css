@@ -2222,19 +2222,19 @@ input {
   z-index: 950;
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 49px;
-  padding: 7px 16px 7px 8px;
+  gap: 13px;
+  min-height: 60px;
+  padding: 8px 19px 8px 9px;
   border-radius: 999px;
   color: #fff;
   background: #214f3e;
   box-shadow: 0 4px 22px #214d3b26;
-  font-size: 11px;
+  font-size: 15px;
   letter-spacing: 0.1px;
 }
 .companion-button > span {
-  width: 34px;
-  height: 34px;
+  width: 42px;
+  height: 42px;
   background: #365f40;
   color: #d7e79b;
   display: grid;
@@ -2242,8 +2242,8 @@ input {
   border-radius: 50%;
 }
 .companion-button > span img {
-  width: 31px;
-  height: 31px;
+  width: 39px;
+  height: 39px;
   object-fit: contain;
 }
 .companion-button > svg {
@@ -4362,15 +4362,15 @@ input {
   .companion-button {
     bottom: calc(79px + env(safe-area-inset-bottom));
     right: 17px;
-    min-height: 46px;
-    font-size: 10px;
-    gap: 9px;
-    padding: 6px 13px 6px 6px;
+    min-height: 58px;
+    font-size: 14px;
+    gap: 11px;
+    padding: 8px 17px 8px 8px;
     box-shadow: 0 3px 19px #28523826;
   }
   .companion-button > span {
-    height: 32px;
-    width: 32px;
+    height: 42px;
+    width: 42px;
   }
   .companion-button > svg {
     display: none;
