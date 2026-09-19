@@ -6691,6 +6691,13 @@ html.journey-sheet-active body {
   z-index: 480;
 }
 .top-status.sheet-expanded {
+  opacity: 1;
+}
+.top-status.sheet-expanded .points-counter {
+  opacity: 0;
+  pointer-events: none;
+}
+.top-status.sheet-expanded .weather-status {
   opacity: 0.1;
 }
 .points-counter,
