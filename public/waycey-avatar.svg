@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="115 25 270 430" width="100%" height="100%">
+  <defs>
+    <!-- Shadow filter -->
+    <filter id="soft-shadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#0F172A" flood-opacity="0.10" />
+    </filter>
+
+    <!-- Screen gradient -->
+    <linearGradient id="screen-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+
+    <!-- Body gradient -->
+    <linearGradient id="body-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F1F5F9" />
+    </linearGradient>
+
+    <!-- Cheek glow filter -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Ground Drop Shadow -->
+  <ellipse cx="250" cy="455" rx="115" ry="16" fill="#0F172A" opacity="0.08" />
+
+  <!-- Feet (Bogie Base) -->
+  <rect x="180" y="420" width="42" height="22" rx="11" fill="#64748B" />
+  <rect x="278" y="420" width="42" height="22" rx="11" fill="#64748B" />
+
+  <!-- Main Body (Rounded MRT Capsule) -->
+  <rect x="145" y="110" width="210" height="320" rx="105" fill="url(#body-grad)" filter="url(#soft-shadow)" stroke="#E2E8F0" stroke-width="4" />
+
+  <!-- Transit Stripe Belt (Singapore Line Colors: EWL Green, NSL Red, DTL Blue) -->
+  <g id="transit-stripes">
+    <!-- Green Line (East-West) -->
+    <path d="M 145 285 Q 250 300 355 285" fill="none" stroke="#00953B" stroke-width="8" stroke-linecap="round" />
+    <!-- Red Line (North-South) -->
+    <path d="M 147 298 Q 250 313 353 298" fill="none" stroke="#D42E12" stroke-width="8" stroke-linecap="round" />
+    <!-- Blue Line (Downtown) -->
+    <path d="M 152 311 Q 250 326 348 311" fill="none" stroke="#005EC4" stroke-width="8" stroke-linecap="round" />
+  </g>
+
+  <!-- Tap Card Belly Emblem (Wayce Tap Symbol) -->
+  <g transform="translate(250, 368)">
+    <rect x="-24" y="-16" width="48" height="32" rx="7" fill="#059669" />
+    <path d="M -8 0 L 0 -8 L 8 0" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+    <line x1="0" y1="-7" x2="0" y2="8" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" />
+  </g>
+
+  <!-- Face Visor / Front Window -->
+  <rect x="165" y="140" width="170" height="116" rx="58" fill="url(#screen-grad)" />
+
+  <!-- Eyes: Expressive, Friendly Arcs -->
+  <path d="M 195 198 Q 210 180 225 198" fill="none" stroke="#38BDF8" stroke-width="7" stroke-linecap="round" />
+  <path d="M 275 198 Q 290 180 305 198" fill="none" stroke="#38BDF8" stroke-width="7" stroke-linecap="round" />
+
+  <!-- Cheeks: Merlion / EZ-Link Peach Glow -->
+  <ellipse cx="190" cy="216" rx="8" ry="4.5" fill="#F43F5E" opacity="0.85" filter="url(#glow)" />
+  <ellipse cx="310" cy="216" rx="8" ry="4.5" fill="#F43F5E" opacity="0.85" filter="url(#glow)" />
+
+  <!-- Mouth: Happy Digital Blip -->
+  <circle cx="250" cy="212" r="3.5" fill="#38BDF8" />
+
+  <!-- Head Antenna (Wayfinding / Beacon Concept) -->
+  <line x1="250" y1="110" x2="250" y2="78" stroke="#94A3B8" stroke-width="5" stroke-linecap="round" />
+  <circle cx="250" cy="72" r="12" fill="#F59E0B" />
+  <!-- Signal Rings -->
+  <path d="M 235 55 A 20 20 0 0 1 265 55" fill="none" stroke="#F59E0B" stroke-width="3.5" stroke-linecap="round" opacity="0.75" />
+  <path d="M 227 44 A 32 32 0 0 1 273 44" fill="none" stroke="#F59E0B" stroke-width="3" stroke-linecap="round" opacity="0.4" />
+
+  <!-- Arms: Left Arm Resting, Right Arm Waving -->
+  <!-- Left Arm -->
+  <path d="M 148 245 C 130 260 126 295 145 315" fill="none" stroke="#E2E8F0" stroke-width="14" stroke-linecap="round" />
+  <circle cx="145" cy="315" r="9" fill="#CBD5E1" />
+
+  <!-- Right Arm (Waving) -->
+  <path d="M 352 245 C 378 230 388 185 365 162" fill="none" stroke="#E2E8F0" stroke-width="14" stroke-linecap="round" />
+  <circle cx="363" cy="160" r="9" fill="#CBD5E1" />
+</svg>

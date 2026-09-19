@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, relative, isAbsolute } from "node:path";
+import { ltaConnection } from "../server/lta-client";
 import { config } from "dotenv";
 import { gzipSync, strFromU8, strToU8, unzipSync } from "fflate";
 import {
@@ -11,22 +12,31 @@ import {
 } from "../server/rail-schedule";
 
 config({ quiet: true });
+const connection = ltaConnection();
 
 const outputArgument = process.argv.indexOf("--output");
 const outputPath = resolve(
   outputArgument >= 0 && process.argv[outputArgument + 1]
     ? process.argv[outputArgument + 1]
-    : "data/train-schedule.json.gz",
+    : connection.simulated
+      ? ".cache/datamall/train-schedule.json.gz"
+      : "data/train-schedule.json.gz",
 );
+if (connection.simulated) {
+  const within = relative(resolve(".cache"), outputPath);
+  if (within.startsWith("..") || isAbsolute(within))
+    throw new Error("Simulated GTFS output must stay under .cache");
+}
 const provenancePath = resolve(dirname(outputPath), "GTFS-PROVENANCE.json");
-const accountKey = process.env.LTA_ACCOUNT_KEY;
+const accountKey = connection.key;
 if (!accountKey) {
   throw new Error(
     "LTA_ACCOUNT_KEY is required for the explicit GTFS maintenance import.",
   );
 }
 
-const metadataResponse = await fetch(LTA_GTFS_ENDPOINT, {
+const metadataResponse = await fetch(`${connection.base}/GTFSScheduleTrain`, {
+  redirect: "error",
   headers: { AccountKey: accountKey, Accept: "application/json" },
 });
 if (!metadataResponse.ok)
@@ -36,7 +46,8 @@ if (!metadataResponse.ok)
 const metadata = (await metadataResponse.json()) as unknown;
 const findDownloadLink = (value: unknown): string | undefined => {
   if (typeof value === "string")
-    return value.startsWith("https://") &&
+    return (value.startsWith("https://") ||
+      (connection.simulated && value.startsWith("http://127.0.0.1:"))) &&
       (value.includes(".zip") || value.includes("X-Amz-"))
       ? value
       : undefined;
@@ -54,12 +65,17 @@ const findDownloadLink = (value: unknown): string | undefined => {
   return undefined;
 };
 const downloadLink = findDownloadLink(metadata);
-if (!downloadLink || !downloadLink.startsWith("https://"))
+if (
+  !downloadLink ||
+  (connection.simulated
+    ? new URL(downloadLink).origin !== new URL(connection.base).origin
+    : !downloadLink.startsWith("https://"))
+)
   throw new Error(
     "LTA GTFS metadata response did not contain a secure download link",
   );
 
-const archiveResponse = await fetch(downloadLink);
+const archiveResponse = await fetch(downloadLink, { redirect: "error" });
 if (!archiveResponse.ok)
   throw new Error(
     `LTA GTFS archive download failed (${archiveResponse.status})`,
@@ -91,16 +107,22 @@ const snapshot = buildRailScheduleSnapshot(
   Object.fromEntries(required) as unknown as GtfsScheduleFiles,
   accessedAt,
 );
+if (connection.simulated) {
+  snapshot.source = "SIMULATED · authored GTFS fixtures";
+  snapshot.licence = "Authored test fixture; not LTA data";
+}
 const compressed = gzipSync(strToU8(JSON.stringify(snapshot)), { level: 9 });
 const hash = createHash("sha256").update(compressed).digest("hex");
 const provenance = {
   generatedAt: accessedAt,
-  source: LTA_GTFS_ENDPOINT,
-  licence: LTA_OPEN_DATA_LICENCE,
-  licenceNotice:
-    "Contains information from LTA DataMall GTFS Schedule (Train), accessed on " +
-    snapshot.accessedOn +
-    ", made available under the Singapore Open Data Licence version 1.0.",
+  source: connection.simulated ? snapshot.source : LTA_GTFS_ENDPOINT,
+  licence: connection.simulated ? snapshot.licence : LTA_OPEN_DATA_LICENCE,
+  simulated: connection.simulated,
+  licenceNotice: connection.simulated
+    ? "SIMULATED · authored GTFS fixtures, not an official schedule"
+    : "Contains information from LTA DataMall GTFS Schedule (Train), accessed on " +
+      snapshot.accessedOn +
+      ", made available under the Singapore Open Data Licence version 1.0.",
   derivedFile: outputPath.split(/[\\/]/).at(-1),
   sha256: hash,
   validFrom: snapshot.validFrom,

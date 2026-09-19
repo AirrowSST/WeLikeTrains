@@ -54,6 +54,7 @@ export interface Profile {
   preferences: Preferences;
 }
 export interface PlanRequest {
+  timeline?: import("./timelines").TimelineSelection;
   origin: Place;
   destination: Place;
   departure: string;
@@ -107,6 +108,7 @@ export interface Segment {
   instructions: string;
   source: string;
   waitMinutes?: number;
+  estimatedWaitMinutes?: number;
   hops?: { from: string; to: string; codes: string[]; geometry: Coord[] }[];
   affectedGeometry?: Coord[][];
   issues?: SegmentIssue[];
@@ -200,6 +202,8 @@ export interface BusArrival {
   load: Crowd;
   wheelchair: boolean;
   type: string;
+  monitored?: boolean;
+  status?: "live" | "demo" | "stale";
 }
 export interface Conditions {
   notices: Notice[];

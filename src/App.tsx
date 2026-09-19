@@ -29,7 +29,7 @@ import {
   Leaf,
   LoaderCircle,
   LocateFixed,
-  MessageCircle,
+  Map as MapIcon,
   Mic,
   Minus,
   Navigation,
@@ -58,7 +58,6 @@ import type {
   AccountState,
   AccountUser,
   ChatResponse,
-  DemoWeatherKind,
   Journey,
   Persona,
   Place,
@@ -74,10 +73,15 @@ import {
   nextDeparture,
   places,
   profiles,
-  scenarios,
   sgTime,
 } from "../shared/catalog";
 import { meetsDelayAlertThreshold } from "../shared/alerts";
+import {
+  timelineDefinition,
+  timelineTime,
+  type TimelineId,
+} from "../shared/timelines";
+import { TimelineControls } from "./TimelineControls";
 import JourneyMap from "./Map";
 import { useJourneySheet } from "./useJourneySheet";
 import GoogleSignIn, { disableGoogleAutoSelect } from "./GoogleSignIn";
@@ -432,7 +436,7 @@ function makeStartRequest(preferences: Preferences): PlanRequest {
   };
 }
 function liveRequest(request: PlanRequest): PlanRequest {
-  const { demoWeather: _demoWeather, ...rest } = request;
+  const { demoWeather: _demoWeather, timeline: _timeline, ...rest } = request;
   return { ...rest, dataMode: "live", scenario: "normal" };
 }
 function commuteId(request: PlanRequest) {
@@ -474,30 +478,6 @@ function initialGuestState(): AccountState {
     updatedAt: legacy?.savedAt ?? new Date().toISOString(),
   };
 }
-const demoDefaults: Record<
-  Persona,
-  {
-    scenario: Scenario;
-    weather: {
-      kind: DemoWeatherKind;
-      rainfallMm: number;
-      temperature: number;
-    };
-  }
-> = {
-  rachel: {
-    scenario: "disruption",
-    weather: { kind: "clear", rainfallMm: 0, temperature: 29 },
-  },
-  arjun: {
-    scenario: "rain",
-    weather: { kind: "showers", rainfallMm: 4, temperature: 30 },
-  },
-  lim: {
-    scenario: "maintenance",
-    weather: { kind: "clear", rainfallMm: 0, temperature: 29 },
-  },
-};
 const ModeIcon = ({ mode, size = 17 }: { mode: string; size?: number }) =>
   mode === "walk" ? (
     <Footprints size={size} />
@@ -644,8 +624,8 @@ function Onboarding({
           Let’s make every journey feel more like yours.
         </h1>
         <p>
-          Pick what matters and we’ll use it when comparing routes. Nothing
-          here is required—you can skip this and change it later in Preferences.
+          Pick what matters and we’ll use it when comparing routes. Nothing here
+          is required—you can skip this and change it later in Preferences.
         </p>
       </div>
       <div className="onboarding-body">
@@ -927,9 +907,19 @@ export default function App() {
   const [trackingLocation, setTrackingLocation] = useState(false);
   const [leaveNow, setLeaveNow] = useState(!saved.current);
   const [demoPersona, setDemoPersona] = useState<Persona>("rachel");
-  const [demoScenario, setDemoScenario] = useState<Scenario>("disruption");
-  const [demoWeather, setDemoWeather] = useState(demoDefaults.rachel.weather);
-  const { journeyLayout, sheetSnap, sheetDragging, sheetMoved, snapJourneySheet, startSheetDrag } = useJourneySheet(tab === "today");
+  const [timelineKind, setTimelineKind] = useState<"control" | "eventful">(
+    "control",
+  );
+  const {
+    journeyLayout,
+    sheetSnap,
+    sheetDragging,
+    sheetMoved,
+    snapJourneySheet,
+    startSheetDrag,
+  } = useJourneySheet(
+    tab === "today" && modal !== "preferences" && modal !== "profile",
+  );
   const [hardPreferences, setHardPreferences] = useState<Partial<Preferences>>(
     guest.current.hardPreferences,
   );
@@ -950,8 +940,7 @@ export default function App() {
   const selectedDemoProfile =
     demoProfiles.find((candidate) => candidate.id === demoPersona) ??
     demoProfiles[0];
-  const selectedDemoScenario =
-    scenarios.find((scenario) => scenario.id === demoScenario) ?? scenarios[0];
+
   const selected = plan
     ? ([plan.recommended, ...plan.alternatives, plan.original].find(
         (j) => j.id === selectedId,
@@ -1243,8 +1232,7 @@ export default function App() {
     }
     setLocationBusy(true);
     navigator.geolocation.getCurrentPosition(
-      (position) =>
-        acceptDeviceLocation(position, true, onlyIfOriginUnset),
+      (position) => acceptDeviceLocation(position, true, onlyIfOriginUnset),
       (error) => failLocation(locationErrorMessage(error)),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
     );
@@ -1444,11 +1432,7 @@ export default function App() {
     });
     setModal("proactive");
   }, [plan]);
-  const runDemoSelection = (
-    persona: Persona,
-    scenario: Scenario,
-    weather = demoWeather,
-  ) => {
+  const runDemoSelection = (persona: Persona, kind: "control" | "eventful") => {
     if (request.dataMode === "live") {
       normalState.current = {
         request,
@@ -1460,7 +1444,13 @@ export default function App() {
       };
     }
     stopLocationTracking();
-    const base = makeRequest(persona, "demo", scenario, weather);
+    const timeline = { id: `${persona}-${kind}` as TimelineId, minute: 0 };
+    const base = {
+      ...makeRequest(persona, "demo", "normal"),
+      timeline,
+      departure: timelineTime(timeline),
+      arriveBy: `2026-09-21T${profiles.find((p) => p.id === persona)!.arriveBy}:00+08:00`,
+    };
     const fix = demoLocationFix(base.origin);
     const value: PlanRequest = { ...base, origin: locationPlace(fix) };
     const fauxCommute = savedCommute(base, base.preferences);
@@ -1475,8 +1465,7 @@ export default function App() {
     setModal(null);
     void runPlan(value);
   };
-  const startDemo = () =>
-    runDemoSelection(demoPersona, demoScenario, demoWeather);
+  const startDemo = () => runDemoSelection(demoPersona, timelineKind);
   const exitDemo = () => {
     clearLocation();
     const stored = normalState.current;
@@ -1520,7 +1509,7 @@ export default function App() {
   const loadCommute = (commute: SavedCommute) => {
     if (request.dataMode === "demo") {
       setTab("today");
-      runDemoSelection(demoPersona, demoScenario, demoWeather);
+      runDemoSelection(demoPersona, timelineKind);
       return;
     }
     clearLocation();
@@ -1719,10 +1708,10 @@ export default function App() {
                 icon: Radio,
                 featured: false,
               },
-              { id: "today", label: "My journey", icon: Route, featured: true },
+              { id: "today", label: "Journey", icon: Route, featured: true },
               {
                 id: "commutes",
-                label: "Routes",
+                label: "Commutes",
                 icon: Bookmark,
                 featured: false,
               },
@@ -1779,15 +1768,6 @@ export default function App() {
             </div>
           </section>
         )}
-        {error && (
-          <div className="error-banner" role="alert">
-            <TriangleAlert size={18} />
-            <span>{error}</span>
-            <button onClick={() => runPlan(request)} className="text-button">
-              Retry
-            </button>
-          </div>
-        )}
         {tab === "today" && (
           <>
             <div
@@ -1805,547 +1785,602 @@ export default function App() {
                   hasAlerts={disruptionAlerts.length > 0}
                 />
               </div>
-              <aside className="planner-column">
-                <section className="planner-card">
+              <section className="journey-sheet" aria-label="Journey panel">
+                <button
+                  type="button"
+                  className="sheet-drag-handle"
+                  aria-label={`Resize journey panel, ${["expanded", "half open", "collapsed"][sheetSnap]}`}
+                  aria-controls="journey-sheet-content"
+                  data-sheet-snap={
+                    ["expanded", "middle", "collapsed"][sheetSnap]
+                  }
+                  title="Drag to resize the journey panel"
+                  onPointerDown={startSheetDrag}
+                  onClick={(event) => {
+                    if (sheetMoved.current) {
+                      sheetMoved.current = false;
+                      event.preventDefault();
+                      return;
+                    }
+                    snapJourneySheet(sheetSnap === 0 ? 2 : 0);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowUp") {
+                      event.preventDefault();
+                      snapJourneySheet(sheetSnap - 1);
+                    } else if (event.key === "ArrowDown") {
+                      event.preventDefault();
+                      snapJourneySheet(sheetSnap + 1);
+                    } else if (event.key === "Home") {
+                      event.preventDefault();
+                      snapJourneySheet(0);
+                    } else if (event.key === "End") {
+                      event.preventDefault();
+                      snapJourneySheet(2);
+                    }
+                  }}
+                >
+                  <span aria-hidden="true" />
+                </button>
+                {sheetSnap === 0 && (
                   <button
                     type="button"
-                    className="sheet-drag-handle"
-                    aria-label={`Resize journey panel, ${["expanded", "half open", "collapsed"][sheetSnap]}`}
-                    aria-controls="journey-planner"
-                    data-sheet-snap={
-                      ["expanded", "middle", "collapsed"][sheetSnap]
-                    }
-                    title="Drag to resize the journey panel"
-                    onPointerDown={startSheetDrag}
-                    onClick={(event) => {
-                      if (sheetMoved.current) {
-                        sheetMoved.current = false;
-                        event.preventDefault();
-                        return;
-                      }
-                      snapJourneySheet(sheetSnap === 0 ? 2 : 0);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "ArrowUp") {
-                        event.preventDefault();
-                        snapJourneySheet(sheetSnap - 1);
-                      } else if (event.key === "ArrowDown") {
-                        event.preventDefault();
-                        snapJourneySheet(sheetSnap + 1);
-                      } else if (event.key === "Home") {
-                        event.preventDefault();
-                        snapJourneySheet(0);
-                      } else if (event.key === "End") {
-                        event.preventDefault();
-                        snapJourneySheet(2);
-                      }
-                    }}
+                    className="sheet-collapse-button sheet-map-control"
+                    onClick={() => snapJourneySheet(2)}
+                    aria-label="Show map and collapse journey panel"
                   >
-                    <span aria-hidden="true" />
-                  </button>
-                  <div
-                    className="section-title sheet-drag-surface"
-                    title="Drag to resize the journey panel"
-                    onPointerDown={startSheetDrag}
-                  >
-                    <h2>Navigate</h2>
-                    <div className="sheet-title-actions">
-                      {sheetSnap === 0 && (
-                        <button
-                          type="button"
-                          className="sheet-collapse-button"
-                          onClick={() => snapJourneySheet(2)}
-                          aria-label="Show map and collapse journey panel"
-                        >
-                          <ChevronDown size={16} aria-hidden="true" />
-                          Show map
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="planner-preferences-trigger"
-                        onClick={() => setModal("preferences")}
-                        aria-label="Journey preferences"
-                      >
-                        Preferences
-                      </button>
-                    </div>
-                  </div>
-                  <form
-                    id="journey-planner"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const next = leaveNow
-                        ? { ...request, departure: new Date().toISOString() }
-                        : request;
-                      setRequest(next);
-                      void runPlan(next);
-                    }}
-                  >
-                    <div className="route-input-group">
-                      <div className="place-inputs">
-                        <PlacePicker
-                          label="FROM"
-                          fieldKey="A"
-                          value={request.origin}
-                          placeholder="Current location"
-                          onChange={(p) => {
-                            clearLocation();
-                            updateRequestAndPlan({ origin: p });
-                          }}
+                    <span className="map-collapse-content" aria-hidden="true">
+                      <MapIcon size={16} />
+                      <span>Show map</span>
+                      <span className="map-collapse-chevrons">
+                        <ChevronDown
+                          className="map-collapse-chevron"
+                          size={18}
                         />
-                        <PlacePicker
-                          label="TO"
-                          fieldKey="B"
-                          value={request.destination}
-                          placeholder="Where to?"
-                          onChange={(p) => updateRequest({ destination: p })}
+                        <ChevronDown
+                          className="map-collapse-chevron"
+                          size={18}
                         />
-                      </div>
-                      <div className="time-fields time-sequence">
-                        <TimeScrollPicker
-                          label="Leave"
-                          value={sgTime(request.departure)}
-                          isNow={leaveNow}
-                          onNow={() => {
-                            setLeaveNow(true);
-                            updateRequest({
-                              departure: new Date().toISOString(),
-                            });
-                          }}
-                          onChange={(value) => {
-                            setLeaveNow(false);
-                            updateRequest({
-                              departure: `${dateValue(request.departure)}T${value}:00+08:00`,
-                            });
-                          }}
-                        />
-                        <TimeScrollPicker
-                          label="Arrive"
-                          value={
-                            request.arriveBy
-                              ? sgTime(request.arriveBy)
-                              : undefined
-                          }
-                          onChange={(value) =>
-                            updateRequest({
-                              arriveBy: `${dateValue(request.departure)}T${value}:00+08:00`,
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                    <div className="location-control">
-                      {(request.dataMode === "demo" ||
-                        (!locationBusy && !currentLocation)) && (
-                        <button
-                          type="button"
-                          className="location-button"
-                          onClick={useCurrentLocation}
-                        >
-                          {request.dataMode === "demo"
-                            ? "Use simulated location"
-                            : "Retry location"}
-                        </button>
-                      )}
-                      {locationBusy && (
-                        <span className="location-status" role="status">
-                          <LoaderCircle className="spin" size={14} /> Finding
-                          your location…
-                        </span>
-                      )}
-                      {currentLocation && (
-                        <span className="location-status" role="status">
-                          <span
-                            className={`status-dot ${currentLocation.source === "demo" ? "amber" : ""}`}
-                          />
-                          {currentLocation.source === "demo"
-                            ? "Simulated location active"
-                            : `Device location · ±${Math.round(currentLocation.accuracy)} m`}
-                        </span>
-                      )}
-                    </div>
-                    {locationError && (
-                      <p className="location-error" role="alert">
-                        <TriangleAlert size={14} /> {locationError}
-                      </p>
-                    )}
-                  </form>
-                  <div className="planner-secondary-controls">
-                    <div className="travel-date-field">
-                      <CalendarDays size={14} />
-                      <label>
-                        <span className="sr-only">Travel date</span>
-                        <input
-                          aria-label="Travel date"
-                          type="date"
-                          value={dateValue(request.departure)}
-                          onChange={(e) => {
-                            if (e.target.value)
-                              updateRequest({
-                                departure: `${e.target.value}T${sgTime(request.departure)}:00+08:00`,
-                                arriveBy: request.arriveBy
-                                  ? `${e.target.value}T${sgTime(request.arriveBy)}:00+08:00`
-                                  : undefined,
-                              });
-                            setLeaveNow(false);
-                          }}
-                        />
-                      </label>
-                    </div>
-                    <button
-                      type="button"
-                      className="journey-preferences-button"
-                      onClick={() => setModal("preferences")}
-                      aria-label={`Journey preferences: ${preferenceSummary.length ? preferenceSummary.join(", ") : "No extra preferences"}`}
-                    >
-                      <span>
-                        <strong>Journey preferences</strong>
-                        <small>
-                          {preferenceSummary.length
-                            ? preferenceSummary.join(" · ")
-                            : "Choose walking, access, crowd and cycling options"}
-                        </small>
                       </span>
-                    </button>
-                  </div>
-                  <button
-                    type="submit"
-                    form="journey-planner"
-                    className="primary-button plan-button"
-                    disabled={loading || !online || !isPlannable(request)}
-                  >
-                    {loading ? "Finding your way…" : "Find my best route"}
+                    </span>
                   </button>
-                </section>
-                <div className="routes-heading">
-                  <h2>Routes</h2>
-                  <span>
-                    {plan
-                      ? `${1 + plan.alternatives.length} routes`
-                      : isPlannable(request)
-                        ? "Ready to plan"
-                        : "Choose where to go"}
-                  </span>
-                </div>
+                )}
                 <div
-                  className={`route-options ${loading ? "updating" : ""}`}
-                  aria-busy={loading}
+                  id="journey-sheet-content"
+                  className="journey-sheet-scroll"
                 >
-                  {!plan && (
-                    <div className="loading-card">
-                      {loading ? (
-                        <LoaderCircle size={22} className="spin" />
-                      ) : (
-                        <Navigation size={22} />
-                      )}
-                      <p>
-                        {loading
-                          ? "Connecting your door to your destination…"
-                          : isPlannable(request)
-                            ? "Ready when you are. Find your best route."
-                            : "Choose a destination to see your route options."}
-                      </p>
-                    </div>
-                  )}
-                  {plan &&
-                    visibleRouteChoices.map((journey, i) => (
-                      <article
-                        className={`route-card ${selected?.id === journey.id ? "selected" : ""} ${journey.blocked ? "blocked" : ""}`}
-                        key={journey.id}
+                  <aside className="planner-column">
+                    <section className="planner-card">
+                      <div
+                        className="section-title sheet-drag-surface"
+                        title="Drag to resize the journey panel"
+                        onPointerDown={startSheetDrag}
                       >
-                        <button
-                          className="route-select"
-                          onClick={() => setSelectedId(journey.id)}
-                          aria-label={`View ${journey.title}, ${journey.duration} minutes`}
-                          aria-pressed={selected?.id === journey.id}
-                        >
-                          <div className="route-card-top">
-                            <span
-                              className={
-                                i === 0
-                                  ? "recommended-label"
-                                  : "alternative-label"
+                        <h2>Navigate</h2>
+                        <div className="sheet-title-actions">
+                          <button
+                            type="button"
+                            className="planner-preferences-trigger"
+                            onClick={() => setModal("preferences")}
+                            aria-label="Journey preferences"
+                          >
+                            Preferences
+                          </button>
+                        </div>
+                      </div>
+                      <form
+                        id="journey-planner"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const next = leaveNow
+                            ? {
+                                ...request,
+                                departure: new Date().toISOString(),
                               }
-                            >
-                              {i === 0 && journey.blocked ? (
-                                <>
-                                  <TriangleAlert size={12} /> WAIT FOR SAFER
-                                  CONDITIONS
-                                </>
-                              ) : i === 0 ? (
-                                <>
-                                  <Sparkles size={12} /> BEST FIT FOR YOU
-                                </>
-                              ) : journey.id === plan.original.id ? (
-                                "YOUR USUAL ROUTE"
-                              ) : (
-                                "ANOTHER WAY THERE"
-                              )}
-                            </span>
-                            <span className="selection-circle">
-                              {selected?.id === journey.id && (
-                                <Check size={11} />
-                              )}
-                            </span>
-                          </div>
-                          <div className="route-summary">
-                            <span className="duration">
-                              {journey.duration}
-                              <small>min</small>
-                            </span>
-                            <span className="arrival">
-                              Arrive {sgTime(journey.arrival)}
-                              <small>
-                                {journey.range[0]}–{journey.range[1]} min
-                                estimated
-                              </small>
-                            </span>
-                          </div>
-                          <div className="route-pills">
-                            {journey.segments.map((s, index) => (
-                              <span
-                                className="pill-group"
-                                key={`${s.id}-${index}`}
-                              >
-                                <LinePill segment={s} />
-                                {index < journey.segments.length - 1 && (
-                                  <ChevronRight size={11} />
-                                )}
-                              </span>
-                            ))}
-                          </div>
-                          <div className="route-card-footer">
-                            <CrowdBadge crowd={journey.crowd} />
-                            <span>
-                              {journey.transfers === 0
-                                ? "No transfers"
-                                : `${journey.transfers} transfer${journey.transfers > 1 ? "s" : ""}`}
-                            </span>
-                          </div>
-                          {journey.blocked && (
-                            <span className="route-warning">
-                              <TriangleAlert size={13} /> Affected by closure or
-                              access restriction
-                            </span>
-                          )}
-                          {journey.duration > journey.baselineDuration && (
-                            <span className="route-warning">
-                              +{journey.duration - journey.baselineDuration} min
-                              from current conditions
-                            </span>
-                          )}
-                        </button>
-                      </article>
-                    ))}
-                </div>
-                {routeChoices.length > 2 && (
-                  <button
-                    className="load-more-routes"
-                    type="button"
-                    onClick={() => setShowAllRoutes((value) => !value)}
-                    aria-expanded={showAllRoutes}
-                  >
-                    {showAllRoutes ? "Show fewer routes" : "Load more routes"}
-                    <ChevronDown
-                      size={16}
-                      className={showAllRoutes ? "expanded" : ""}
-                    />
-                  </button>
-                )}
-                {plan && (
-                  <button
-                    className={`save-button ${savedRoutine ? "saved" : ""}`}
-                    onClick={() => void saveCommute()}
-                    disabled={request.dataMode === "demo"}
-                  >
-                    {savedRoutine ? (
-                      <CheckCheck size={17} />
-                    ) : (
-                      <Bookmark size={17} />
-                    )}{" "}
-                    {request.dataMode === "demo"
-                      ? "Faux account route"
-                      : savedRoutine
-                        ? "Route saved"
-                        : "Save route"}
-                  </button>
-                )}
-              </aside>
-              <div className="journey-content">
-                <section
-                  className={`recommendation ${plan?.recommended.blocked ? "caution" : ""}`}
-                  aria-live="polite"
-                >
-                  <div className="recommendation-icon">
-                    {plan?.recommended.blocked ? (
-                      <TriangleAlert size={23} />
-                    ) : (
-                      <Sparkles size={23} />
-                    )}
-                  </div>
-                  <div>
-                    <h2>
-                      {plan
-                        ? plan.recommended.blocked
-                          ? "Route unavailable"
-                          : `Routes · Use ${plan.recommended.title}`
-                        : "Where to?"}
-                    </h2>
-                    <p>
-                      {plan
-                        ? plan.advice
-                        : "Choose a destination and we’ll compare the best ways there."}
-                    </p>
-                  </div>
-                  <button
-                    className="icon-button"
-                    onClick={() => setModal("chat")}
-                    aria-label={
-                      plan
-                        ? "Ask why this route was recommended"
-                        : "Open journey companion"
-                    }
-                  >
-                    <ArrowRight size={21} />
-                  </button>
-                </section>
-                <div className="journey-insights">
-                  <div>
-                    <span className="insight-icon">
-                      <Footprints size={20} />
-                    </span>
-                    <span>
-                      <small>Door to door</small>
-                      <strong>
-                        {selected
-                          ? `${Math.ceil(selected.walkMinutes)} min walking`
-                          : "Walking legs included"}
-                      </strong>
-                    </span>
-                  </div>
-                </div>
-                {selected && (
-                  <>
-                    <div className="start-journey single">
-                      <button
-                        className="primary-button"
-                        disabled={selected.blocked}
-                        onClick={() => {
-                          setStarted(true);
-                          setJourneyProgress(0);
-                          if (request.dataMode === "demo")
-                            setTrackingLocation(true);
-                          setModal("journey");
+                            : request;
+                          setRequest(next);
+                          void runPlan(next);
                         }}
                       >
-                        <Navigation size={16} /> Start <ArrowRight size={16} />
-                      </button>
-                    </div>
-                    <section className="steps-card">
-                      <div className="section-title">
-                        <h2>Directions</h2>
+                        <div className="route-input-group">
+                          <div className="place-inputs">
+                            <PlacePicker
+                              label="FROM"
+                              fieldKey="A"
+                              value={request.origin}
+                              placeholder="Current location"
+                              onChange={(p) => {
+                                clearLocation();
+                                updateRequestAndPlan({ origin: p });
+                              }}
+                            />
+                            <PlacePicker
+                              label="TO"
+                              fieldKey="B"
+                              value={request.destination}
+                              placeholder="Where to?"
+                              onChange={(p) =>
+                                updateRequest({ destination: p })
+                              }
+                            />
+                          </div>
+                          <div className="time-fields time-sequence">
+                            {request.timeline ? (
+                              <div className="time-control">
+                                <span>Leave · simulated</span>
+                                <strong>{sgTime(request.departure)}</strong>
+                                <small>Use timeline controls</small>
+                              </div>
+                            ) : (
+                              <TimeScrollPicker
+                                label="Leave"
+                                value={sgTime(request.departure)}
+                                isNow={leaveNow}
+                                onNow={() => {
+                                  setLeaveNow(true);
+                                  updateRequest({
+                                    departure: new Date().toISOString(),
+                                  });
+                                }}
+                                onChange={(value) => {
+                                  setLeaveNow(false);
+                                  updateRequest({
+                                    departure: `${dateValue(request.departure)}T${value}:00+08:00`,
+                                  });
+                                }}
+                              />
+                            )}
+                            <TimeScrollPicker
+                              label="Arrive"
+                              value={
+                                request.arriveBy
+                                  ? sgTime(request.arriveBy)
+                                  : undefined
+                              }
+                              onChange={(value) =>
+                                updateRequest({
+                                  arriveBy: `${dateValue(request.departure)}T${value}:00+08:00`,
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div className="location-control">
+                          {(request.dataMode === "demo" ||
+                            (!locationBusy && !currentLocation)) && (
+                            <button
+                              type="button"
+                              className="location-button"
+                              onClick={useCurrentLocation}
+                            >
+                              {request.dataMode === "demo"
+                                ? "Use simulated location"
+                                : "Retry location"}
+                            </button>
+                          )}
+                          {locationBusy && (
+                            <span className="location-status" role="status">
+                              <LoaderCircle className="spin" size={14} />{" "}
+                              Finding your location…
+                            </span>
+                          )}
+                          {currentLocation && (
+                            <span className="location-status" role="status">
+                              <span
+                                className={`status-dot ${currentLocation.source === "demo" ? "amber" : ""}`}
+                              />
+                              {currentLocation.source === "demo"
+                                ? "Simulated location active"
+                                : `Device location · ±${Math.round(currentLocation.accuracy)} m`}
+                            </span>
+                          )}
+                        </div>
+                        {locationError && (
+                          <p className="location-error" role="alert">
+                            <TriangleAlert size={14} /> {locationError}
+                          </p>
+                        )}
+                      </form>
+                      <div className="planner-secondary-controls">
+                        <div className="travel-date-field">
+                          <CalendarDays size={14} />
+                          <label>
+                            <span className="sr-only">Travel date</span>
+                            <input
+                              aria-label="Travel date"
+                              disabled={!!request.timeline}
+                              type="date"
+                              value={dateValue(request.departure)}
+                              onChange={(e) => {
+                                if (e.target.value)
+                                  updateRequest({
+                                    departure: `${e.target.value}T${sgTime(request.departure)}:00+08:00`,
+                                    arriveBy: request.arriveBy
+                                      ? `${e.target.value}T${sgTime(request.arriveBy)}:00+08:00`
+                                      : undefined,
+                                  });
+                                setLeaveNow(false);
+                              }}
+                            />
+                          </label>
+                        </div>
                         <button
-                          className="text-button"
-                          onClick={() =>
-                            setExpanded(
-                              expanded === selected.id ? null : selected.id,
-                            )
-                          }
+                          type="button"
+                          className="journey-preferences-button"
+                          onClick={() => setModal("preferences")}
+                          aria-label={`Journey preferences: ${preferenceSummary.length ? preferenceSummary.join(", ") : "No extra preferences"}`}
                         >
-                          {expanded === selected.id
-                            ? "Less detail"
-                            : "Full details"}{" "}
-                          <ChevronDown size={16} />
+                          <span>
+                            <strong>Journey preferences</strong>
+                            <small>
+                              {preferenceSummary.length
+                                ? preferenceSummary.join(" · ")
+                                : "Choose walking, access, crowd and cycling options"}
+                            </small>
+                          </span>
                         </button>
                       </div>
-                      <div className="timeline">
-                        {selected.segments.map((s, i) => (
-                          <div
-                            className={`timeline-step ${s.affected ? "affected" : ""}`}
-                            key={`${s.id}-${i}`}
+                      {error && (
+                        <div
+                          className="error-banner planner-warning"
+                          role="alert"
+                        >
+                          <TriangleAlert size={18} />
+                          <span>{error}</span>
+                          <button
+                            type="button"
+                            onClick={() => runPlan(request)}
+                            className="text-button"
                           >
-                            <div
-                              className="step-icon"
-                              style={{
-                                color: lineColors[s.line] ?? lineColors[s.mode],
-                              }}
-                            >
-                              <ModeIcon mode={s.mode} size={18} />
-                            </div>
-                            <div>
-                              <h3>
-                                {s.mode === "walk"
-                                  ? `Walk to ${s.to}`
-                                  : s.mode === "cycle"
-                                    ? `Cycle to ${s.to}`
-                                    : `${s.mode === "bus" ? "Bus " : ""}${s.line} to ${s.to}`}
-                              </h3>
-                              <p>
-                                {s.mode === "walk" ? (
-                                  <>
-                                    {Math.round(s.distance)} m{" "}
-                                    {s.sheltered && (
-                                      <span
-                                        className="shelter-mark"
-                                        title="Mapped sheltered walkway"
-                                        aria-label="Mapped sheltered walkway"
-                                      >
-                                        <Umbrella size={13} />
-                                      </span>
-                                    )}
-                                  </>
-                                ) : s.mode === "rail" ? (
-                                  `${s.direction ?? s.instructions.match(/towards ([^.]+)/i)?.[1] ?? s.to} direction · From ${s.from}${s.affected ? " · Service affected" : ""}`
-                                ) : (
-                                  `From ${s.from}${s.affected ? " · Service affected" : ""}`
-                                )}
-                              </p>
-                              {expanded === selected.id && (
-                                <p className="step-detail">{s.instructions}</p>
-                              )}
-                            </div>
-                            <span className="step-duration">
-                              {Math.ceil(s.minutes)} min
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                      {expanded === selected.id && (
-                        <div className="journey-caveats">
-                          {selected.warnings.map((w) => (
-                            <p key={w}>
-                              <Info size={14} />
-                              {w}
-                            </p>
-                          ))}
+                            Retry
+                          </button>
+                        </div>
+                      )}
+                      <button
+                        type="submit"
+                        form="journey-planner"
+                        className="primary-button plan-button"
+                        disabled={loading || !online || !isPlannable(request)}
+                      >
+                        {loading ? "Finding your way…" : "Find my best route"}
+                      </button>
+                    </section>
+                    <div className="routes-heading">
+                      <h2>Routes</h2>
+                      <span>
+                        {plan
+                          ? `${1 + plan.alternatives.length} routes`
+                          : isPlannable(request)
+                            ? "Ready to plan"
+                            : "Choose where to go"}
+                      </span>
+                    </div>
+                    <div
+                      className={`route-options ${loading ? "updating" : ""}`}
+                      aria-busy={loading}
+                    >
+                      {!plan && (
+                        <div className="loading-card">
+                          {loading ? (
+                            <LoaderCircle size={22} className="spin" />
+                          ) : (
+                            <Navigation size={22} />
+                          )}
                           <p>
-                            {selected.source} · © OpenStreetMap contributors
+                            {loading
+                              ? "Connecting your door to your destination…"
+                              : isPlannable(request)
+                                ? "Ready when you are. Find your best route."
+                                : "Choose a destination to see your route options."}
                           </p>
                         </div>
                       )}
+                      {plan &&
+                        visibleRouteChoices.map((journey, i) => (
+                          <article
+                            className={`route-card ${selected?.id === journey.id ? "selected" : ""} ${journey.blocked ? "blocked" : ""}`}
+                            key={journey.id}
+                          >
+                            <button
+                              className="route-select"
+                              onClick={() => setSelectedId(journey.id)}
+                              aria-label={`View ${journey.title}, ${journey.duration} minutes`}
+                              aria-pressed={selected?.id === journey.id}
+                            >
+                              <div className="route-card-top">
+                                <span
+                                  className={
+                                    i === 0
+                                      ? "recommended-label"
+                                      : "alternative-label"
+                                  }
+                                >
+                                  {i === 0 && journey.blocked ? (
+                                    <>
+                                      <TriangleAlert size={12} /> WAIT FOR SAFER
+                                      CONDITIONS
+                                    </>
+                                  ) : i === 0 ? (
+                                    <>
+                                      <Sparkles size={12} /> BEST FIT FOR YOU
+                                    </>
+                                  ) : journey.id === plan.original.id ? (
+                                    "YOUR USUAL ROUTE"
+                                  ) : (
+                                    "ANOTHER WAY THERE"
+                                  )}
+                                </span>
+                                <span className="selection-circle">
+                                  {selected?.id === journey.id && (
+                                    <Check size={11} />
+                                  )}
+                                </span>
+                              </div>
+                              <div className="route-summary">
+                                <span className="duration">
+                                  {journey.duration}
+                                  <small>min</small>
+                                </span>
+                                <span className="arrival">
+                                  Arrive {sgTime(journey.arrival)}
+                                  <small>
+                                    {journey.range[0]}–{journey.range[1]} min
+                                    estimated
+                                  </small>
+                                </span>
+                              </div>
+                              <div className="route-pills">
+                                {journey.segments.map((s, index) => (
+                                  <span
+                                    className="pill-group"
+                                    key={`${s.id}-${index}`}
+                                  >
+                                    <LinePill segment={s} />
+                                    {index < journey.segments.length - 1 && (
+                                      <ChevronRight size={11} />
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                              <div className="route-card-footer">
+                                <CrowdBadge crowd={journey.crowd} />
+                                <span>
+                                  {journey.transfers === 0
+                                    ? "No transfers"
+                                    : `${journey.transfers} transfer${journey.transfers > 1 ? "s" : ""}`}
+                                </span>
+                              </div>
+                              {journey.blocked && (
+                                <span className="route-warning">
+                                  <TriangleAlert size={13} /> Affected by
+                                  closure or access restriction
+                                </span>
+                              )}
+                              {journey.duration > journey.baselineDuration && (
+                                <span className="route-warning">
+                                  +{journey.duration - journey.baselineDuration}{" "}
+                                  min from current conditions
+                                </span>
+                              )}
+                            </button>
+                          </article>
+                        ))}
+                    </div>
+                    {routeChoices.length > 2 && (
+                      <button
+                        className="load-more-routes"
+                        type="button"
+                        onClick={() => setShowAllRoutes((value) => !value)}
+                        aria-expanded={showAllRoutes}
+                      >
+                        {showAllRoutes
+                          ? "Show fewer routes"
+                          : "Load more routes"}
+                        <ChevronDown
+                          size={16}
+                          className={showAllRoutes ? "expanded" : ""}
+                        />
+                      </button>
+                    )}
+                    {plan && (
+                      <button
+                        className={`save-button ${savedRoutine ? "saved" : ""}`}
+                        onClick={() => void saveCommute()}
+                        disabled={request.dataMode === "demo"}
+                      >
+                        {savedRoutine ? (
+                          <CheckCheck size={17} />
+                        ) : (
+                          <Bookmark size={17} />
+                        )}{" "}
+                        {request.dataMode === "demo"
+                          ? "Faux account route"
+                          : savedRoutine
+                            ? "Route saved"
+                            : "Save route"}
+                      </button>
+                    )}
+                  </aside>
+                  <div className="journey-content">
+                    <section
+                      className={`recommendation ${plan?.recommended.blocked ? "caution" : ""}`}
+                      aria-live="polite"
+                    >
+                      <div className="recommendation-icon">
+                        {plan?.recommended.blocked ? (
+                          <TriangleAlert size={23} />
+                        ) : (
+                          <Sparkles size={23} />
+                        )}
+                      </div>
+                      <div>
+                        <h2>
+                          {plan
+                            ? plan.recommended.blocked
+                              ? "Route unavailable"
+                              : `Routes · Use ${plan.recommended.title}`
+                            : "Where to?"}
+                        </h2>
+                        <p>
+                          {plan
+                            ? plan.advice
+                            : "Choose a destination and we’ll compare the best ways there."}
+                        </p>
+                      </div>
+                      <button
+                        className="icon-button"
+                        onClick={() => setModal("chat")}
+                        aria-label={
+                          plan
+                            ? "Ask why this route was recommended"
+                            : "Open journey companion"
+                        }
+                      >
+                        <ArrowRight size={21} />
+                      </button>
                     </section>
-                  </>
-                )}
-              </div>
-            </div>
-            {relevantPlannedNotice && (
-              <section className="heads-up-strip">
-                <span className="heads-up-icon">
-                  <CalendarDays size={24} />
-                </span>
-                <div>
-                  <h3>{relevantPlannedNotice.title}</h3>
-                  <p>{relevantPlannedNotice.description}</p>
+                    <div className="journey-insights">
+                      <div>
+                        <span className="insight-icon">
+                          <Footprints size={20} />
+                        </span>
+                        <span>
+                          <small>Door to door</small>
+                          <strong>
+                            {selected
+                              ? `${Math.ceil(selected.walkMinutes)} min walking`
+                              : "Walking legs included"}
+                          </strong>
+                        </span>
+                      </div>
+                    </div>
+                    {selected && (
+                      <>
+                        <div className="start-journey single">
+                          <button
+                            className="primary-button"
+                            disabled={selected.blocked}
+                            onClick={() => {
+                              setStarted(true);
+                              setJourneyProgress(0);
+                              if (request.dataMode === "demo")
+                                setTrackingLocation(true);
+                              setModal("journey");
+                            }}
+                          >
+                            <Navigation size={16} /> Start{" "}
+                            <ArrowRight size={16} />
+                          </button>
+                        </div>
+                        <section className="steps-card">
+                          <div className="section-title">
+                            <h2>Directions</h2>
+                            <button
+                              className="text-button"
+                              onClick={() =>
+                                setExpanded(
+                                  expanded === selected.id ? null : selected.id,
+                                )
+                              }
+                            >
+                              {expanded === selected.id
+                                ? "Less detail"
+                                : "Full details"}{" "}
+                              <ChevronDown size={16} />
+                            </button>
+                          </div>
+                          <div className="timeline">
+                            {selected.segments.map((s, i) => (
+                              <div
+                                className={`timeline-step ${s.affected ? "affected" : ""}`}
+                                key={`${s.id}-${i}`}
+                              >
+                                <div
+                                  className="step-icon"
+                                  style={{
+                                    color:
+                                      lineColors[s.line] ?? lineColors[s.mode],
+                                  }}
+                                >
+                                  <ModeIcon mode={s.mode} size={18} />
+                                </div>
+                                <div>
+                                  <h3>
+                                    {s.mode === "walk"
+                                      ? `Walk to ${s.to}`
+                                      : s.mode === "cycle"
+                                        ? `Cycle to ${s.to}`
+                                        : `${s.mode === "bus" ? "Bus " : ""}${s.line} to ${s.to}`}
+                                  </h3>
+                                  <p>
+                                    {s.mode === "walk" ? (
+                                      <>
+                                        {Math.round(s.distance)} m{" "}
+                                        {s.sheltered && (
+                                          <span
+                                            className="shelter-mark"
+                                            title="Mapped sheltered walkway"
+                                            aria-label="Mapped sheltered walkway"
+                                          >
+                                            <Umbrella size={13} />
+                                          </span>
+                                        )}
+                                      </>
+                                    ) : s.mode === "rail" ? (
+                                      `${s.direction ?? s.instructions.match(/towards ([^.]+)/i)?.[1] ?? s.to} direction · From ${s.from}${s.affected ? " · Service affected" : ""}`
+                                    ) : (
+                                      `From ${s.from}${s.affected ? " · Service affected" : ""}`
+                                    )}
+                                  </p>
+                                  {expanded === selected.id && (
+                                    <p className="step-detail">
+                                      {s.instructions}
+                                    </p>
+                                  )}
+                                </div>
+                                <span className="step-duration">
+                                  {Math.ceil(s.minutes)} min
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          {expanded === selected.id && (
+                            <div className="journey-caveats">
+                              {selected.warnings.map((w) => (
+                                <p key={w}>
+                                  <Info size={14} />
+                                  {w}
+                                </p>
+                              ))}
+                              <p>
+                                {selected.source} · © OpenStreetMap contributors
+                              </p>
+                            </div>
+                          )}
+                        </section>
+                      </>
+                    )}
+                  </div>
+                  {relevantPlannedNotice && (
+                    <section className="heads-up-strip">
+                      <span className="heads-up-icon">
+                        <CalendarDays size={24} />
+                      </span>
+                      <div>
+                        <h3>{relevantPlannedNotice.title}</h3>
+                        <p>{relevantPlannedNotice.description}</p>
+                      </div>
+                      <button
+                        className="text-button"
+                        onClick={() => setTab("updates")}
+                      >
+                        See planned updates <ArrowRight size={16} />
+                      </button>
+                    </section>
+                  )}
                 </div>
-                <button
-                  className="text-button"
-                  onClick={() => setTab("updates")}
-                >
-                  See planned updates <ArrowRight size={16} />
-                </button>
               </section>
-            )}
+            </div>
           </>
         )}
         {tab === "commutes" && (
@@ -2587,15 +2622,8 @@ export default function App() {
                 value={demoPersona}
                 onChange={(event) => {
                   const persona = event.target.value as Persona;
-                  const defaults = demoDefaults[persona];
                   setDemoPersona(persona);
-                  setDemoScenario(defaults.scenario);
-                  setDemoWeather(defaults.weather);
-                  runDemoSelection(
-                    persona,
-                    defaults.scenario,
-                    defaults.weather,
-                  );
+                  runDemoSelection(persona, timelineKind);
                 }}
               >
                 {demoProfiles.map((candidate) => (
@@ -2606,27 +2634,41 @@ export default function App() {
               </select>
             </label>
             <label className="demo-template-option">
-              <span className="demo-template-label">Disruption simulator</span>
+              <span className="demo-template-label">Timeline</span>
               <span className="demo-template-value">
-                {selectedDemoScenario.label}
-                <ChevronDown size={15} aria-hidden="true" />
+                {timelineKind === "control"
+                  ? "Control · no events"
+                  : "Eventful"}
               </span>
               <select
-                aria-label="Disruption simulator"
-                value={demoScenario}
+                aria-label="Demo timeline"
+                value={timelineKind}
                 onChange={(event) => {
-                  const scenario = event.target.value as Scenario;
-                  setDemoScenario(scenario);
-                  runDemoSelection(demoPersona, scenario, demoWeather);
+                  const kind = event.target.value as "control" | "eventful";
+                  setTimelineKind(kind);
+                  runDemoSelection(demoPersona, kind);
                 }}
               >
-                {scenarios.map((scenario) => (
-                  <option key={scenario.id} value={scenario.id}>
-                    {scenario.label}
-                  </option>
-                ))}
+                <option value="control">Control · no events</option>
+                <option value="eventful">Eventful</option>
               </select>
             </label>
+            {request.timeline && (
+              <TimelineControls
+                key={request.timeline.id}
+                selection={request.timeline}
+                busy={loading || modal !== null}
+                onChange={(timeline) => {
+                  const value = {
+                    ...request,
+                    timeline,
+                    departure: timelineTime(timeline),
+                  };
+                  setRequest(value);
+                  void runPlan(value);
+                }}
+              />
+            )}
           </section>
         )}
         <footer className="site-footer">
@@ -2650,11 +2692,15 @@ export default function App() {
         </footer>
       </main>
       {!primaryPage && (
-        <button className="companion-button" onClick={() => setModal("chat")}>
+        <button
+          className="companion-button"
+          onClick={() => setModal("chat")}
+          aria-label="Open Chatbot"
+        >
           <span>
-            <Sparkles size={20} />
-          </span>{" "}
-          A little help for the journey <MessageCircle size={17} />
+            <img src="/waycey-avatar.svg" alt="" />
+          </span>
+          Waycey
         </button>
       )}
       {toast && (
@@ -3003,7 +3049,7 @@ export default function App() {
       )}
       {modal === "chat" && (
         <Modal
-          title="Your companion for the way"
+          title="Waycey - Your Commute Companion"
           onClose={() => setModal(null)}
         >
           <Companion
@@ -3067,10 +3113,7 @@ export default function App() {
                   key={candidate.id}
                   type="button"
                   onClick={() => {
-                    const defaults = demoDefaults[candidate.id];
                     setDemoPersona(candidate.id);
-                    setDemoScenario(defaults.scenario);
-                    setDemoWeather(defaults.weather);
                   }}
                   className={
                     demoPersona === candidate.id ? "persona active" : "persona"
@@ -3087,91 +3130,33 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <h3>Hypothetical situation</h3>
+            <h3>Timeline</h3>
             <label className="demo-scenario-field">
-              <span>Network condition</span>
+              <span>Demo timeline preset</span>
               <select
-                value={demoScenario}
+                value={timelineKind}
                 onChange={(event) =>
-                  setDemoScenario(event.target.value as Scenario)
+                  setTimelineKind(event.target.value as "control" | "eventful")
                 }
               >
-                {scenarios.map((scenario) => (
-                  <option value={scenario.id} key={scenario.id}>
-                    {scenario.label} — {scenario.description}
-                  </option>
-                ))}
+                <option value="control">Control · no events</option>
+                <option value="eventful">Eventful</option>
               </select>
             </label>
-            <h3>Custom simulated weather</h3>
-            <label className="demo-scenario-field">
-              <span>Weather condition</span>
-              <select
-                aria-label="Demo weather"
-                value={demoWeather.kind}
-                onChange={(event) => {
-                  const kind = event.target.value as DemoWeatherKind;
-                  setDemoWeather((previous) => ({
-                    ...previous,
-                    kind,
-                    rainfallMm:
-                      kind === "clear" || kind === "heat"
-                        ? 0
-                        : kind === "storm"
-                          ? 10
-                          : Math.max(2, previous.rainfallMm),
-                    temperature:
-                      kind === "heat" ? 34 : Math.min(previous.temperature, 32),
-                  }));
-                }}
-              >
-                <option value="clear">Clear</option>
-                <option value="showers">Showers</option>
-                <option value="storm">Heavy thunderstorm</option>
-                <option value="heat">Hot conditions</option>
-              </select>
-            </label>
-            <div className="settings-fields">
-              <label>
-                Rainfall (mm)
-                <input
-                  aria-label="Demo rainfall"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.5"
-                  value={demoWeather.rainfallMm}
-                  onChange={(event) =>
-                    setDemoWeather((previous) => ({
-                      ...previous,
-                      rainfallMm: Math.min(
-                        100,
-                        Math.max(0, Number(event.target.value)),
-                      ),
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                Temperature (°C)
-                <input
-                  aria-label="Demo temperature"
-                  type="number"
-                  min="20"
-                  max="40"
-                  value={demoWeather.temperature}
-                  onChange={(event) =>
-                    setDemoWeather((previous) => ({
-                      ...previous,
-                      temperature: Math.min(
-                        40,
-                        Math.max(20, Number(event.target.value)),
-                      ),
-                    }))
-                  }
-                />
-              </label>
-            </div>
+            <p className="muted">
+              Synthetic time starts at {selectedDemoProfile.departure} on 21
+              September 2026. Playback replans from the selected origin; journey
+              progress stays manual.
+            </p>
+            <ul>
+              {timelineDefinition(
+                `${demoPersona}-${timelineKind}` as TimelineId,
+              ).events.map((event) => (
+                <li key={event.minute}>
+                  +{event.minute} min: {event.label}
+                </li>
+              ))}
+            </ul>
             <button className="primary-button full" onClick={startDemo}>
               Start demo <ArrowRight size={17} />
             </button>
@@ -3215,9 +3200,8 @@ export default function App() {
             <h3>Official transport data</h3>
             <p>
               Train schedules and live transport conditions contain information
-              from LTA DataMall. The committed timetable is planned service,
-              not a guarantee of actual movement, and is made available under
-              the{" "}
+              from LTA DataMall. The committed timetable is planned service, not
+              a guarantee of actual movement, and is made available under the{" "}
               <a
                 href="https://datamall.lta.gov.sg/content/datamall/en/SingaporeOpenDataLicence.html"
                 target="_blank"
@@ -3553,7 +3537,7 @@ function Companion({
   >([
     {
       role: "assistant",
-      text: "Hi, I’m your companion for the way. I can explain your route, help you plan around a disruption, or learn what makes a journey work for you.",
+      text: "Hi, I’m Waycey, your companion for the way. I can explain your route, help you plan around a disruption, or learn what makes a journey work for you.",
     },
   ]);
   const [message, setMessage] = useState("");
@@ -3783,22 +3767,16 @@ function Companion({
     );
   return (
     <div className="chat-panel">
-      <div className="chat-intro">
-        <span>
-          <Sparkles size={20} />
-        </span>
-        <p>
-          A calmer commute starts with a conversation.
-          <small>
-            {config?.integrations.vertex
-              ? "Vertex AI connected · grounded in your route"
-              : "Local companion · connect Vertex AI for generative advice"}
-          </small>
-        </p>
-      </div>
       <div className="chat-messages" aria-live="polite">
         {messages.map((m, i) => (
           <div key={i} className={`chat-message ${m.role}`}>
+            {m.role === "assistant" && (
+              <img
+                className="waycey-avatar"
+                src="/waycey-avatar.svg"
+                alt="Waycey"
+              />
+            )}
             <p>{m.text}</p>
             {m.role === "assistant" && (
               <div className="message-actions">

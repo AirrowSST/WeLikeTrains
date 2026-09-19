@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { places, profiles } from "../shared/catalog";
 import {
+  applyBusArrivalTiming,
   applyConditions,
   planJourney,
   segmentAffected,
@@ -239,6 +240,238 @@ describe("real OSM journeys", () => {
 });
 
 describe("condition timing", () => {
+  it("advances live bus transfers chronologically and ignores stale arrivals", () => {
+    const timedJourney = journey([
+      segment("access", "walk", 8),
+      segment("first-bus", "bus", 14, {
+        line: "27",
+        stops: ["64009"],
+        waitMinutes: 4,
+      }),
+      segment("transfer", "walk", 2),
+      segment("second-bus", "bus", 15, {
+        line: "12",
+        stops: ["75009"],
+        waitMinutes: 5,
+      }),
+    ]);
+    const result = applyBusArrivalTiming(
+      timedJourney,
+      [
+        {
+          service: "27",
+          stop: "64009",
+          eta: "2026-09-20T23:46:00.000Z",
+          load: "low",
+          wheelchair: true,
+          type: "SD",
+          monitored: true,
+          status: "demo",
+        },
+        {
+          service: "27",
+          stop: "64009",
+          eta: "2026-09-20T23:51:00.000Z",
+          load: "moderate",
+          wheelchair: true,
+          type: "DD",
+          monitored: true,
+          status: "demo",
+        },
+        {
+          service: "12",
+          stop: "75009",
+          eta: "2026-09-21T00:02:00.000Z",
+          load: "low",
+          wheelchair: true,
+          type: "SD",
+          monitored: true,
+          status: "demo",
+        },
+        {
+          service: "12",
+          stop: "75009",
+          eta: "2026-09-21T00:07:00.000Z",
+          load: "moderate",
+          wheelchair: true,
+          type: "DD",
+          monitored: true,
+          status: "demo",
+        },
+      ],
+      request().departure,
+    );
+
+    expect(result.segments[1].waitMinutes).toBe(3);
+    expect(result.segments[3].waitMinutes).toBe(4);
+
+    const stale = applyBusArrivalTiming(
+      journey([
+        segment("access", "walk", 8),
+        segment("bus", "bus", 14, {
+          line: "27",
+          stops: ["64009"],
+          waitMinutes: 4,
+        }),
+      ]),
+      [
+        {
+          service: "27",
+          stop: "64009",
+          eta: "2026-09-20T23:51:00.000Z",
+          load: "low",
+          wheelchair: true,
+          type: "SD",
+          monitored: true,
+          status: "stale",
+        },
+      ],
+      request().departure,
+    );
+    expect(stale.segments[1]).toMatchObject({
+      waitMinutes: 4,
+      minutes: 14,
+    });
+    expect(stale.segments[1].source).toContain(
+      "estimated boarding-wait fallback",
+    );
+  });
+
+  it("can rerank a route after a missed first bus", () => {
+    const liveRequest = {
+      ...request(),
+      preferences: { ...request().preferences, avoidCrowds: true },
+    };
+    const busJourney = {
+      ...journey([
+        segment("access", "walk", 8),
+        segment("bus", "bus", 14, {
+          line: "27",
+          stops: ["64009"],
+          waitMinutes: 4,
+        }),
+      ]),
+      id: "bus-route",
+    };
+    const alternative = {
+      ...journey([segment("walk-alternative", "walk", 22)]),
+      id: "alternative-route",
+    };
+    const normalBuses = [
+      {
+        service: "27",
+        stop: "64009",
+        eta: "2026-09-20T23:50:00.000Z",
+        load: "low" as const,
+        wheelchair: true,
+        type: "SD",
+        monitored: true,
+        status: "demo" as const,
+      },
+    ];
+    const missedBuses = [
+      {
+        service: "27",
+        stop: "64009",
+        eta: "2026-09-20T23:46:00.000Z",
+        load: "low" as const,
+        wheelchair: true,
+        type: "SD",
+        monitored: true,
+        status: "demo" as const,
+      },
+      {
+        service: "27",
+        stop: "64009",
+        eta: "2026-09-20T23:51:00.000Z",
+        load: "moderate" as const,
+        wheelchair: true,
+        type: "DD",
+        monitored: true,
+        status: "demo" as const,
+      },
+    ];
+    const ranked = (buses: Conditions["buses"]) =>
+      [
+        applyConditions(
+          applyBusArrivalTiming(busJourney, buses, liveRequest.departure),
+          conditions({ buses }),
+          liveRequest,
+        ),
+        applyConditions(alternative, conditions({ buses }), liveRequest),
+      ].sort((a, b) => a.score - b.score);
+
+    expect(ranked(normalBuses)[0].id).toBe("bus-route");
+    expect(ranked(missedBuses)[0].id).toBe("alternative-route");
+  });
+
+  it("reselects a bus when an earlier condition delay makes it miss the first arrival", () => {
+    const liveRequest = { ...request(), dataMode: "live" as const };
+    const buses: Conditions["buses"] = [
+      {
+        service: "27",
+        stop: "64009",
+        eta: "2026-09-20T23:50:00.000Z",
+        load: "low",
+        wheelchair: true,
+        type: "SD",
+        monitored: true,
+        status: "live",
+      },
+      {
+        service: "27",
+        stop: "64009",
+        eta: "2026-09-20T23:55:00.000Z",
+        load: "moderate",
+        wheelchair: true,
+        type: "DD",
+        monitored: true,
+        status: "live",
+      },
+    ];
+    const base = applyBusArrivalTiming(
+      journey([
+        segment("rail", "rail", 8, {
+          line: "EWL",
+          stops: ["EW2"],
+        }),
+        segment("bus", "bus", 14, {
+          line: "27",
+          stops: ["64009"],
+          waitMinutes: 4,
+        }),
+      ]),
+      buses,
+      liveRequest.departure,
+    );
+    expect(base.segments[1].waitMinutes).toBe(2);
+
+    const result = applyConditions(
+      base,
+      conditions({
+        buses,
+        crowd: [
+          {
+            station: "EW2",
+            line: "EWL",
+            level: "high",
+            start: "2026-09-20T23:30:00.000Z",
+            end: "2026-09-21T00:30:00.000Z",
+            forecast: true,
+          },
+        ],
+      }),
+      liveRequest,
+    );
+
+    expect(result.segments[0].delay).toBe(3);
+    expect(result.segments[1]).toMatchObject({
+      waitMinutes: 4,
+      crowd: "moderate",
+    });
+    expect(result.segments[1].instructions).toContain("07:55");
+  });
+
   it("selects rail crowding for the time the commuter boards the segment", () => {
     const timedJourney = journey([
       segment("access", "walk", 10),

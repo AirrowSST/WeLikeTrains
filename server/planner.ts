@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type {
+  BusArrival,
   Conditions,
   Crowd,
   Journey,
@@ -17,7 +18,8 @@ import {
   walkSegment,
   type TransitEdge,
 } from "./network";
-import { getConditions, getBusArrivals } from "./feeds";
+import { getConditions, getBusArrivals, parseBuses } from "./feeds";
+import { timelineInputs } from "../shared/timelines";
 import {
   evaluateRailSegments,
   loadRailScheduleSnapshot,
@@ -75,6 +77,119 @@ function crowdAt(
 function atJourneyMinute(departure: string, elapsedMinutes: number) {
   return new Date(Date.parse(departure) + elapsedMinutes * 60000).toISOString();
 }
+
+const busBoardingStop = (segment: Segment) =>
+  segment.hops?.[0]?.codes.find((code) => /^\d{5}$/.test(code)) ??
+  segment.stops.find((code) => /^\d{5}$/.test(code));
+
+const singaporeClock = (value: string) =>
+  new Intl.DateTimeFormat("en-SG", {
+    timeZone: "Asia/Singapore",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+
+const LIVE_BUS_WARNING =
+  "Bus boarding uses the first catchable monitored DataMall arrival. Bus in-vehicle time remains an estimate.";
+const BUS_FALLBACK_WARNING =
+  "A bus leg has no fresh catchable monitored arrival, so its boarding wait uses the labelled local estimate.";
+const busTimingSource =
+  / · (?:LTA DataMall BusArrival \((?:simulated|live)\)|estimated boarding-wait fallback)/g;
+
+function retimeBusSegment(
+  segment: Segment,
+  buses: BusArrival[],
+  readyAt: number,
+) {
+  const currentWait = segment.waitMinutes ?? 0;
+  const estimatedWait = segment.estimatedWaitMinutes ?? currentWait;
+  const inVehicleMinutes = Math.max(0, segment.minutes - currentWait);
+  const stop = busBoardingStop(segment);
+  const arrival = buses
+    .filter(
+      (bus) =>
+        bus.service === segment.line &&
+        bus.stop === stop &&
+        bus.monitored === true &&
+        bus.status !== "stale" &&
+        Number.isFinite(Date.parse(bus.eta)) &&
+        Date.parse(bus.eta) >= readyAt &&
+        Date.parse(bus.eta) - readyAt < 30 * 60_000,
+    )
+    .sort((a, b) => Date.parse(a.eta) - Date.parse(b.eta))[0];
+  const action = segment.instructions.startsWith("Change to")
+    ? "Change to"
+    : "Board";
+  const source = segment.source.replace(busTimingSource, "");
+  segment.estimatedWaitMinutes = estimatedWait;
+  if (arrival) {
+    const waitMinutes = (Date.parse(arrival.eta) - readyAt) / 60_000;
+    segment.waitMinutes = waitMinutes;
+    segment.minutes = inVehicleMinutes + waitMinutes;
+    segment.source = `${source} · LTA DataMall BusArrival (${arrival.status === "demo" ? "simulated" : "live"})`;
+    segment.instructions = `${action} bus ${segment.line} towards ${segment.direction ?? "the destination"}. The first catchable ${arrival.status === "demo" ? "simulated" : "live"} bus is due at ${singaporeClock(arrival.eta)}; in-vehicle time remains estimated. Alight at ${segment.to}.`;
+  } else {
+    segment.waitMinutes = estimatedWait;
+    segment.minutes = inVehicleMinutes + estimatedWait;
+    segment.source = `${source} · estimated boarding-wait fallback`;
+    segment.instructions = `${action} bus ${segment.line} towards ${segment.direction ?? "the destination"}. Allow ${estimatedWait} min for the estimated boarding wait. Alight at ${segment.to}.`;
+  }
+  return arrival;
+}
+
+export function applyBusArrivalTiming(
+  journey: Journey,
+  buses: BusArrival[],
+  departure: string,
+): Journey {
+  let clock = Date.parse(departure);
+  let liveSegments = 0;
+  let fallbackSegments = 0;
+  const segments = journey.segments.map((source) => {
+    const segment: Segment = {
+      ...source,
+      geometry: source.geometry.map((coordinate) => [...coordinate]),
+      stops: [...source.stops],
+      hops: source.hops?.map((hop) => ({
+        ...hop,
+        codes: [...hop.codes],
+        geometry: hop.geometry.map((coordinate) => [...coordinate]),
+      })),
+    };
+    if (segment.mode !== "bus") {
+      clock += segment.minutes * 60_000;
+      return segment;
+    }
+    const arrival = retimeBusSegment(segment, buses, clock);
+    if (arrival) {
+      liveSegments++;
+    } else {
+      fallbackSegments++;
+    }
+    clock += segment.minutes * 60_000;
+    return segment;
+  });
+  const duration = Math.ceil(
+    segments.reduce((total, segment) => total + segment.minutes, 0),
+  );
+  const warnings = [...journey.warnings];
+  if (liveSegments) warnings.push(LIVE_BUS_WARNING);
+  if (fallbackSegments) warnings.push(BUS_FALLBACK_WARNING);
+  return {
+    ...journey,
+    segments,
+    duration,
+    baselineDuration: duration,
+    range: [Math.max(1, duration - 3), duration + 8],
+    score: duration,
+    warnings: [...new Set(warnings)],
+    source: liveSegments
+      ? `${journey.source} · LTA DataMall BusArrival`
+      : journey.source,
+  };
+}
+
 export function applyConditions(
   journey: Journey,
   conditions: Conditions,
@@ -83,17 +198,32 @@ export function applyConditions(
   const seenDelay = new Set<string>();
   let blocked = false;
   let elapsedMinutes = 0;
+  let liveBusSegments = 0;
+  let fallbackBusSegments = 0;
   const reasons: string[] = [];
-  const warnings = [...journey.warnings];
+  const warnings = journey.warnings.filter(
+    (warning) =>
+      warning !== LIVE_BUS_WARNING && warning !== BUS_FALLBACK_WARNING,
+  );
   const segments = journey.segments.map((s) => {
-    const boardingAt = atJourneyMinute(
-      request.departure,
-      elapsedMinutes + (s.waitMinutes ?? 0),
-    );
     const segment = {
       ...s,
       geometry: s.geometry.map((c) => [...c] as [number, number]),
     };
+    let selectedBus: BusArrival | undefined;
+    if (s.mode === "bus" && (request.dataMode === "live" || request.timeline)) {
+      selectedBus = retimeBusSegment(
+        segment,
+        conditions.buses,
+        Date.parse(atJourneyMinute(request.departure, elapsedMinutes)),
+      );
+      if (selectedBus) liveBusSegments++;
+      else fallbackBusSegments++;
+    }
+    const boardingAt = atJourneyMinute(
+      request.departure,
+      elapsedMinutes + (segment.waitMinutes ?? 0),
+    );
     segment.crowd =
       s.mode === "rail"
         ? crowdAt(conditions, s.stops, s.line, boardingAt)
@@ -104,15 +234,21 @@ export function applyConditions(
     segment.issues = segment.sheltered && s.mode === "walk" ? ["shelter"] : [];
     if (s.mode === "bus") {
       const boardingTime = Date.parse(boardingAt);
-      const bus = conditions.buses
-        .filter(
-          (b) =>
-            b.service === s.line &&
-            s.stops.includes(b.stop) &&
-            Date.parse(b.eta) >= boardingTime &&
-            Date.parse(b.eta) - boardingTime < 30 * 60000,
-        )
-        .sort((a, b) => Date.parse(a.eta) - Date.parse(b.eta))[0];
+      const boardingStop = busBoardingStop(s);
+      const bus =
+        request.dataMode === "live" || request.timeline
+          ? selectedBus
+          : conditions.buses
+              .filter(
+                (b) =>
+                  b.service === s.line &&
+                  b.stop === boardingStop &&
+                  b.status !== "stale" &&
+                  b.monitored !== false &&
+                  Date.parse(b.eta) >= boardingTime &&
+                  Date.parse(b.eta) - boardingTime < 30 * 60000,
+              )
+              .sort((a, b) => Date.parse(a.eta) - Date.parse(b.eta))[0];
       if (bus) {
         segment.crowd = bus.load;
         if (request.preferences.stepFree && !bus.wheelchair)
@@ -226,7 +362,7 @@ export function applyConditions(
         warnings.push("Cycling is excluded during this heavy-rain scenario.");
       }
     }
-    segment.minutes = s.minutes + segment.delay;
+    segment.minutes += segment.delay;
     elapsedMinutes += segment.minutes;
     return segment;
   });
@@ -262,6 +398,8 @@ export function applyConditions(
     warnings.push(
       "Step-free access is not fully verified. Mapped stairs and known lift outages are excluded. Confirm station lifts and final access before travelling.",
     );
+  if (liveBusSegments) warnings.push(LIVE_BUS_WARNING);
+  if (fallbackBusSegments) warnings.push(BUS_FALLBACK_WARNING);
   if (
     conditions.feeds.some(
       (f) => f.status === "unavailable" || f.status === "stale",
@@ -283,6 +421,9 @@ export function applyConditions(
     score,
     reasons: [...new Set(reasons)],
     warnings: [...new Set(warnings)],
+    source: liveBusSegments
+      ? `${journey.source.replace(/ · LTA DataMall BusArrival/g, "")} · LTA DataMall BusArrival`
+      : journey.source.replace(/ · LTA DataMall BusArrival/g, ""),
     blocked,
   };
 }
@@ -332,7 +473,8 @@ function applyRailSchedule(
   request: PlanRequest,
   snapshot: RailScheduleSnapshot | undefined,
 ) {
-  if (!journey.segments.some((segment) => segment.mode === "rail")) return journey;
+  if (!journey.segments.some((segment) => segment.mode === "rail"))
+    return journey;
   const timing = evaluateRailSegments(
     journey.segments,
     request.departure,
@@ -616,6 +758,15 @@ export function localJourneys(
     applyRailSchedule(journey, request, railSchedule),
   );
 }
+export class NoUsableRouteError extends Error {
+  constructor() {
+    super(
+      "No usable route found in the bundled map extract. Try a mapped station or supported Singapore place, or increase the walking limit.",
+    );
+    this.name = "NoUsableRouteError";
+  }
+}
+
 export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
   const conditions = await getConditions(request);
   // Weather may make a user's ordinary preference a safety requirement for
@@ -653,7 +804,11 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
     departureDate <= railSchedule.validUntil;
   conditions.feeds.unshift({
     name: "LTA train schedule",
-    status: railSchedule ? (scheduleCovered ? "local" : "stale") : "unavailable",
+    status: railSchedule
+      ? scheduleCovered
+        ? "local"
+        : "stale"
+      : "unavailable",
     updatedAt: railSchedule?.accessedAt,
     detail: railSchedule
       ? `Committed schedule covers ${railSchedule.validFrom} to ${railSchedule.validUntil}. Singapore Open Data Licence v1.0: ${LTA_OPEN_DATA_LICENCE}`
@@ -674,17 +829,37 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
       railSchedule,
     );
   }
-  if (!base.length)
-    throw new Error(
-      "No usable route found in the bundled map extract. Try a mapped station or supported Singapore place, or increase the walking limit.",
+  if (!base.length) throw new NoUsableRouteError();
+  if (request.timeline && request.dataMode === "demo") {
+    const input = timelineInputs(request.timeline);
+    const stops = new Map<string, Set<string>>();
+    for (const journey of base)
+      for (const segment of journey.segments) {
+        const stop = segment.mode === "bus" && busBoardingStop(segment);
+        if (stop) {
+          const services = stops.get(stop) ?? new Set<string>();
+          services.add(segment.line);
+          stops.set(stop, services);
+        }
+      }
+    for (const [stop, services] of stops)
+      conditions.buses.push(
+        ...parseBuses(input.bus(stop, [...services]), stop).map((bus) => ({
+          ...bus,
+          status: "demo" as const,
+        })),
+      );
+    base = base.map((journey) =>
+      applyBusArrivalTiming(journey, conditions.buses, request.departure),
     );
+  }
   if (request.dataMode === "live") {
     const stops = [
       ...new Set(
         base.flatMap((j) =>
           j.segments
             .filter((s) => s.mode === "bus")
-            .map((s) => s.stops.find((code) => /^\d{5}$/.test(code)))
+            .map(busBoardingStop)
             .filter((s): s is string => !!s),
         ),
       ),
@@ -695,9 +870,12 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
           const arrivals = await getBusArrivals(stop);
           conditions.buses.push(...arrivals.buses);
           conditions.feeds.push({
-            name: `Bus arrivals ${stop}`,
-            status: arrivals.status as "live" | "unavailable" | "stale",
-            detail: "Per-vehicle occupancy and wheelchair availability",
+            name: `${arrivals.simulated ? "SIMULATED · " : ""}Bus arrivals ${stop}`,
+            status: arrivals.status as
+              "live" | "unavailable" | "stale" | "demo",
+            detail: arrivals.simulated
+              ? "Local DataMall simulator · authored bus arrivals"
+              : "Per-vehicle occupancy and wheelchair availability",
           });
         } catch {
           conditions.feeds.push({
@@ -707,6 +885,9 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
           });
         }
       }),
+    );
+    base = base.map((journey) =>
+      applyBusArrivalTiming(journey, conditions.buses, request.departure),
     );
   }
   const baseline = [...base].sort((a, b) => a.duration - b.duration)[0];
@@ -729,9 +910,9 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
       ? weatherBlocksEveryRoute
         ? "Wait for the heavy weather to pass, then re-plan. Every mapped option currently includes an exposed section, so Wayce is not recommending a journey yet."
         : "Wait and re-plan before leaving. No verified usable route is available under the current conditions."
-    : recommended.id !== original.id
-      ? `Take ${recommended.title}. ${original.blocked ? "Avoid the affected route." : `Save about ${Math.max(0, original.duration - recommended.duration)} min compared with your usual route.`}`
-      : `Take ${recommended.title}. ${recommended.reasons[0] ?? "Your route is the best fit for the available conditions."}`;
+      : recommended.id !== original.id
+        ? `Take ${recommended.title}. ${original.blocked ? "Avoid the affected route." : `Save about ${Math.max(0, original.duration - recommended.duration)} min compared with your usual route.`}`
+        : `Take ${recommended.title}. ${recommended.reasons[0] ?? "Your route is the best fit for the available conditions."}`;
   if (travelDecision === "travel") {
     if (deadline && safeArrival > deadline)
       advice += ` Leave about ${Math.ceil((safeArrival - deadline) / 60000)} min earlier to keep an arrival buffer.`;

@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  timelineIds,
+  timelineTime,
+  timelineDuration,
+} from "../shared/timelines";
 export const preferencesSchema = z.object({
   stepFree: z.boolean(),
   sheltered: z.boolean(),
@@ -31,6 +36,12 @@ export const planSchema = z
       "closure",
     ]),
     dataMode: z.enum(["demo", "live"]),
+    timeline: z
+      .object({
+        id: z.enum(timelineIds),
+        minute: z.number().int().min(0).max(timelineDuration),
+      })
+      .optional(),
     demoWeather: z
       .object({
         kind: z.enum(["clear", "showers", "storm", "heat"]),
@@ -40,6 +51,21 @@ export const planSchema = z
       .optional(),
   })
   .superRefine((request, context) => {
+    if (
+      request.timeline &&
+      (request.dataMode !== "demo" ||
+        request.demoWeather ||
+        request.scenario !== "normal" ||
+        Date.parse(request.departure) !==
+          Date.parse(timelineTime(request.timeline)))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["timeline"],
+        message:
+          "Timelines require demo mode, matching simulated departure and no separate scenario or weather override",
+      });
+    }
     if (request.dataMode === "live" && request.demoWeather) {
       context.addIssue({
         code: "custom",
@@ -69,6 +95,7 @@ export const savedCommuteSchema = z
     if (
       commute.request.dataMode !== "live" ||
       commute.request.scenario !== "normal" ||
+      commute.request.timeline ||
       commute.request.demoWeather
     ) {
       context.addIssue({

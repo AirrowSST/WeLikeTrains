@@ -122,6 +122,7 @@ describe("official data contracts", () => {
               Load: "LSD",
               Feature: "WAB",
               Type: "DD",
+              Monitored: 1,
             },
           },
         ],
@@ -132,6 +133,7 @@ describe("official data contracts", () => {
       load: "high",
       wheelchair: true,
       type: "DD",
+      monitored: true,
     });
   });
   it("uses the current DataMall paths for audited road and flood feeds", () => {

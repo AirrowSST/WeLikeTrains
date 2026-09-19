@@ -264,11 +264,26 @@ observations.
 
 ### Stage 2 — live bus wait
 
-- Normalize BusStops, BusRoutes and BusServices for the supported routes first.
-- Apply BusArrival after candidate generation and select the first catchable monitored vehicle.
-- Re-evaluate transfers chronologically and rerank candidates.
+Status: first-catchable live-boarding slice and complete DataMall bus-reference
+snapshot import implemented locally on 2026-09-19.
+
+- BusStops, BusRoutes and BusServices are fetched to exhaustion in 500-row
+  pages, normalized into a bundled gzip snapshot and exposed as the map's
+  complete bus stop/service index. The recorded import contains 5,208 stops,
+  26,823 ordered route-stop rows and 801 service directions with no missing stop
+  joins.
+- Apply BusArrival after candidate generation and select the first catchable monitored vehicle. Implemented for the exact service and five-digit boarding-stop codes on the current supported OSM bus relations.
+- Re-evaluate transfers chronologically and rerank candidates. Implemented, including a second timing pass after earlier condition delays; stale, unmonitored, absent and out-of-horizon arrivals retain a labelled local wait estimate.
 
 Exit condition: a fixture with a missed first bus selects the second arrival, changes the journey duration and can change the recommended route.
+
+The loopback simulator now proves this at the real HTTP/planner boundary for Bus
+27, while focused planner tests cover downstream transfers, condition-delay
+reselection, stale fallback and a preference-aware recommendation change.
+Remaining Stage 2 work is to validate and expand the selected OSM geometry joins
+against the full official snapshot, then replace the coarse fallback with a
+labelled time-of-day frequency estimate. The snapshot alone is not treated as
+road geometry. Bus in-vehicle timing remains Stage 3 work.
 
 ### Stage 3 — traffic-aware bus running time
 

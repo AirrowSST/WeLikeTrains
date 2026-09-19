@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { ltaConnection } from "./lta-client";
 import express from "express";
 import helmet from "helmet";
 import compression from "compression";
@@ -6,7 +7,8 @@ import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { planJourney } from "./planner";
+import { NoUsableRouteError, planJourney } from "./planner";
+import { planChatContext } from "./chat-context";
 import { getBusArrivals } from "./feeds";
 import { listTransitStops } from "./network";
 import { chat, searchPlaces, speech } from "./providers";
@@ -30,6 +32,7 @@ import {
   sendReminders,
 } from "./notifications";
 
+ltaConnection(); // Reject invalid development overrides before serving requests.
 export const app = express();
 const skipTestRateLimit = () => process.env.DISABLE_RATE_LIMITS === "true";
 app.disable("x-powered-by");
@@ -56,7 +59,7 @@ app.use(
         imgSrc: ["'self'", "data:", "blob:", "https://www.onemap.gov.sg"],
         connectSrc: ["'self'", "https://accounts.google.com/gsi/"],
         frameSrc: ["https://accounts.google.com/gsi/"],
-        fontSrc: ["'self'"],
+        fontSrc: ["'self'", "https://cdn.fontshare.com"],
         mediaSrc: ["'self'", "blob:"],
         workerSrc: ["'self'"],
         upgradeInsecureRequests:
@@ -213,7 +216,7 @@ app.post(
       });
       return;
     }
-    const plan = body.request ? await planJourney(body.request) : undefined;
+    const plan = await planChatContext(body.request);
     res.json(await chat(body.message, plan, body.history));
   },
 );
@@ -318,9 +321,10 @@ app.use(
       return;
     }
     res.status(503).json({
-      error: error?.message?.startsWith("No usable route")
-        ? error.message
-        : "This service is temporarily unavailable. Your saved journey is still available offline.",
+      error:
+        error instanceof NoUsableRouteError
+          ? error.message
+          : "This service is temporarily unavailable. Your saved journey is still available offline.",
     });
   },
 );

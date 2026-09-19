@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
-import { Bell, Layers, LocateFixed } from "lucide-react";
-import type { Journey, PlanResponse, TransitStop } from "../shared/types";
-import type { Mode } from "../shared/types";
+import { Bell, Layers, LocateFixed, Route } from "lucide-react";
+import type {
+  Journey,
+  Mode,
+  PlanResponse,
+  Segment,
+  TransitStop,
+} from "../shared/types";
 import { lineColors } from "../shared/catalog";
 import type { LocationFix } from "./location";
 
 let basemapPromise: Promise<any> | undefined;
 
-const singaporeBounds = L.latLngBounds([1.144, 103.535], [1.494, 104.502]);
+// Match the committed OSM fallback's east/west coverage so a horizontal drag
+// cannot reveal a blank map beyond the available detail.
+const singaporeBounds = L.latLngBounds([1.144, 103.595], [1.494, 104.086]);
 const oneMapTiles =
   "https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png";
 const oneMapAttribution =
@@ -75,6 +82,66 @@ function transitStopPopup(stop: TransitStop) {
   return root;
 }
 
+function routeSegmentPopup(segment: Segment) {
+  const root = document.createElement("section");
+  root.className = "route-segment-popup";
+
+  const mode = document.createElement("span");
+  mode.className = `route-segment-popup-mode ${segment.mode}`;
+  mode.textContent =
+    segment.mode === "rail"
+      ? `Train ${segment.line}`
+      : segment.mode === "bus"
+        ? `Bus ${segment.line}`
+        : modeNames[segment.mode];
+
+  const heading = document.createElement("strong");
+  heading.textContent = `${segment.from} → ${segment.to}`;
+
+  const summary = document.createElement("span");
+  summary.className = "route-segment-popup-summary";
+  summary.textContent = `About ${Math.ceil(segment.minutes)} min`;
+
+  const details = document.createElement("dl");
+  const addDetail = (label: string, value: string) => {
+    const row = document.createElement("div");
+    const term = document.createElement("dt");
+    const description = document.createElement("dd");
+    term.textContent = label;
+    description.textContent = value;
+    row.append(term, description);
+    details.append(row);
+  };
+
+  if (segment.mode === "rail" || segment.mode === "bus") {
+    addDetail("Board", segment.from);
+    addDetail("Alight", segment.to);
+    if (segment.direction) addDetail("Towards", segment.direction);
+    if (segment.waitMinutes !== undefined)
+      addDetail("Wait", `${Math.ceil(segment.waitMinutes)} min`);
+    addDetail(
+      "Crowding",
+      segment.crowd === "unknown"
+        ? "Unknown"
+        : `${segment.crowd[0].toUpperCase()}${segment.crowd.slice(1)}`,
+    );
+  } else {
+    addDetail("Distance", `${Math.round(segment.distance)} m`);
+    if (segment.sheltered) addDetail("Shelter", "Mapped sheltered path");
+  }
+
+  const instructions = document.createElement("p");
+  instructions.textContent = segment.instructions;
+
+  root.append(mode, heading, summary, details, instructions);
+  if (segment.mode === "rail" || segment.mode === "bus") {
+    const source = document.createElement("small");
+    source.textContent = `Timing: ${segment.source}`;
+    root.append(source);
+  }
+  return root;
+}
+
 function centerMapOnLocation(map: L.Map, coord: L.LatLngExpression) {
   const mapRect = map.getContainer().getBoundingClientRect();
   const sheetRect = map
@@ -117,6 +184,9 @@ export default function JourneyMap({
   const map = useRef<L.Map | null>(null);
   const routes = useRef<L.LayerGroup | null>(null);
   const position = useRef<L.LayerGroup | null>(null);
+  const activeSegmentId = useRef<string | null>(null);
+  const activeSegmentPath = useRef<L.Polyline | null>(null);
+  const segmentPaths = useRef(new Map<string, L.Polyline>());
   const centeredOnLocation = useRef(false);
   const [mapError, setMapError] = useState(false);
   const [mapDetail, setMapDetail] = useState<
@@ -138,8 +208,11 @@ export default function JourneyMap({
       preferCanvas: false,
       scrollWheelZoom: allowMouseWheelZoom,
       maxBounds: singaporeBounds,
-      maxBoundsViscosity: 0.85,
-      minZoom: 11,
+      maxBoundsViscosity: 1,
+      minZoom: 12,
+      // Keep the map aligned with the highest detail supplied by OneMap and
+      // avoid an empty, over-zoomed view when the bundled OSM fallback is on.
+      maxZoom: 19,
     }).setView([1.325, 103.882], 12);
     map.current = m;
     m.attributionControl.setPrefix(false);
@@ -231,7 +304,7 @@ export default function JourneyMap({
     };
     const detailedTiles = L.tileLayer(oneMapTiles, {
       detectRetina: true,
-      minZoom: 11,
+      minZoom: 12,
       maxZoom: 19,
       maxNativeZoom: 19,
       bounds: singaporeBounds,
@@ -244,8 +317,7 @@ export default function JourneyMap({
       setMapError(false);
       setMapDetail("detailed");
       localPane.style.display = "none";
-      if (localBasemap && m.hasLayer(localBasemap))
-        m.removeLayer(localBasemap);
+      if (localBasemap && m.hasLayer(localBasemap)) m.removeLayer(localBasemap);
       element.current?.setAttribute("data-map-source", "onemap");
       element.current?.setAttribute("data-ready", "true");
     });
@@ -276,31 +348,52 @@ export default function JourneyMap({
     );
     const transitLayer = L.layerGroup().addTo(m);
     let transitStops: TransitStop[] = [];
+    let busStopsBesideStations = new Set<string>();
     const transitMarkers = new Map<string, L.Marker>();
     const updateTransitStops = () => {
+      if (!alive) return;
       const zoom = m.getZoom();
       const bounds = m.getBounds().pad(0.12);
       const showBusStops = zoom >= 14;
-      const visibleLimit = zoom === 11 ? 60 : Number.POSITIVE_INFINITY;
-      const visibleStops = new Set(
-        zoom < 11
+      const visibleLimit = zoom <= 12 ? 60 : Number.POSITIVE_INFINITY;
+      const candidates =
+        zoom < 12
           ? []
           : transitStops
               .filter(
                 (stop) =>
                   (stop.mode === "rail" || showBusStops) &&
+                  !busStopsBesideStations.has(stop.id) &&
                   bounds.contains([stop.lat, stop.lon]),
               )
               .sort(
                 (a, b) =>
+                  Number(a.mode === "bus") - Number(b.mode === "bus") ||
                   m.distance(m.getCenter(), [a.lat, a.lon]) -
-                  m.distance(m.getCenter(), [b.lat, b.lon]),
-              )
-              .slice(0, visibleLimit)
-              .map((stop) => stop.id),
+                    m.distance(m.getCenter(), [b.lat, b.lon]),
+              );
+      const markerSpacing = m.distance(
+        m.containerPointToLatLng([0, 0]),
+        m.containerPointToLatLng([42, 0]),
       );
+      const selectedStops: TransitStop[] = [];
+      for (const stop of candidates) {
+        if (
+          selectedStops.some(
+            (selectedStop) =>
+              m.distance(
+                [stop.lat, stop.lon],
+                [selectedStop.lat, selectedStop.lon],
+              ) < markerSpacing,
+          )
+        )
+          continue;
+        selectedStops.push(stop);
+        if (selectedStops.length >= visibleLimit) break;
+      }
+      const visibleStops = new Set(selectedStops.map((stop) => stop.id));
       for (const [id, marker] of transitMarkers)
-        if (!visibleStops.has(id)) {
+        if (!visibleStops.has(id) && !marker.isPopupOpen()) {
           transitLayer.removeLayer(marker);
           transitMarkers.delete(id);
         }
@@ -322,9 +415,10 @@ export default function JourneyMap({
         })
           .bindPopup(transitStopPopup(stop), { maxWidth: 230 })
           .addTo(transitLayer);
-        marker
-          .getElement()
-          ?.setAttribute("aria-label", `${stop.name} ${kind}`);
+        marker.on("popupclose", updateTransitStops);
+        const markerElement = marker.getElement();
+        markerElement?.setAttribute("aria-label", `${stop.name} ${kind}`);
+        if (markerElement) markerElement.dataset.transitStopId = stop.id;
         transitMarkers.set(stop.id, marker);
       }
     };
@@ -337,10 +431,27 @@ export default function JourneyMap({
       .then((stops) => {
         if (!alive) return;
         transitStops = stops;
+        const railStops = stops.filter((stop) => stop.mode === "rail");
+        busStopsBesideStations = new Set(
+          stops
+            .filter(
+              (stop) =>
+                stop.mode === "bus" &&
+                railStops.some(
+                  (station) =>
+                    m.distance(
+                      [stop.lat, stop.lon],
+                      [station.lat, station.lon],
+                    ) < 85,
+                ),
+            )
+            .map((stop) => stop.id),
+        );
         updateTransitStops();
       })
       .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
       });
     routes.current = L.layerGroup().addTo(m);
     position.current = L.layerGroup().addTo(m);
@@ -374,7 +485,11 @@ export default function JourneyMap({
     const m = map.current,
       group = routes.current;
     if (!m || !group || !plan) return;
+    const segmentToRestore = activeSegmentId.current;
+    let restoredActiveSegment = false;
     group.clearLayers();
+    segmentPaths.current.clear();
+    activeSegmentId.current = segmentToRestore;
     const journey = selected ?? plan.recommended;
     const comparing = journey.id !== plan.original.id;
     if (comparing) {
@@ -494,13 +609,15 @@ export default function JourneyMap({
         opacity: 0.9,
         interactive: false,
       }).addTo(group);
-      L.polyline(s.geometry, {
+      const routeWeight = s.mode === "walk" ? 4 : s.mode === "rail" ? 7 : 6;
+      const visibleClassName = comparing
+        ? `route-selected route-revised segment-${s.mode}`
+        : `route-selected segment-${s.mode}`;
+      const visiblePath = L.polyline(s.geometry, {
         color: colour,
-        weight: s.mode === "walk" ? 4 : s.mode === "rail" ? 7 : 6,
+        weight: routeWeight,
         opacity: 1,
-        className: comparing
-          ? "route-selected route-revised"
-          : "route-selected",
+        className: visibleClassName,
         dashArray:
           s.mode === "walk"
             ? "2 8"
@@ -510,9 +627,79 @@ export default function JourneyMap({
                 ? "4 5"
                 : undefined,
         lineCap: "round",
+        interactive: false,
+      }).addTo(group);
+      const hitClassName = `route-segment-hit ${s.mode}`;
+      const hitPath = L.polyline(s.geometry, {
+        color: colour,
+        weight: 24,
+        opacity: 0.01,
+        lineCap: "round",
+        className: hitClassName,
       })
         .bindTooltip(tooltip, { sticky: true })
+        .bindPopup(routeSegmentPopup(s), {
+          className: "route-segment-detail-popover",
+          maxWidth: 270,
+          keepInView: true,
+          autoPanPaddingTopLeft: [16, 72],
+          autoPanPaddingBottomRight: [16, 120],
+        })
         .addTo(group);
+      segmentPaths.current.set(s.id, hitPath);
+      const hitElement = hitPath.getElement() as SVGPathElement | null;
+      if (hitElement) {
+        const detailLabel =
+          s.mode === "rail"
+            ? `Train ${s.line}`
+            : s.mode === "bus"
+              ? `Bus ${s.line}`
+              : modeNames[s.mode];
+        hitElement.setAttribute("role", "button");
+        hitElement.setAttribute("tabindex", "0");
+        hitElement.setAttribute(
+          "aria-label",
+          `Open ${detailLabel} journey section details, ${s.from} to ${s.to}`,
+        );
+        hitElement.setAttribute("aria-expanded", "false");
+        hitElement.setAttribute("data-segment-id", s.id);
+        hitElement.addEventListener("keydown", (event) => {
+          const keyboardEvent = event as KeyboardEvent;
+          if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
+          keyboardEvent.preventDefault();
+          const midpoint = s.geometry[Math.floor(s.geometry.length / 2)];
+          hitPath.openPopup(midpoint);
+        });
+      }
+      const showSelectedPath = () => {
+        const currentPath = segmentPaths.current.get(s.id) ?? hitPath;
+        activeSegmentId.current = s.id;
+        activeSegmentPath.current = currentPath;
+        currentPath.options.className = `${hitClassName} route-selected segment-active`;
+        currentPath.setStyle({ weight: 10, opacity: 0.35 });
+        const element = currentPath.getElement();
+        element?.classList.add("route-selected", "segment-active");
+        element?.setAttribute("aria-expanded", "true");
+      };
+      const clearSelectedPath = () => {
+        hitPath.options.className = hitClassName;
+        hitPath.setStyle({ weight: 24, opacity: 0.01 });
+        const element = hitPath.getElement();
+        element?.classList.remove("route-selected", "segment-active");
+        element?.setAttribute("aria-expanded", "false");
+        if (activeSegmentPath.current === hitPath) {
+          activeSegmentId.current = null;
+          activeSegmentPath.current = null;
+        }
+      };
+      hitPath.on("click popupopen", showSelectedPath);
+      hitPath.on("popupclose", clearSelectedPath);
+      if (segmentToRestore === s.id) {
+        restoredActiveSegment = true;
+        const midpoint = s.geometry[Math.floor(s.geometry.length / 2)];
+        showSelectedPath();
+        hitPath.openPopup(midpoint);
+      }
       if (s.mode === "rail" || s.mode === "bus") {
         for (const coord of [s.geometry[0], s.geometry.at(-1)!])
           L.circleMarker(coord, {
@@ -555,11 +742,13 @@ export default function JourneyMap({
           }),
         }).addTo(group);
     });
+    if (segmentToRestore && !restoredActiveSegment) {
+      activeSegmentId.current = null;
+      activeSegmentPath.current = null;
+    }
     const points = [
       ...journey.segments.flatMap((s) => s.geometry),
-      ...(comparing
-        ? plan.original.segments.flatMap((s) => s.geometry)
-        : []),
+      ...(comparing ? plan.original.segments.flatMap((s) => s.geometry) : []),
     ];
     if (points.length) {
       const marker = (
@@ -640,24 +829,41 @@ export default function JourneyMap({
       )
       .addTo(group);
   }, [location]);
-  const recenter = () => {
-    const routePoints =
-      (selected ?? plan?.recommended)?.segments.flatMap((s) => s.geometry) ??
-      [];
-    if (!routePoints.length && location && map.current) {
+  const goToLocation = () => {
+    if (location && map.current) {
       centerMapOnLocation(map.current, [location.lat, location.lon]);
-      return;
     }
-    const points = [...routePoints];
-    if (location) points.push([location.lat, location.lon]);
-    if (points?.length)
-      map.current?.fitBounds(L.latLngBounds(points), {
-        padding: [55, 70],
-        maxZoom: 15,
-      });
   };
   const journey = selected ?? plan?.recommended;
   const comparing = !!plan && !!journey && journey.id !== plan.original.id;
+  const showFullRoute = () => {
+    const points = [
+      ...(journey?.segments.flatMap((segment) => segment.geometry) ?? []),
+      ...(comparing
+        ? plan.original.segments.flatMap((segment) => segment.geometry)
+        : []),
+    ];
+    if (!points.length || !map.current) return;
+
+    const mapRect = map.current.getContainer().getBoundingClientRect();
+    const sheetRect = map.current
+      .getContainer()
+      .closest(".journey-layout")
+      ?.querySelector<HTMLElement>(".journey-sheet")
+      ?.getBoundingClientRect();
+    const coveredHeight = sheetRect
+      ? Math.max(
+          0,
+          Math.min(mapRect.bottom, sheetRect.bottom) -
+            Math.max(mapRect.top, sheetRect.top),
+        )
+      : 0;
+    map.current.fitBounds(L.latLngBounds(points), {
+      paddingTopLeft: [55, 70],
+      paddingBottomRight: [55, Math.round(coveredHeight) + 32],
+      maxZoom: 15,
+    });
+  };
   const visibleModes = (["walk", "bus", "rail", "cycle"] as Mode[]).filter(
     (mode) => journey?.segments.some((segment) => segment.mode === mode),
   );
@@ -680,10 +886,19 @@ export default function JourneyMap({
         </button>
         <button
           className="icon-button"
-          onClick={recenter}
-          aria-label="Recenter map"
+          onClick={goToLocation}
+          aria-label="Go to location"
+          disabled={!location}
         >
           <LocateFixed size={19} />
+        </button>
+        <button
+          className="icon-button"
+          onClick={showFullRoute}
+          aria-label="Show full route"
+          disabled={!journey}
+        >
+          <Route size={19} />
         </button>
       </div>
       {comparing && (

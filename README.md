@@ -10,7 +10,7 @@ The normal app starts in a local guest space with editable preferences and daily
 
 The app opens as a standard guest using live-mode source labels. No account or API key is required for local routing. To present deterministic scenarios, open **Account**, enable **Developer mode**, then open the demo presets. The places and OSM routes are real; demo incidents, crowd levels, weather and delays are synthetic, not a claim about current service.
 
-1. Open **Account**, enable Developer mode, load Rachel, and change the simulated network or custom weather controls to compare normal service, disruption, crowds, rain, closure or lift maintenance.
+1. Open **Account**, enable Developer mode, select Rachel, Arjun or Mdm Lim, and choose **Control · no events** or **Eventful**. Start the demo, then use timeline play/pause, restart, speed and event jumps to compare conditions and recovery.
 2. Compare the original and revised route on the detailed OneMap basemap. Swipe route cards for time, crowd and walking trade-offs. Open **Full details** for directions and limitations. When OneMap is unavailable, the map visibly falls back to the bundled OSM extract.
 3. In normal Live mode, Wayce requests a one-shot foreground location when it opens, starts with **Where to?**, and defaults departure to **Now**. Permission failures stay visible and the origin remains editable. In a demo, tap **Use simulated location** to preview the labelled position. The active journey can show continuous foreground location until it is closed; progress remains manual and there is no background tracking.
 4. Open the companion, consent to sending route context, then type or tap the microphone to dictate a question. Voice input stays as a reviewable draft until you send it; browser speech recognition may use the browser vendor's online service. Review preference changes before applying them, or tap the speaker to hear a reply.
@@ -33,6 +33,80 @@ Open http://localhost:8080. For development, `npm run dev` serves the UI at http
 Optional: copy `.env.example` to `.env` and fill credentials. Never commit `.env`. Google account sync additionally requires a Google Identity Services web client ID, a server-only session secret and Firestore; live conditions use an LTA credential. The deployed app’s AI/speech use an attached Google service account—no downloadable service-account key is needed. Map display, place search and route computation require no provider credentials.
 
 ## Verification
+
+### Local DataMall simulator
+
+The in-app developer timelines run without a separate server or credentials.
+They share authored API payload generators with the HTTP simulator, pass transport
+payloads through the feed parsers, and never fetch real weather for a timeline.
+Both timelines for each profile start at that profile's departure time on
+21 September 2026 and last 60 simulated minutes. Control remains clear and
+normal; eventful starts a transport event at +5 minutes (Rachel: EWL, Arjun:
+NEL, Mdm Lim: Outram Park lift), heavy rain at +12, clear weather at +25 and
+transport recovery at +40. These are synthetic exercises, not historical events.
+Playback advances one simulated minute per step, waiting for planning to finish.
+It replans from the selected origin; journey progress and simulated location
+steps remain manually controlled. Exit demo restores the guest/account space.
+
+To inspect matching raw payloads, append
+`?timeline=rachel-eventful&minute=12` to a simulator endpoint. IDs are
+`rachel-control`, `rachel-eventful`, `arjun-control`, `arjun-eventful`,
+`lim-control`, and `lim-eventful`; minute is an integer from 0 to 60.
+Timeline endpoints include `TrainServiceAlerts`, `v2/FacilitiesMaintenance`,
+`PCDRealTime`/`PCDForecast` (with `TrainLine`), `v3/BusArrival` (with
+`BusStopCode`), and the synthetic NEA `two-hr-forecast` fixture. Timeline
+queries are request-scoped and do not alter the simulator's failure scenarios.
+
+Run `npm run dev:datamall missed-first-bus` in one terminal.
+In a second PowerShell terminal, launch the app with:
+
+```powershell
+$env:LTA_BASE_URL = 'http://127.0.0.1:8090/ltaodataservice'
+npm run dev
+```
+
+Use the app's normal/live mode to exercise HTTP adapters. LTA feed rows and
+notices display **SIMULATED**; the server always sends `local-test-key`, so no
+real credential is required. NEA weather, OneMap and optional account/AI services
+retain their existing configuration; this simulates LTA only. To return to real
+LTA, remove the process override with `Remove-Item Env:LTA_BASE_URL` and restart
+the app. No `.env` edits are needed.
+
+Scenarios: `normal`, `missed-first-bus`, `partial-failure`, `stale`, `timeout`,
+`rate-limited`, `malformed`. Restart the simulator to change scenarios; restart
+the app to clear its cached responses when an immediate change is needed.
+`stale` succeeds on the first request per endpoint and then returns 503; leave
+the app cache intact and wait for its normal TTL to test stale fallback.
+`partial-failure` fails only TrafficSpeedBands. For extra options, call the script
+directly: `node --import tsx scripts/dev-datamall.ts --port=8091 --scenario=missed-first-bus --clock=2026-09-21T07:40:00+08:00`.
+Without
+`--clock`, arrivals are relative to the current time. The missed-bus scenario
+returns arrivals at +6/+11/+18 minutes, suitable for an eight-minute access walk.
+For supported OSM bus routes, the live planner advances through the access walk,
+ignores arrivals that leave before the commuter reaches the boarding stop, and
+replaces the fixed wait with the first fresh monitored arrival. It rechecks later
+bus legs after earlier condition delays. Stale, unmonitored or unavailable
+arrivals retain a visibly labelled estimated-wait fallback; bus in-vehicle time
+is still estimated.
+
+BusArrival, BusStops, BusRoutes, BusServices and GTFS metadata/ZIP downloads are
+available, alongside traffic/flood fixtures, a labelled train advisory and empty
+crowd/maintenance/road-work feeds. Reference tables contain 501 synthetic rows
+to exercise `$skip` pagination (500, 1, then 0 rows); they are contract fixtures,
+not a realistic national network. Unknown endpoints return 404.
+
+With the override set, `npm run data:gtfs` exercises the importer using the
+authored GTFS ZIP, while `npm run data:buses` exercises complete 500-row
+pagination for BusStops, BusRoutes and BusServices. Simulated output is labelled
+and restricted to `.cache/` (default `.cache/datamall/`); it cannot replace the
+official bundled snapshots.
+Download links expire after 15 minutes. Production rejects all base-URL
+overrides, and local overrides accept only HTTP `127.0.0.1` addresses.
+
+Run `npx vitest run tests/datamall-simulator.test.ts` for the HTTP and real-planner
+regressions, including the fixed-clock Bus 27 missed-first-bus journey.
+
+### Standard checks
 
 ```sh
 npx playwright install chromium
@@ -78,7 +152,7 @@ This enables APIs, creates scoped service accounts, imports nonempty `.env` cred
 - Gemini on Vertex AI explains and selects among computed routes and interviews preferences; Cloud Text-to-Speech reads replies. Bounded function calls turn chat input into validated preference proposals or supplied-route recommendations. Routes are computed outside the model, returned IDs are checked, and preference changes require confirmation. A labelled local guide remains available if AI fails.
 - The disruption **risk index is rule-based**, not a trained AI predictor or calibrated probability. No historical accuracy claim is made. A lack of signals does not mean disruption is impossible.
 - Step-free mode excludes mapped stairs and known station lift outages, but station access, unmapped obstacles and shelter are **not fully verified**. Do not treat this prototype as certified accessible navigation. Rachel is the primary validated persona.
-- The bundled transit extract covers rail and selected bus routes, not every bus or address in Singapore. Place search covers the curated landmarks and named stops in that extract. Planned road-work notices are informational without verified route geometry. Unstructured advisories are shown verbatim, not automatically turned into closures.
+- The map's bundled DataMall reference snapshot covers all bus stops and service/route rows returned by the three official endpoints at its recorded access date. Door-to-door routing geometry still covers rail and selected OSM bus relations, not every bus or address in Singapore; the reference snapshot does not manufacture missing road geometry. Place search covers the curated landmarks and named stops in the routable extract. Planned road-work notices are informational without verified route geometry. Unstructured advisories are shown verbatim, not automatically turned into closures.
 - Background alerts require opt-in browser permission and compatible installed-web-app support. Saved routines repeat daily and expire after 30 days. Delivery is not guaranteed when a device or platform restricts push.
 - Guest preferences and commutes remain local. Google account sync is optional, uses a server-verified Google identity and persists until the user deletes the account data. Signing out restores the separate guest space. Faux demo accounts never sync or register reminders.
 - Foreground browser location is opt-in. Demo mode uses a labelled deterministic position without requesting device permission; live failures remain visible and never become simulated data. Live tracking stops when the active journey closes.

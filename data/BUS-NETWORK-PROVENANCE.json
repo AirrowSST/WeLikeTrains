@@ -1,0 +1,18 @@
+{
+  "generatedAt": "2026-09-18T23:46:09.704Z",
+  "source": [
+    "https://datamall2.mytransport.sg/ltaodataservice/BusStops",
+    "https://datamall2.mytransport.sg/ltaodataservice/BusRoutes",
+    "https://datamall2.mytransport.sg/ltaodataservice/BusServices"
+  ],
+  "licence": "Singapore Open Data Licence version 1.0",
+  "simulated": false,
+  "licenceNotice": "Contains information from LTA DataMall, accessed on 2026-09-19, made available under the Singapore Open Data Licence version 1.0.",
+  "derivedFile": "bus-network.json.gz",
+  "sha256": "3170f2eb4c84427b6a1115c8f84be9c8b8e5c7cbb7cb864f837265c644e4baa5",
+  "stopCount": 5208,
+  "routeRowCount": 26823,
+  "serviceDirectionCount": 801,
+  "orphanRouteStopCount": 0,
+  "refresh": "Explicit maintenance only: npm run data:buses"
+}

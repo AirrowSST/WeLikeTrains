@@ -9,6 +9,8 @@ import type {
   TrafficReading,
 } from "../shared/types";
 import { canonicalLine, crowdValue } from "../shared/catalog";
+import { ltaConnection } from "./lta-client";
+import { timelineInputs } from "../shared/timelines";
 
 type Obj = Record<string, any>;
 export const LTA_ENDPOINTS = {
@@ -32,6 +34,7 @@ export async function cachedFetch(
     task = (async () => {
       const r = await fetch(url, {
         headers,
+        redirect: headers.AccountKey ? "error" : "follow",
         signal: AbortSignal.timeout(7000),
       });
       if (!r.ok) throw new Error(`Upstream HTTP ${r.status}`);
@@ -154,6 +157,8 @@ export function parseBuses(raw: Obj, stop: string): BusArrival[] {
               load: crowdValue(s[key].Load),
               wheelchair: s[key].Feature === "WAB",
               type: s[key].Type ?? "",
+              monitored:
+                s[key].Monitored === 1 || String(s[key].Monitored) === "1",
             },
           ]
         : [],
@@ -597,10 +602,59 @@ export function demoConditions(
 export async function getConditions(
   request: Pick<
     PlanRequest,
-    "dataMode" | "scenario" | "departure" | "demoWeather"
+    "dataMode" | "scenario" | "departure" | "demoWeather" | "timeline"
   > &
     Partial<Pick<PlanRequest, "origin" | "destination">>,
 ): Promise<Conditions> {
+  const connection = ltaConnection();
+  if (request.dataMode === "demo" && request.timeline) {
+    const input = timelineInputs(request.timeline);
+    const forecast = input.weather.data.items[0].forecasts[0].forecast;
+    const rain = /showers/i.test(forecast);
+    const notices = parseTrainAlerts(input.alerts, input.at);
+    for (const lift of input.maintenance.value)
+      notices.push({
+        id: "timeline-lift",
+        title: lift.LiftDesc,
+        description: lift.LiftDesc,
+        kind: "lift",
+        severity: "warning",
+        stations: [lift.StationCode],
+        stationNames: [lift.StationName],
+        startsAt: lift.StartDate,
+        endsAt: lift.EndDate,
+        delayMinutes: 0,
+        source: "SIMULATED DataMall FacilitiesMaintenance",
+      });
+    return {
+      notices: notices.map((n) => ({
+        ...n,
+        title: n.title.startsWith("SIMULATED")
+          ? n.title
+          : `SIMULATED · ${n.title}`,
+        source: `SIMULATED · ${n.source}`,
+      })),
+      crowd: parseCrowds(input.crowd, input.line),
+      buses: [],
+      traffic: [],
+      weather: {
+        forecast: `SIMULATED · ${forecast}`,
+        rain,
+        rainfallMm: rain ? 10 : 0,
+        temperature: 29,
+        walkStatus: rain ? "invalid" : "valid",
+        cycleStatus: rain ? "invalid" : "valid",
+      },
+      feeds: ["DataMall transport", "NEA weather"].map((name) => ({
+        name: `SIMULATED · ${name}`,
+        status: "demo" as const,
+        updatedAt: input.at,
+        detail: `${request.timeline!.id} · minute ${request.timeline!.minute} · authored API inputs`,
+      })),
+      updatedAt: input.at,
+      mode: "demo",
+    };
+  }
   if (request.dataMode === "demo")
     return demoConditions(
       request.scenario,
@@ -628,7 +682,8 @@ export async function getConditions(
     ttl: number,
     consume: (raw: Obj) => void,
   ) {
-    if (!process.env.LTA_ACCOUNT_KEY) {
+    const connection = ltaConnection();
+    if (!connection.key) {
       conditions.feeds.push({
         name,
         status: "unavailable",
@@ -638,26 +693,29 @@ export async function getConditions(
     }
     try {
       const item = await cachedFetch(
-        endpoint,
-        `https://datamall2.mytransport.sg/ltaodataservice/${endpoint}`,
+        `${connection.base}/${endpoint}`,
+        `${connection.base}/${endpoint}`,
         ttl,
-        { AccountKey: process.env.LTA_ACCOUNT_KEY, Accept: "application/json" },
+        { AccountKey: connection.key, Accept: "application/json" },
       );
       consume(item.value);
       conditions.feeds.push({
-        name,
-        status: item.stale ? "stale" : "live",
+        name: connection.simulated ? `SIMULATED · ${name}` : name,
+        status: item.stale ? "stale" : connection.simulated ? "demo" : "live",
         updatedAt: new Date(item.at).toISOString(),
-        detail: item.stale
-          ? "Cached after an upstream failure"
-          : "Official LTA DataMall",
+        detail: connection.simulated
+          ? `Local DataMall simulator${item.stale ? " · cached after a synthetic outage" : " · authored test data"}`
+          : item.stale
+            ? "Cached after an upstream failure"
+            : "Official LTA DataMall",
       });
     } catch {
       conditions.feeds.push({
-        name,
+        name: connection.simulated ? `SIMULATED · ${name}` : name,
         status: "unavailable",
-        detail:
-          "Official feed could not be reached; no normal-service claim is made",
+        detail: connection.simulated
+          ? "Local DataMall simulator unavailable"
+          : "Official feed could not be reached; no normal-service claim is made",
       });
     }
   }
@@ -910,19 +968,35 @@ export async function getConditions(
       }
     })(),
   ]);
+  if (connection.simulated) {
+    for (const notice of conditions.notices) {
+      notice.title = `SIMULATED · ${notice.title}`;
+      notice.source = `Local DataMall simulator · ${notice.source}`;
+    }
+    for (const traffic of conditions.traffic)
+      traffic.source = `SIMULATED · ${traffic.source}`;
+  }
   return conditions;
 }
 export async function getBusArrivals(stop: string) {
-  if (!process.env.LTA_ACCOUNT_KEY) return { buses: [], status: "unavailable" };
+  const connection = ltaConnection();
+  if (!connection.key)
+    return { buses: [], status: "unavailable", simulated: false };
   const result = await cachedFetch(
-    `bus-${stop}`,
-    `https://datamall2.mytransport.sg/ltaodataservice/v3/BusArrival?BusStopCode=${stop}`,
+    `${connection.base}/bus-${stop}`,
+    `${connection.base}/v3/BusArrival?BusStopCode=${encodeURIComponent(stop)}`,
     30000,
-    { AccountKey: process.env.LTA_ACCOUNT_KEY },
+    { AccountKey: connection.key },
   );
+  const status: "live" | "demo" | "stale" = result.stale
+    ? "stale"
+    : connection.simulated
+      ? "demo"
+      : "live";
   return {
-    buses: parseBuses(result.value, stop),
-    status: result.stale ? "stale" : "live",
+    buses: parseBuses(result.value, stop).map((bus) => ({ ...bus, status })),
+    status,
+    simulated: connection.simulated,
     updatedAt: new Date(result.at).toISOString(),
   };
 }

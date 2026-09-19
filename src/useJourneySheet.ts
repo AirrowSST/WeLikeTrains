@@ -5,13 +5,18 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-const snapHeights = () => {
-  const middle = Math.min(510, Math.max(340, window.innerHeight * 0.51));
-  return [
-    28,
-    middle,
-    Math.max(middle, Math.min(600, window.innerHeight * 0.7)),
-  ];
+const FALLBACK_NAV_HEIGHT = 70;
+
+const snapHeights = (layout?: HTMLDivElement | null) => {
+  const stageHeight =
+    layout?.getBoundingClientRect().height ||
+    Math.max(0, window.innerHeight - FALLBACK_NAV_HEIGHT);
+  const collapsed = Math.min(72, stageHeight);
+  const middle = Math.min(
+    stageHeight,
+    Math.max(collapsed, Math.min(440, stageHeight * 0.56)),
+  );
+  return [stageHeight, middle, collapsed];
 };
 
 /** Owns the sheet's physical layout independently of route and map rendering. */
@@ -26,16 +31,19 @@ export function useJourneySheet(active: boolean) {
   const paint = (height: number) => {
     position.current = height;
     journeyLayout.current?.style.setProperty(
-      "--journey-map-height",
+      "--journey-sheet-height",
       `${height}px`,
     );
   };
   const snapJourneySheet = (snap: number) => {
     const next = Math.max(0, Math.min(2, snap));
-    paint(snapHeights()[next]);
+    paint(snapHeights(journeyLayout.current)[next]);
     setSheetSnap(next);
-    const top = journeyLayout.current?.getBoundingClientRect().top ?? 0;
-    if (next === 0 && top < 0) window.scrollBy({ top, behavior: "instant" });
+    if (next === 2) {
+      journeyLayout.current
+        ?.querySelector<HTMLElement>(".journey-sheet-scroll")
+        ?.scrollTo({ top: 0, behavior: "instant" });
+    }
     requestAnimationFrame(() =>
       window.dispatchEvent(new Event("wayce:journey-sheet-resized")),
     );
@@ -43,9 +51,10 @@ export function useJourneySheet(active: boolean) {
 
   useEffect(() => {
     if (!active) return;
-    // Otherwise the browser compensates for map resizing by scrolling the page,
-    // pinning the visible handle in place even though its layout position moves.
+    // The journey is a viewport-bound map and bottom sheet. Only the sheet's
+    // inner scroller should move; the document itself must stay put.
     document.documentElement.classList.add("journey-sheet-active");
+    window.scrollTo({ top: 0, behavior: "instant" });
     return () => {
       document.documentElement.classList.remove("journey-sheet-active");
       cleanupDrag.current?.();
@@ -55,7 +64,7 @@ export function useJourneySheet(active: boolean) {
 
   useEffect(() => {
     if (!active) return;
-    const resize = () => paint(snapHeights()[sheetSnap]);
+    const resize = () => paint(snapHeights(journeyLayout.current)[sheetSnap]);
     resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
@@ -70,12 +79,12 @@ export function useJourneySheet(active: boolean) {
       (interactive && interactive !== event.currentTarget)
     )
       return;
-    const slot = journeyLayout.current?.querySelector(".journey-map-slot");
-    if (!slot) return;
+    const sheet = journeyLayout.current?.querySelector(".journey-sheet");
+    if (!sheet) return;
     cleanupDrag.current?.();
     const pointerId = event.pointerId;
     const startY = event.clientY;
-    const startHeight = slot.getBoundingClientRect().height;
+    const startHeight = sheet.getBoundingClientRect().height;
     const startSnap = sheetSnap;
     const target = event.currentTarget;
     sheetMoved.current = false;
@@ -87,8 +96,8 @@ export function useJourneySheet(active: boolean) {
       pointer.preventDefault();
       const delta = pointer.clientY - startY;
       if (Math.abs(delta) > 4) sheetMoved.current = true;
-      const heights = snapHeights();
-      paint(Math.max(heights[0], Math.min(heights[2], startHeight + delta)));
+      const heights = snapHeights(journeyLayout.current);
+      paint(Math.max(heights[2], Math.min(heights[0], startHeight - delta)));
     };
     const cleanup = () => {
       window.removeEventListener("pointermove", move);
@@ -102,7 +111,7 @@ export function useJourneySheet(active: boolean) {
       cleanup();
       cleanupDrag.current = null;
       setSheetDragging(false);
-      const heights = snapHeights();
+      const heights = snapHeights(journeyLayout.current);
       const nearest = heights.reduce(
         (best, height, index) =>
           Math.abs(height - position.current) <
@@ -113,9 +122,9 @@ export function useJourneySheet(active: boolean) {
       );
       const distance = position.current - startHeight;
       const next =
-        distance <= -40
+        distance >= 40
           ? Math.min(nearest, startSnap - 1)
-          : distance >= 40
+          : distance <= -40
             ? Math.max(nearest, startSnap + 1)
             : nearest;
       snapJourneySheet(cancelled ? startSnap : next);
@@ -128,7 +137,10 @@ export function useJourneySheet(active: boolean) {
         return;
       finish(true);
     };
-    cleanupDrag.current = cleanup;
+    cleanupDrag.current = () => {
+      cleanup();
+      setSheetDragging(false);
+    };
     window.addEventListener("pointermove", move, { passive: false });
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", cancel);
