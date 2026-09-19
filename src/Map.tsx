@@ -64,35 +64,6 @@ function labelledIcon(
   return root;
 }
 
-function sameCoordinate(
-  first: [number, number] | undefined,
-  second: [number, number] | undefined,
-) {
-  return (
-    !!first &&
-    !!second &&
-    Math.abs(first[0] - second[0]) < 0.00001 &&
-    Math.abs(first[1] - second[1]) < 0.00001
-  );
-}
-
-function nextTransitSegment(segments: Segment[], index: number) {
-  for (let current = index + 1; current < segments.length; current += 1) {
-    const segment = segments[current];
-    if (segment.mode === "bus" || segment.mode === "rail") return segment;
-  }
-  return undefined;
-}
-
-function busRouteLabel(label: string, kind: "board" | "alight" | "transfer") {
-  const root = document.createElement("span");
-  root.className = `bus-route-label ${kind}`;
-  const text = document.createElement("strong");
-  text.textContent = label;
-  root.append(text);
-  return root;
-}
-
 function transitStopIcon(stop: TransitStop) {
   const root = document.createElement("span");
   root.className = "transit-stop-content";
@@ -294,6 +265,7 @@ export default function JourneyMap({
   /** Results view recentres on the selected option rather than comparing it. */
   focusSelectedRoute?: boolean;
 }) {
+  const routeOnly = focusSelectedRoute || navigationMode;
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const routes = useRef<L.LayerGroup | null>(null);
@@ -571,6 +543,11 @@ export default function JourneyMap({
     let transitStops: TransitStop[] = [];
     const updateTransitStops = () => {
       if (!alive) return;
+      if (routeOnly) {
+        transitLayer.clearLayers();
+        transitMarkers.current.clear();
+        return;
+      }
       const zoom = m.getZoom();
       const bounds = m.getBounds().pad(0.12);
       const showBusStops = zoom >= busStopsMinZoom;
@@ -831,8 +808,7 @@ export default function JourneyMap({
         }).addTo(group);
       });
     }
-    journey.segments.forEach((s, index) => {
-      const schematicBus = s.mode === "bus" && s.geometryKind === "schematic";
+    journey.segments.forEach((s) => {
       const focused = navigationMode && s.id === focusSegmentId;
       const issues = s.issues ?? [];
       const severe =
@@ -843,121 +819,22 @@ export default function JourneyMap({
           ? "#c55c40"
           : issues.includes("congestion")
             ? "#d99216"
-            : s.mode === "walk"
-              ? "#4c5968"
-              : s.mode === "bus"
-                ? "#7b3fc6"
+              : s.mode === "walk"
+               ? "#7d8581"
+               : s.mode === "bus"
+                 ? "#8cc8a3"
                 : s.mode === "cycle"
                   ? "#d06c18"
                   : (lineColors[s.line] ?? "#235ba8");
       const tooltip = document.createElement("span");
       tooltip.textContent = `${s.from} → ${s.to}`;
-      if (s.mode === "bus") {
-        const previous = journey.segments[index - 1];
-        const next = nextTransitSegment(journey.segments, index);
-        const boardingAlreadyLabelled =
-          previous?.mode === "bus" &&
-          sameCoordinate(previous.geometry.at(-1), s.geometry[0]);
-        const transferAtAlighting =
-          next?.mode === "bus" &&
-          sameCoordinate(s.geometry.at(-1), next.geometry[0]);
-        const stops: {
-          coord: [number, number] | undefined;
-          label: string;
-          kind: "board" | "alight" | "transfer";
-        }[] = [];
-        if (!boardingAlreadyLabelled)
-          stops.push({
-            coord: s.geometry[0],
-            label: `Board Bus ${s.line}`,
-            kind: "board",
-          });
-        stops.push({
-          coord: s.geometry.at(-1),
-          label: transferAtAlighting
-            ? `Alight Bus ${s.line} · Board Bus ${next.line}`
-            : `Alight Bus ${s.line}`,
-          kind: transferAtAlighting ? "transfer" : "alight",
-        });
-        stops.forEach(({ coord, label, kind }) => {
-          if (!coord) return;
-          L.marker(coord, {
-            interactive: false,
-            keyboard: false,
-            zIndexOffset: 1400,
-            icon: L.divIcon({
-              className: "bus-route-label-anchor",
-              html: busRouteLabel(label, kind),
-              iconSize: [148, 26],
-              iconAnchor: [74, 34],
-            }),
-          }).addTo(group);
-        });
-      }
-      if (schematicBus) {
-        const stops = s.hops?.length
-          ? s.hops.flatMap((hop, index) =>
-              index === 0
-                ? [
-                    { name: hop.from, coord: hop.geometry[0] },
-                    { name: hop.to, coord: hop.geometry.at(-1) },
-                  ]
-                : [{ name: hop.to, coord: hop.geometry.at(-1) }],
-            )
-          : [
-              { name: s.from, coord: s.geometry[0] },
-              { name: s.to, coord: s.geometry.at(-1) },
-            ];
-        // These are ordered DataMall stop occurrences. The connector makes
-        // the sequence legible, but its thin dotted treatment keeps clear
-        // that it is a schematic rather than the road path travelled.
-        L.polyline(s.geometry, {
-          className: "bus-route-schematic",
-          color: "#6852b8",
-          weight: 2,
-          opacity: 0.8,
-          dashArray: "3 6",
-          lineCap: "round",
-          interactive: false,
-        }).addTo(group);
-        stops.forEach((stop, index) => {
-          if (!stop.coord) return;
-          const label = document.createElement("span");
-          label.textContent = `${index + 1}. ${stop.name} · Bus ${s.line}`;
-          const number = document.createElement("span");
-          number.textContent = String(index + 1);
-          const marker = L.marker(stop.coord, {
-            title: label.textContent,
-            zIndexOffset: 350,
-            icon: L.divIcon({
-              className: "bus-line-stop bus-route-stop",
-              html: number,
-              iconSize: [44, 44],
-              iconAnchor: [22, 22],
-            }),
-          })
-            .bindTooltip(label)
-            .bindPopup(routeSegmentPopup(s), {
-              className: "route-segment-detail-popover",
-              maxWidth: 270,
-              keepInView: true,
-              autoPanPaddingTopLeft: [16, 72],
-              autoPanPaddingBottomRight: [16, 120],
-            })
-            .addTo(group);
-          marker
-            .getElement()
-            ?.setAttribute("aria-label", label.textContent ?? `Bus ${s.line}`);
-        });
-        return;
-      }
       L.polyline(s.geometry, {
         color: "#fff",
-        weight: focused ? 15 : s.mode === "walk" ? 8 : 11,
+        weight: focused ? 17 : s.mode === "walk" ? 9 : 13,
         opacity: 0.9,
         interactive: false,
       }).addTo(group);
-      const routeWeight = s.mode === "walk" ? 4 : s.mode === "rail" ? 7 : 6;
+      const routeWeight = s.mode === "walk" ? 4 : s.mode === "rail" ? 9 : 8;
       const visibleClassName = `${
         comparing ? "route-selected route-revised" : "route-selected"
       } segment-${s.mode}${focused ? " navigation-active" : ""}`;
@@ -967,19 +844,15 @@ export default function JourneyMap({
         opacity: navigationMode && focusSegmentId && !focused ? 0.42 : 1,
         className: visibleClassName,
         dashArray:
-          s.geometryKind === "schematic"
+          s.mode === "walk"
             ? "3 9"
-            : s.mode === "walk"
-              ? "2 8"
-              : s.mode === "bus"
-                ? "12 7"
-                : s.mode === "cycle"
-                  ? "4 5"
-                  : undefined,
+            : s.mode === "cycle"
+              ? "4 5"
+              : undefined,
         lineCap: "round",
         interactive: false,
       }).addTo(group);
-      if (s.mode === "walk") {
+      if (s.mode === "walk" && !routeOnly) {
         const sections = s.shelterSections?.length
           ? s.shelterSections
           : [
@@ -1085,17 +958,30 @@ export default function JourneyMap({
         hitPath.openPopup(midpoint);
       }
       if (s.mode === "rail" || s.mode === "bus") {
-        for (const coord of [s.geometry[0], s.geometry.at(-1)!])
+        const stopCoords = [
+          s.geometry[0],
+          ...(s.hops?.map((hop) => hop.geometry.at(-1)) ?? []),
+          s.geometry.at(-1),
+        ]
+          .filter((coord): coord is [number, number] => !!coord)
+          .filter(
+            (coord, index, all) =>
+              all.findIndex(
+                (candidate) =>
+                  candidate[0] === coord[0] && candidate[1] === coord[1],
+              ) === index,
+          );
+        for (const coord of stopCoords)
           L.circleMarker(coord, {
-            radius: 5,
-            color: lineColors[s.line] ?? "#184e40",
+            radius: 5.5,
+            color: colour,
             weight: 3,
             fillColor: "#fff",
             fillOpacity: 1,
           }).addTo(group);
       }
       const midpoint = s.geometry[Math.floor(s.geometry.length / 2)];
-      if (midpoint) {
+      if (midpoint && !routeOnly) {
         const label =
           s.mode === "rail" || s.mode === "bus" ? s.line : modeNames[s.mode];
         L.marker(midpoint, {
@@ -1126,7 +1012,9 @@ export default function JourneyMap({
           }),
         }).addTo(group);
     });
-    const longestExposedSection = journey.segments
+    const longestExposedSection = routeOnly
+      ? undefined
+      : journey.segments
       .filter((segment) => segment.mode === "walk")
       .flatMap((segment) => segment.shelterSections ?? [])
       .filter((section) => section.status === "exposed")
@@ -1206,7 +1094,14 @@ export default function JourneyMap({
         animate: false,
       });
     }
-  }, [focusSegmentId, focusSelectedRoute, navigationMode, plan, selected]);
+  }, [
+    focusSegmentId,
+    focusSelectedRoute,
+    navigationMode,
+    plan,
+    routeOnly,
+    selected,
+  ]);
   useEffect(() => {
     const m = map.current;
     const group = position.current;
@@ -1353,7 +1248,7 @@ export default function JourneyMap({
         ref={element}
         className="journey-map"
         role="region"
-        aria-label={`${mapDetail === "detailed" ? "OneMap" : "Bundled OpenStreetMap"} showing ${navigationMode ? "your active navigation route" : comparing ? "the original route, its affected portion and the revised route" : "your selected route and walking legs"}${shelterStatuses.size ? ", with covered, exposed and unknown shelter sections distinguished" : ""}${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
+        aria-label={`${mapDetail === "detailed" ? "OneMap" : "Bundled OpenStreetMap"} showing ${navigationMode ? "your active navigation route" : comparing ? "the original route, its affected portion and the revised route" : "your selected route and walking legs"}${!routeOnly && shelterStatuses.size ? ", with covered, exposed and unknown shelter sections distinguished" : ""}${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
       />
       <div className="map-controls">
         {!navigationMode && (
@@ -1396,7 +1291,7 @@ export default function JourneyMap({
           </span>
         </div>
       )}
-      {shelterStatuses.size > 0 && (
+      {!routeOnly && shelterStatuses.size > 0 && (
         <div
           className={`shelter-map-legend${comparing ? " with-comparison" : ""}`}
           aria-label="Walking shelter map legend"

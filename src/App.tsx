@@ -1345,7 +1345,9 @@ export default function App() {
   const [liveWeather, setLiveWeather] = useState<WeatherSnapshot | null>(null);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [routeMapShare, setRouteMapShare] = useState(42);
+  // Keep the first two route cards legible by default. The divider still lets
+  // people grow the map when they want to inspect the route more closely.
+  const [routeMapShare, setRouteMapShare] = useState(34);
   const [tab, setTab] = useState<Tab>("today");
   const [modal, setModal] = useState<ModalName>(null);
   const [showOnboarding, setShowOnboarding] = useState(
@@ -2818,6 +2820,29 @@ export default function App() {
                   hasAlerts={disruptionAlerts.length > 0}
                 />
               </div>
+              {sheetSnap === 2 && (
+                <button
+                  type="button"
+                  className="sheet-collapse-button sheet-return-control"
+                  onClick={() => {
+                    snapJourneySheet(0);
+                    window.setTimeout(() => {
+                      document
+                        .getElementById("place-A")
+                        ?.focus({ preventScroll: true });
+                    }, 240);
+                  }}
+                  aria-label="Back to navigation"
+                >
+                  <span className="map-return-content" aria-hidden="true">
+                    <span className="map-return-chevrons">
+                      <ChevronUp size={17} />
+                      <ChevronUp size={17} />
+                    </span>
+                    <span>Back to navigation</span>
+                  </span>
+                </button>
+              )}
               <section className="journey-sheet" aria-label="Journey panel">
                 <SheetDragHandle
                   controls="journey-sheet-content"
@@ -2847,29 +2872,6 @@ export default function App() {
                           size={18}
                         />
                       </span>
-                    </span>
-                  </button>
-                )}
-                {sheetSnap === 2 && (
-                  <button
-                    type="button"
-                    className="sheet-collapse-button sheet-return-control"
-                    onClick={() => {
-                      snapJourneySheet(0);
-                      window.setTimeout(() => {
-                        document
-                          .getElementById("place-A")
-                          ?.focus({ preventScroll: true });
-                      }, 240);
-                    }}
-                    aria-label="Back to navigation"
-                  >
-                    <span className="map-return-content" aria-hidden="true">
-                      <span className="map-return-chevrons">
-                        <ChevronUp size={17} />
-                        <ChevronUp size={17} />
-                      </span>
-                      <span>Back to navigation</span>
                     </span>
                   </button>
                 )}

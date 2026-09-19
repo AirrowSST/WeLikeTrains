@@ -6654,9 +6654,9 @@ html.journey-sheet-active body {
   z-index: 500;
 }
 .sheet-return-control {
-  position: fixed;
-  z-index: 500;
-  top: 4px;
+  position: absolute;
+  z-index: 8;
+  bottom: calc(var(--journey-sheet-height, 72px) + 14px);
   left: 50%;
   width: auto;
   min-height: 36px;
@@ -7438,7 +7438,9 @@ html.journey-sheet-active body {
 }
 .trip-list {
   min-height: 0;
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   padding: 10px 12px calc(96px + env(safe-area-inset-bottom));
   overflow-y: auto;
@@ -7447,6 +7449,7 @@ html.journey-sheet-active body {
   -webkit-overflow-scrolling: touch;
 }
 .trip-card {
+  flex: 0 0 auto;
   overflow: hidden;
   border: 1px solid #dbe6dd;
   border-radius: 15px;
@@ -7540,9 +7543,7 @@ html.journey-sheet-active body {
 }
 .trip-segment-copy > span {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .trip-segment-copy b {
   color: #1d382d;
