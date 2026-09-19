@@ -1312,6 +1312,7 @@ export default function App() {
   const [liveWeather, setLiveWeather] = useState<WeatherSnapshot | null>(null);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [routeMapShare, setRouteMapShare] = useState(42);
   const [tab, setTab] = useState<Tab>("today");
   const [modal, setModal] = useState<ModalName>(null);
   const [showOnboarding, setShowOnboarding] = useState(
@@ -2358,6 +2359,42 @@ export default function App() {
     if (request.dataMode === "demo") setTrackingLocation(true);
     setModal("journey");
   };
+  const startRouteMapResize = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.button !== 0) return;
+    const stage = event.currentTarget.closest<HTMLElement>(
+      ".route-results-stage",
+    );
+    if (!stage) return;
+    const handle = event.currentTarget;
+    const pointerId = event.pointerId;
+    const resize = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return;
+      pointer.preventDefault();
+      const bounds = stage.getBoundingClientRect();
+      const headerHeight =
+        stage.querySelector<HTMLElement>(".route-results-summary")
+          ?.offsetHeight ?? 0;
+      const availableHeight = Math.max(1, bounds.height - headerHeight - 28);
+      const next =
+        ((pointer.clientY - bounds.top - headerHeight) / availableHeight) *
+        100;
+      setRouteMapShare(Math.max(24, Math.min(68, Math.round(next))));
+    };
+    const finish = () => {
+      window.removeEventListener("pointermove", resize);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      if (handle.hasPointerCapture(pointerId))
+        handle.releasePointerCapture(pointerId);
+    };
+    event.preventDefault();
+    handle.setPointerCapture(pointerId);
+    window.addEventListener("pointermove", resize, { passive: false });
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  };
   return (
     <div className="app-shell">
       <a href="#main" className="skip-link">
@@ -2366,7 +2403,7 @@ export default function App() {
       <div
         className={`top-status ${tab === "today" && !primaryPage ? "on-map" : ""} ${
           tab === "today" && sheetSnap === 0 ? "sheet-expanded" : ""
-        }`}
+        } ${showRouteResults || modal === "journey" ? "route-view-hidden" : ""}`}
       >
         <button
           type="button"
@@ -2518,7 +2555,10 @@ export default function App() {
                 className="route-results-stage"
                 aria-label="Route results"
                 style={
-                  { "--trip-count": tripChoices.length } as React.CSSProperties
+                  {
+                    "--trip-count": tripChoices.length,
+                    "--route-map-share": `${routeMapShare}%`,
+                  } as React.CSSProperties
                 }
               >
                 <header className="route-results-summary">
@@ -2539,6 +2579,18 @@ export default function App() {
                     </strong>
                   </div>
                 </header>
+                <button
+                  type="button"
+                  className="route-results-back"
+                  onClick={() => {
+                    setPlan(null);
+                    setSelectedId(null);
+                    snapJourneySheet(0);
+                  }}
+                >
+                  <ArrowLeft size={16} aria-hidden="true" />
+                  Back to navigation
+                </button>
                 <div className="route-results-map">
                   <JourneyMap
                     request={request}
@@ -2550,6 +2602,15 @@ export default function App() {
                     hasAlerts={disruptionAlerts.length > 0}
                   />
                 </div>
+                <button
+                  type="button"
+                  className="route-map-slider"
+                  onPointerDown={startRouteMapResize}
+                  aria-label="Drag down to enlarge the map, or up to show more trips"
+                  aria-valuetext={`${routeMapShare}% of the screen for the map`}
+                >
+                  <span aria-hidden="true" />
+                </button>
                 <div className="trip-list" aria-label="Available trips">
                   {tripChoices.map((journey, tripIndex) => {
                     const segments = journey.segments.filter(
@@ -2682,26 +2743,26 @@ export default function App() {
                             </span>
                           )}
                         </button>
-                        {isSelected &&
-                          (!journey.blocked ||
-                            canStartWithWeatherWarning(journey, resultPlan)) && (
-                            <button
-                              type="button"
-                              className="trip-start-button"
-                              onClick={() =>
-                                canStartWithWeatherWarning(journey, resultPlan)
-                                  ? setModal("route-warning")
-                                  : beginJourney(journey)
-                              }
-                            >
-                              <Navigation size={16} aria-hidden="true" />
-                              Start directions
-                            </button>
-                          )}
                       </article>
                     );
                   })}
                 </div>
+                {selected &&
+                  (!selected.blocked ||
+                    canStartWithWeatherWarning(selected, resultPlan)) && (
+                    <button
+                      type="button"
+                      className="route-results-start"
+                      onClick={() =>
+                        canStartWithWeatherWarning(selected, resultPlan)
+                          ? setModal("route-warning")
+                          : beginJourney(selected)
+                      }
+                    >
+                      <Navigation size={17} aria-hidden="true" />
+                      Start trip
+                    </button>
+                  )}
               </section>
             ) : (
             <div
@@ -4502,6 +4563,30 @@ export default function App() {
               sheetSnapNames[activeJourneySheetSnap]
             } ${activeJourneySheetDragging ? "sheet-dragging" : ""}`}
           >
+            <button
+              type="button"
+              className="active-route-back"
+              onClick={closeJourney}
+            >
+              <ArrowLeft size={16} aria-hidden="true" />
+              Back to navigation
+            </button>
+            <header className="active-route-summary">
+              <div>
+                <span>From</span>
+                <strong title={request.origin.name}>{request.origin.name}</strong>
+              </div>
+              <div>
+                <span>To</span>
+                <strong title={request.destination.name}>
+                  {request.destination.name}
+                </strong>
+              </div>
+              <div>
+                <span>Arrive</span>
+                <strong>{sgTime(activeJourney.route.arrival)}</strong>
+              </div>
+            </header>
             <JourneyMap
               plan={plan}
               selected={activeJourney.route}
