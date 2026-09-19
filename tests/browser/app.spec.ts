@@ -198,6 +198,48 @@ test("shows a route-specific start action only after explicit selection", async 
   ).toBe(true);
 });
 
+test("keeps recommendation copy above the route options", async ({
+  page,
+}, testInfo) => {
+  await useDeterministicPlans(page);
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto("/");
+  await openDeveloperDemos(page);
+  const demos = page.getByRole("dialog", { name: "Developer demos" });
+  await demos.getByRole("button", { name: /Arjun/ }).click();
+  await demos.getByRole("button", { name: "Start demo" }).click();
+  await expect(page.locator(".route-options")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+
+  const recommendation = page.locator(".recommendation");
+  const recommendationCopy = recommendation.locator("p");
+  const routeOptions = page.locator(".route-options");
+  await recommendation.scrollIntoViewIfNeeded();
+  await expect(recommendation).toContainText("Your route is the best fit");
+  const [recommendationBox, copyBox, routeOptionsBox] = await Promise.all([
+    recommendation.boundingBox(),
+    recommendationCopy.boundingBox(),
+    routeOptions.boundingBox(),
+  ]);
+  expect(recommendationBox).not.toBeNull();
+  expect(copyBox).not.toBeNull();
+  expect(routeOptionsBox).not.toBeNull();
+  expect(copyBox!.y + copyBox!.height).toBeLessThanOrEqual(
+    recommendationBox!.y + recommendationBox!.height + 1,
+  );
+  expect(routeOptionsBox!.y).toBeGreaterThanOrEqual(
+    recommendationBox!.y + recommendationBox!.height,
+  );
+  expect(routeOptionsBox!.y).toBeGreaterThanOrEqual(
+    copyBox!.y + copyBox!.height,
+  );
+  await page.screenshot({
+    path: `test-results/${testInfo.project.name}-recommendation-layout.png`,
+  });
+});
+
 test("makes the active journey map the hero with guidance docked below", async ({
   page,
 }, testInfo) => {

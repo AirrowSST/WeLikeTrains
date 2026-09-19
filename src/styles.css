@@ -5761,6 +5761,18 @@ html.journey-sheet-active body {
   scrollbar-gutter: stable;
   -webkit-overflow-scrolling: touch;
 }
+/* These sections belong to the sheet's inner scroller. Let the scroller grow
+   rather than flex-compressing cards until their text overlaps the next item. */
+.journey-sheet-scroll .planner-card,
+.journey-sheet-scroll .recommendation,
+.journey-sheet-scroll .route-options,
+.journey-sheet-scroll .load-more-routes,
+.journey-sheet-scroll .save-button,
+.journey-sheet-scroll .journey-insights,
+.journey-sheet-scroll .steps-card,
+.journey-sheet-scroll > .heads-up-strip {
+  flex: 0 0 auto;
+}
 .planner-card {
   order: 1;
   position: relative;
