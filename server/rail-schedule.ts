@@ -502,6 +502,8 @@ export function evaluateRailSegments(
     hops: segment.hops?.map((hop) => ({
       ...hop,
       codes: [...hop.codes],
+      fromCodes: hop.fromCodes ? [...hop.fromCodes] : undefined,
+      toCodes: hop.toCodes ? [...hop.toCodes] : undefined,
       geometry: hop.geometry.map(
         (coordinate) => [...coordinate] as [number, number],
       ),

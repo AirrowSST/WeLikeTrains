@@ -318,6 +318,8 @@ export function applyBusArrivalTiming(
       hops: source.hops?.map((hop) => ({
         ...hop,
         codes: [...hop.codes],
+        fromCodes: hop.fromCodes ? [...hop.fromCodes] : undefined,
+        toCodes: hop.toCodes ? [...hop.toCodes] : undefined,
         geometry: hop.geometry.map((coordinate) => [...coordinate]),
       })),
     };
@@ -992,6 +994,8 @@ export function localJourneys(
           from: from.name,
           to: to.name,
           codes,
+          fromCodes: [...from.codes],
+          toCodes: [...to.codes],
           geometry: edge.geometry,
         };
         const probe: Segment = {

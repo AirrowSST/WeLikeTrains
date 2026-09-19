@@ -81,6 +81,7 @@ import {
 } from "../shared/catalog";
 import { meetsDelayAlertThreshold } from "../shared/alerts";
 import { crowdDescription } from "../shared/crowding";
+import { stationColor, stationTextColor } from "../shared/transit-details";
 import {
   shelterMode as effectiveShelterMode,
   shelterSummary,
@@ -620,7 +621,8 @@ function BusStopLabels({
   );
 }
 
-const stationCodePattern = /^(?:EW|NS|NE|CC|DT|TE|BP|PE|PW|SW|SE)\d+$/i;
+const stationCodePattern =
+  /^(?:EW|CG|NS|NE|CC|CE|DT|TE|BP|PE|PW|SW|SE)\d+$/i;
 
 function stationCodes(codes: string[] | undefined) {
   return Array.from(
@@ -639,6 +641,138 @@ function instructionEta(segments: Segment[], index: number, departure: string) {
   return sgTime(new Date(Date.parse(departure) + elapsedMinutes * 60_000));
 }
 
+function railEndpointCodes(segment: Segment) {
+  const firstHop = segment.hops?.[0];
+  const lastHop = segment.hops?.at(-1);
+  const fallbackFromCode = (firstHop?.codes ?? []).find((code) =>
+    stationCodePattern.test(code),
+  );
+  const fallbackToCode = [...(lastHop?.codes ?? [])]
+    .reverse()
+    .find((code) => stationCodePattern.test(code));
+  return {
+    fromCode: stationCodes(firstHop?.fromCodes) || fallbackFromCode,
+    toCode: stationCodes(lastHop?.toCodes) || fallbackToCode,
+  };
+}
+
+function StationCodeBadges({ codes, line }: { codes?: string; line: string }) {
+  if (!codes) return null;
+  return (
+    <span className="active-station-codes" aria-label={codes}>
+      {codes.split("/").map((code, index) => {
+        const colour = stationColor(code, [line]);
+        return (
+          <span key={code}>
+            {index > 0 && <i aria-hidden="true">/</i>}
+            <b
+              style={{
+                backgroundColor: colour,
+                color: stationTextColor(colour),
+              }}
+            >
+              {code}
+            </b>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function RailDiagramStation({
+  codes,
+  line,
+  fallback,
+}: {
+  codes?: string;
+  line: string;
+  fallback: string;
+}) {
+  const values = codes?.split("/").filter(Boolean) ?? [];
+  if (!values.length) values.push(fallback);
+  return (
+    <span
+      className={`transit-diagram-station ${values.length > 1 ? "interchange" : ""}`}
+      aria-label={values.join(" interchange ")}
+    >
+      {values.map((code) => {
+        const colour = stationColor(code, [line]);
+        return (
+          <b
+            key={code}
+            style={{
+              backgroundColor: colour,
+              color: stationTextColor(colour),
+            }}
+          >
+            {code}
+          </b>
+        );
+      })}
+    </span>
+  );
+}
+
+function TransitInstructionDiagram({ segment }: { segment: Segment }) {
+  if (segment.mode === "rail") {
+    const { fromCode, toCode } = railEndpointCodes(segment);
+    return (
+      <span className="transit-instruction-diagram rail" aria-hidden="true">
+        <RailDiagramStation
+          codes={fromCode}
+          line={segment.line}
+          fallback={segment.from}
+        />
+        <span className="transit-diagram-arrow" />
+        <RailDiagramStation
+          codes={toCode}
+          line={segment.line}
+          fallback={segment.to}
+        />
+      </span>
+    );
+  }
+  if (segment.mode === "bus") {
+    const services = segment.line.replace(/\s*(?:\/|,|\|)\s*/g, " \\ ");
+    return (
+      <span className="transit-instruction-diagram bus" aria-hidden="true">
+        <b className="transit-diagram-bus">{services}</b>
+        <span className="transit-diagram-arrow" />
+        <span className="transit-diagram-destination">{segment.to}</span>
+      </span>
+    );
+  }
+  return null;
+}
+
+function RailActiveInstruction({
+  segment,
+  index,
+  segments,
+  departure,
+}: {
+  segment: Segment;
+  index: number;
+  segments: Segment[];
+  departure: string;
+}) {
+  const { fromCode, toCode } = railEndpointCodes(segment);
+  const direction =
+    segment.direction ??
+    segment.instructions.match(/towards ([^.]+)/i)?.[1] ??
+    segment.to;
+  return (
+    <span>
+      MRT: Board at {segment.from}{" "}
+      <StationCodeBadges codes={fromCode} line={segment.line} /> to{" "}
+      {segment.to} <StationCodeBadges codes={toCode} line={segment.line} /> in
+      the direction of {direction} · ETA{" "}
+      {instructionEta(segments, index, departure)}
+    </span>
+  );
+}
+
 function activeInstruction(
   segment: Segment,
   index: number,
@@ -648,16 +782,6 @@ function activeInstruction(
   const eta = instructionEta(segments, index, departure);
   if (segment.mode === "bus")
     return `Bus ${segment.line} from ${segment.from} to ${segment.to} · ETA ${eta}`;
-  if (segment.mode === "rail") {
-    const fromCode = stationCodes(segment.hops?.[0]?.codes) || segment.from;
-    const toCode =
-      stationCodes(segment.hops?.at(-1)?.codes) || segment.to;
-    const direction =
-      segment.direction ??
-      segment.instructions.match(/towards ([^.]+)/i)?.[1] ??
-      segment.to;
-    return `MRT: Board at ${segment.from} (${fromCode}) to ${segment.to} (${toCode}) in the direction of ${direction} · ETA ${eta}`;
-  }
   if (segment.mode === "walk") {
     const action = /overhead bridge/i.test(segment.instructions)
       ? "across the overhead bridge"
@@ -4721,14 +4845,32 @@ export default function App() {
                     <li
                       className={`active-instruction ${segment.mode}`}
                       key={segment.id}
+                      style={
+                        segment.mode === "rail"
+                          ? ({
+                              "--active-line-colour":
+                                lineColors[segment.line] ?? "#235ba8",
+                            } as React.CSSProperties)
+                          : undefined
+                      }
                     >
                       <ModeIcon mode={segment.mode} size={18} aria-hidden="true" />
-                      <span>
-                        {activeInstruction(
-                          segment,
-                          index,
-                          activeJourney.route.segments,
-                          activeJourney.departure,
+                      <span className="active-instruction-content">
+                        <TransitInstructionDiagram segment={segment} />
+                        {segment.mode === "rail" ? (
+                          <RailActiveInstruction
+                            segment={segment}
+                            index={index}
+                            segments={activeJourney.route.segments}
+                            departure={activeJourney.departure}
+                          />
+                        ) : (
+                          activeInstruction(
+                            segment,
+                            index,
+                            activeJourney.route.segments,
+                            activeJourney.departure,
+                          )
                         )}
                       </span>
                     </li>

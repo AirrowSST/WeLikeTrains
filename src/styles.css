@@ -7868,6 +7868,84 @@ html.journey-sheet-active body {
   margin-top: 1px;
   color: #596c60;
 }
+.active-instruction-content {
+  min-width: 0;
+}
+.transit-instruction-diagram {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 9px;
+}
+.transit-diagram-station {
+  min-width: 55px;
+  min-height: 34px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid #52665c;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px #173b2b24;
+}
+.transit-diagram-station b {
+  min-width: 55px;
+  display: grid;
+  place-items: center;
+  padding: 6px 9px;
+  font-size: 16px;
+  font-weight: 760;
+  line-height: 1;
+  white-space: nowrap;
+}
+.transit-diagram-station.interchange b + b {
+  border-left: 1px solid #ffffff88;
+}
+.transit-diagram-arrow {
+  position: relative;
+  min-width: 30px;
+  height: 1px;
+  flex: 1 1 62px;
+  background: #5d655f;
+}
+.transit-diagram-arrow::after {
+  position: absolute;
+  top: 50%;
+  right: -1px;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 9px solid #5d655f;
+  content: "";
+  transform: translateY(-50%);
+}
+.transit-diagram-bus {
+  min-width: 62px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border: 1px solid #276846;
+  border-radius: 3px;
+  background: #b9e5c7;
+  color: #174f34;
+  box-shadow: 0 1px 3px #173b2b24;
+  font-size: 16px;
+  font-weight: 820;
+  line-height: 1;
+  white-space: nowrap;
+}
+.transit-diagram-destination {
+  max-width: 42%;
+  flex: 0 1 auto;
+  color: #314b3d;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.2;
+}
 .active-instruction.bus {
   border-left-color: #8cc8a3;
 }
@@ -7875,8 +7953,36 @@ html.journey-sheet-active body {
   color: #2d7750;
 }
 .active-instruction.rail {
-  border-left-color: #235ba8;
+  border-left-color: var(--active-line-colour, #235ba8);
 }
 .active-instruction.rail > svg {
-  color: #235ba8;
+  color: var(--active-line-colour, #235ba8);
+}
+.active-station-codes {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 2px;
+  white-space: nowrap;
+}
+.active-station-codes > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.active-station-codes i {
+  color: #40584b;
+  font-style: normal;
+  font-weight: 800;
+}
+.active-station-codes b {
+  display: inline-flex;
+  min-height: 20px;
+  align-items: center;
+  padding: 2px 5px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px #ffffff66;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
 }

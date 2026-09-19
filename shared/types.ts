@@ -127,7 +127,14 @@ export interface Segment {
   source: string;
   waitMinutes?: number;
   estimatedWaitMinutes?: number;
-  hops?: { from: string; to: string; codes: string[]; geometry: Coord[] }[];
+  hops?: {
+    from: string;
+    to: string;
+    codes: string[];
+    fromCodes?: string[];
+    toCodes?: string[];
+    geometry: Coord[];
+  }[];
   affectedGeometry?: Coord[][];
   issues?: SegmentIssue[];
 }

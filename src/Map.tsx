@@ -215,7 +215,7 @@ function routeSegmentPopup(segment: Segment) {
 }
 
 const routeStationCodePattern =
-  /^(?:EW|NS|NE|CC|DT|TE|BP|PE|PW|SW|SE)\d+$/i;
+  /^(?:EW|CG|NS|NE|CC|CE|DT|TE|BP|PE|PW|SW|SE)\d+$/i;
 
 function routeStationCodes(codes: string[] | undefined) {
   return Array.from(
@@ -1022,11 +1022,19 @@ export default function JourneyMap({
           const terminalLabels = [
             {
               coord: s.geometry[0],
-              code: routeStationCodes(s.hops?.[0]?.codes),
+              code:
+                routeStationCodes(s.hops?.[0]?.fromCodes) ||
+                (s.hops?.[0]?.codes ?? []).find((code) =>
+                  routeStationCodePattern.test(code),
+                ),
             },
             {
               coord: s.geometry.at(-1),
-              code: routeStationCodes(s.hops?.at(-1)?.codes),
+              code:
+                routeStationCodes(s.hops?.at(-1)?.toCodes) ||
+                [...(s.hops?.at(-1)?.codes ?? [])]
+                  .reverse()
+                  .find((code) => routeStationCodePattern.test(code)),
             },
           ];
           terminalLabels.forEach(({ coord, code }) => {
