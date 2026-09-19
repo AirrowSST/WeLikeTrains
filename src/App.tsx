@@ -17,6 +17,7 @@ import {
   CheckCheck,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   CircleUserRound,
   Clock3,
   CloudLightning,
@@ -1260,7 +1261,7 @@ function PlacePicker({
         )}
         <small>{searchNote || value.subtitle}</small>
       </div>
-      {editing && !useGoogle && (
+      {editing && !useGoogle && query.trim().length > 0 && (
         <ul className="place-results" id={`places-${fieldKey}`} role="listbox">
           {busy && <li className="searching">Finding places…</li>}
           {results.map((p) => (
@@ -2264,6 +2265,9 @@ export default function App() {
   const visibleRouteChoices = showAllRoutes
     ? routeChoices
     : routeChoices.slice(0, 2);
+  const tripChoices = routeChoices.slice(0, 3);
+  const showRouteResults = Boolean(plan);
+  const resultPlan = plan as PlanResponse;
   const selectedJourney = routeChoices.find(
     (journey) => journey.id === selectedId,
   );
@@ -2509,6 +2513,197 @@ export default function App() {
         )}
         {tab === "today" && (
           <>
+            {showRouteResults ? (
+              <section
+                className="route-results-stage"
+                aria-label="Route results"
+                style={
+                  { "--trip-count": tripChoices.length } as React.CSSProperties
+                }
+              >
+                <header className="route-results-summary">
+                  <div>
+                    <span>From</span>
+                    <strong title={request.origin.name}>{request.origin.name}</strong>
+                  </div>
+                  <div>
+                    <span>To</span>
+                    <strong title={request.destination.name}>
+                      {request.destination.name}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Arrive</span>
+                    <strong>
+                      {sgTime(selected?.arrival ?? resultPlan.recommended.arrival)}
+                    </strong>
+                  </div>
+                </header>
+                <div className="route-results-map">
+                  <JourneyMap
+                    request={request}
+                    plan={resultPlan}
+                    selected={selected}
+                    location={currentLocation}
+                    focusSelectedRoute
+                    onViewAlerts={() => setModal("alerts")}
+                    hasAlerts={disruptionAlerts.length > 0}
+                  />
+                </div>
+                <div className="trip-list" aria-label="Available trips">
+                  {tripChoices.map((journey, tripIndex) => {
+                    const segments = journey.segments.filter(
+                      (segment) =>
+                        segment.mode !== "walk" || Math.ceil(segment.minutes) >= 5,
+                    );
+                    const isSelected = selected?.id === journey.id;
+                    return (
+                      <article
+                        className={`trip-card ${isSelected ? "selected" : ""} ${journey.blocked ? "blocked" : ""}`}
+                        key={journey.id}
+                      >
+                        <button
+                          type="button"
+                          className="trip-select"
+                          onClick={() => setSelectedId(journey.id)}
+                          aria-label={`View Trip ${tripIndex + 1}, arriving ${sgTime(journey.arrival)}`}
+                          aria-pressed={isSelected}
+                        >
+                          <span className="trip-card-heading">
+                            <strong>Trip {tripIndex + 1}</strong>
+                            <span>
+                              {journey.duration} min · Arrive {sgTime(journey.arrival)}
+                            </span>
+                          </span>
+                          <span className="trip-segments">
+                            {segments.map((segment, segmentIndex) => {
+                              const stationCodes = Array.from(
+                                new Set(
+                                  segment.hops
+                                    ?.flatMap((hop) => hop.codes)
+                                    .filter((code) =>
+                                      /^(?:EW|NS|NE|CC|DT|TE|BP|PE|PW|SW|SE)\d+$/i.test(
+                                        code,
+                                      ),
+                                    ) ?? [],
+                                ),
+                              );
+                              const stopNames = Array.from(
+                                new Set(
+                                  segment.hops?.flatMap((hop) => [
+                                    hop.from,
+                                    hop.to,
+                                  ]) ?? [segment.from, segment.to],
+                                ),
+                              );
+                              const lineColor =
+                                lineColors[segment.line] ??
+                                lineColors[segment.mode];
+                              return (
+                                <span
+                                  className={`trip-segment ${segment.mode}`}
+                                  key={`${segment.id}-${segmentIndex}`}
+                                >
+                                  <span
+                                    className="trip-line"
+                                    style={
+                                      { "--trip-line-color": lineColor } as React.CSSProperties
+                                    }
+                                  >
+                                    <ModeIcon mode={segment.mode} size={15} />
+                                    {segment.mode === "bus"
+                                      ? `Bus ${segment.line}`
+                                      : segment.mode === "rail"
+                                        ? segment.line
+                                        : `${Math.ceil(segment.minutes)} min walk`}
+                                  </span>
+                                  <span className="trip-segment-copy">
+                                    {segment.mode === "rail" ? (
+                                      <>
+                                        <span>
+                                          Board at <b>{segment.from}</b>
+                                          {stationCodes[0] && (
+                                            <em>{stationCodes[0]}</em>
+                                          )}
+                                        </span>
+                                        <span>
+                                          Alight at <b>{segment.to}</b>
+                                          {stationCodes.length > 1 && (
+                                            <em>{stationCodes.at(-1)}</em>
+                                          )}
+                                          {segment.direction && (
+                                            <small>{segment.direction} direction</small>
+                                          )}
+                                        </span>
+                                      </>
+                                    ) : segment.mode === "bus" ? (
+                                      <>
+                                        <span>
+                                          Board at <b>{segment.from}</b>
+                                        </span>
+                                        <span>
+                                          Alight at <b>{segment.to}</b>
+                                          {segment.direction && (
+                                            <small>{segment.direction} direction</small>
+                                          )}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span>Walk to <b>{segment.to}</b></span>
+                                    )}
+                                  </span>
+                                  {(segment.mode === "rail" ||
+                                    segment.mode === "bus") && (
+                                    <span
+                                      className="trip-stop-track"
+                                      aria-label={`${stopNames.length} stops on this service`}
+                                    >
+                                      {stopNames.map((name, stopIndex) => (
+                                        <i
+                                          className={
+                                            stopIndex === 0 ||
+                                            stopIndex === stopNames.length - 1
+                                              ? "terminal"
+                                              : ""
+                                          }
+                                          key={`${name}-${stopIndex}`}
+                                          title={name}
+                                        />
+                                      ))}
+                                    </span>
+                                  )}
+                                </span>
+                              );
+                            })}
+                          </span>
+                          {journey.blocked && (
+                            <span className="trip-status">
+                              <TriangleAlert size={14} /> Route affected
+                            </span>
+                          )}
+                        </button>
+                        {isSelected &&
+                          (!journey.blocked ||
+                            canStartWithWeatherWarning(journey, resultPlan)) && (
+                            <button
+                              type="button"
+                              className="trip-start-button"
+                              onClick={() =>
+                                canStartWithWeatherWarning(journey, resultPlan)
+                                  ? setModal("route-warning")
+                                  : beginJourney(journey)
+                              }
+                            >
+                              <Navigation size={16} aria-hidden="true" />
+                              Start directions
+                            </button>
+                          )}
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : (
             <div
               ref={journeyLayout}
               className={`journey-layout sheet-${
@@ -2554,6 +2749,29 @@ export default function App() {
                           size={18}
                         />
                       </span>
+                    </span>
+                  </button>
+                )}
+                {sheetSnap === 2 && (
+                  <button
+                    type="button"
+                    className="sheet-collapse-button sheet-return-control"
+                    onClick={() => {
+                      snapJourneySheet(0);
+                      window.setTimeout(() => {
+                        document
+                          .getElementById("place-A")
+                          ?.focus({ preventScroll: true });
+                      }, 240);
+                    }}
+                    aria-label="Back to navigation"
+                  >
+                    <span className="map-return-content" aria-hidden="true">
+                      <span className="map-return-chevrons">
+                        <ChevronUp size={17} />
+                        <ChevronUp size={17} />
+                      </span>
+                      <span>Back to navigation</span>
                     </span>
                   </button>
                 )}
@@ -3202,6 +3420,7 @@ export default function App() {
                 </div>
               </section>
             </div>
+            )}
           </>
         )}
         {tab === "commutes" && (

@@ -252,6 +252,7 @@ export default function JourneyMap({
   request,
   navigationMode = false,
   focusSegmentId,
+  focusSelectedRoute = false,
 }: {
   plan: PlanResponse | null;
   selected: Journey | null;
@@ -261,6 +262,8 @@ export default function JourneyMap({
   request: PlanRequest;
   navigationMode?: boolean;
   focusSegmentId?: string;
+  /** Results view recentres on the selected option rather than comparing it. */
+  focusSelectedRoute?: boolean;
 }) {
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -705,7 +708,8 @@ export default function JourneyMap({
     segmentPaths.current.clear();
     activeSegmentId.current = segmentToRestore;
     const journey = selected ?? plan.recommended;
-    const comparing = !navigationMode && journey.id !== plan.original.id;
+    const comparing =
+      !navigationMode && !focusSelectedRoute && journey.id !== plan.original.id;
     if (comparing) {
       plan.original.segments.forEach((segment) => {
         L.polyline(segment.geometry, {
@@ -1131,7 +1135,7 @@ export default function JourneyMap({
         animate: false,
       });
     }
-  }, [focusSegmentId, navigationMode, plan, selected]);
+  }, [focusSegmentId, focusSelectedRoute, navigationMode, plan, selected]);
   useEffect(() => {
     const m = map.current;
     const group = position.current;
@@ -1178,7 +1182,11 @@ export default function JourneyMap({
   };
   const journey = selected ?? plan?.recommended;
   const comparing =
-    !navigationMode && !!plan && !!journey && journey.id !== plan.original.id;
+    !navigationMode &&
+    !focusSelectedRoute &&
+    !!plan &&
+    !!journey &&
+    journey.id !== plan.original.id;
   const shelterStatuses = new Set(
     journey?.segments
       .filter((segment) => segment.mode === "walk")
