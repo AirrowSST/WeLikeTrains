@@ -143,7 +143,7 @@ Deployments are deliberately manual. GitHub Actions workflows have been removed,
 pwsh -File scripts/deploy-code.ps1
 ```
 
-The script checks the Cloud Build upload set for protected files, deploys with the existing service identities, labels the service with the source commit, and verifies the resulting `/api/health` endpoint. The script does not reimport or rotate secrets.
+The script checks the Cloud Build upload set for protected files, deploys with the existing service identities, labels the service with the source commit, and verifies the resulting `/api/health` endpoint. The container build creates only the required client and server bundles; TypeScript, unit, browser and evaluation checks remain optional local commands. The script does not reimport or rotate secrets.
 
 On the original development device, the personal Codex skill `$weliketrains-deploy` wraps this documented workflow for chat-requested deployments. It is a local convenience, not a repository or clean-clone requirement; `scripts/deploy-code.ps1` and `docs/GCP.md` remain authoritative.
 

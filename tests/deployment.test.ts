@@ -30,9 +30,17 @@ describe("deployment guardrails", () => {
       resolve(root, "scripts", "deploy-code.ps1"),
       "utf8",
     );
+    const dockerfile = readFileSync(resolve(root, "Dockerfile"), "utf8");
+    const packageScripts = JSON.parse(
+      readFileSync(resolve(root, "package.json"), "utf8"),
+    ).scripts;
     expect(deployScript).toContain("wayce-source");
     expect(deployScript).not.toContain("npm run verify");
     expect(deployScript).not.toContain("VerificationMode");
+    expect(dockerfile).toContain("RUN npm run build:deploy");
+    expect(packageScripts["build:deploy"]).not.toContain("tsc");
+    expect(packageScripts["build:deploy"]).not.toContain("vitest");
+    expect(packageScripts["build:deploy"]).not.toContain("playwright");
   });
 
   it("isolates Playwright runs instead of sharing a fixed test port", () => {

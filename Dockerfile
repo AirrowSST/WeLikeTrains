@@ -5,7 +5,9 @@ COPY package.json package-lock.json ./
 # while installing dependencies.
 RUN npm ci --ignore-scripts
 COPY . .
-RUN npm run build
+# Deployment only needs runnable client and server bundles. Type checking and
+# broader test suites remain explicit local checks rather than Cloud Build gates.
+RUN npm run build:deploy
 
 FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production
