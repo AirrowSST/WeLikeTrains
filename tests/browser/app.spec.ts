@@ -8,6 +8,116 @@ test.afterEach(async ({ page }) => {
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
+test("Google Places UI selection supplies coordinates to the local planner", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    class MockBasicPlaceAutocompleteElement extends HTMLElement {
+      placeholder = "";
+      includedRegionCodes: string[] = [];
+      requestedLanguage = "";
+      requestedRegion = "";
+      constructor() {
+        super();
+        const input = document.createElement("input");
+        this.attachShadow({ mode: "open" }).append(input);
+      }
+    }
+    class MockPlaceDetailsCompactElement extends HTMLElement {
+      place?: {
+        id: string;
+        location: { lat: number; lng: number };
+      };
+    }
+    class MockPlaceDetailsRequestElement extends HTMLElement {
+      set place(id: string) {
+        queueMicrotask(() => {
+          const details = this.parentElement as
+            | MockPlaceDetailsCompactElement
+            | null;
+          if (!details) return;
+          details.place = {
+            id,
+            location: { lat: 1.29027, lng: 103.851959 },
+          };
+          details.dispatchEvent(new Event("gmp-load"));
+        });
+      }
+    }
+    if (!customElements.get("gmp-basic-place-autocomplete"))
+      customElements.define(
+        "gmp-basic-place-autocomplete",
+        MockBasicPlaceAutocompleteElement,
+      );
+    if (!customElements.get("gmp-place-details-compact"))
+      customElements.define(
+        "gmp-place-details-compact",
+        MockPlaceDetailsCompactElement,
+      );
+    if (!customElements.get("gmp-place-details-place-request"))
+      customElements.define(
+        "gmp-place-details-place-request",
+        MockPlaceDetailsRequestElement,
+      );
+    if (!customElements.get("gmp-place-standard-content"))
+      customElements.define(
+        "gmp-place-standard-content",
+        class extends HTMLElement {},
+      );
+    const browserWindow = window as unknown as {
+      google?: {
+        maps: { importLibrary: () => Promise<Record<string, unknown>> };
+      };
+    };
+    browserWindow.google = {
+      maps: {
+        importLibrary: async () => ({
+          BasicPlaceAutocompleteElement: MockBasicPlaceAutocompleteElement,
+        }),
+      },
+    };
+  });
+  await page.route("**/api/config", (route) =>
+    route.fulfill({
+      json: {
+        integrations: { googlePlaces: true },
+        googlePlacesApiKey: "referrer-restricted-test-key",
+      },
+    }),
+  );
+  await useDeterministicPlans(page);
+  await page.goto("/");
+  const destination = page.locator("#place-B");
+  await expect(destination).toHaveCount(1);
+  await destination.evaluate((element) => {
+    const picker = element as HTMLElement;
+    const input = picker.shadowRoot!.querySelector("input")!;
+    input.value = "National Gallery Singapore";
+    input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    const selected = new Event("gmp-select");
+    Object.defineProperty(selected, "place", {
+      value: { id: "ChIJ-gallery-test" },
+    });
+    picker.dispatchEvent(selected);
+  });
+  await expect(page.locator(".place-field").nth(1)).toContainText(
+    "Google Places · online result",
+  );
+
+  const selectedPlan = page.waitForRequest((request) => {
+    if (!request.url().endsWith("/api/plan")) return false;
+    return request.postDataJSON()?.destination?.id === "google:ChIJ-gallery-test";
+  });
+  await page.getByRole("button", { name: "Find my best route" }).click();
+  const body = (await selectedPlan).postDataJSON();
+  expect(body.destination).toMatchObject({
+    id: "google:ChIJ-gallery-test",
+    name: "National Gallery Singapore",
+    lat: 1.29027,
+    lon: 103.851959,
+  });
+});
+
 const transparentPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
@@ -66,6 +176,28 @@ async function useDeterministicPlans(
     }
     await route.fulfill({ contentType: "image/png", body: transparentPng });
   });
+  await page.route("**/api/weather?*", (route) =>
+    route.fulfill({
+      json: {
+        weather: {
+          forecast: "Partly cloudy",
+          rain: false,
+          temperature: 29,
+          walkStatus: "valid",
+          cycleStatus: "valid",
+        },
+        feeds: [
+          {
+            name: "NEA two-hr-forecast",
+            status: "live",
+            updatedAt: "2026-09-21T07:40:00+08:00",
+            detail: "Test weather",
+          },
+        ],
+        updatedAt: "2026-09-21T07:40:00+08:00",
+      },
+    }),
+  );
   const templates = new Map<string, Promise<PlanResponse>>();
   let latestTemplate: PlanResponse | undefined;
   await page.route("**/api/plan", async (route) => {
@@ -150,6 +282,19 @@ test("shows planning failures beside the route action", async ({ page }) => {
   expect((await warning.boundingBox())!.y).toBeLessThan(
     (await planButton.boundingBox())!.y,
   );
+});
+
+test("keeps the route action compact in a very short visual viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 341, height: 171 });
+  await page.goto("/");
+  const planButton = page.getByRole("button", { name: "Find my best route" });
+  await planButton.scrollIntoViewIfNeeded();
+  const action = (await planButton.boundingBox())!;
+
+  expect(action.height).toBeGreaterThanOrEqual(36);
+  expect(action.height).toBeLessThanOrEqual(42);
 });
 
 async function startTimelineAt(page: Page, minute: number) {
@@ -574,6 +719,7 @@ test("opens bus details from the path on a narrow phone", async ({ page }) => {
     .getByRole("button", { name: /^View Bus / })
     .first()
     .click();
+  await expect(page.locator(".bus-route-schematic")).toBeAttached();
 
   const busPath = page.locator(".route-segment-hit.bus").first();
   await expect(busPath).toHaveAttribute("role", "button");
@@ -593,8 +739,8 @@ test("opens bus details from the path on a narrow phone", async ({ page }) => {
   await expect(details).toContainText("Alight");
   await expect(details).toContainText("Crowding");
   await expect(details).toContainText("Bus occupancy:");
-  await expect(details).toContainText("Schematic stop-to-stop line");
-  await expect(page.locator(".timeline")).toContainText("Schematic bus line");
+  await expect(details).toContainText("Served stops highlighted");
+  await expect(page.locator(".timeline")).toContainText("Served stops highlighted");
   await expect(
     page.locator(".timeline .segment-crowding").first(),
   ).toContainText("Bus occupancy:");
@@ -610,7 +756,13 @@ test("opens local MRT and bus-stop details from map icons", async ({
   context,
 }) => {
   await useDeterministicPlans(page, true);
+  await page.route('**/api/station-board?*', route => route.fulfill({ json: {
+    groups: [{ line: 'EWL', towards: 'Tuas Link', times: [new Date(Date.now() + 300000).toISOString()] }],
+    crowds: [{ line: 'EWL', level: 'moderate', status: 'current platform crowd' }],
+    forecasts: ['low', 'moderate', 'high'].map((level, i) => ({ line: 'EWL', level, status: 'forecast', start: new Date(Date.now() + i * 1800000).toISOString(), end: new Date(Date.now() + (i + 1) * 1800000).toISOString() })),
+  } }));
   await page.goto("/");
+  await expect(startJourneyButton(page)).toBeEnabled();
   await expect(page.locator(".journey-map")).toHaveAttribute(
     "data-ready",
     "true",
@@ -632,9 +784,20 @@ test("opens local MRT and bus-stop details from map icons", async ({
   const railStop = railStops.nth(clickableRailIndex);
   await expect(railStop).toHaveAttribute("aria-label", /MRT \/ LRT station/);
   await railStop.click();
-  await expect(page.locator(".transit-stop-popup")).toContainText(
-    "MRT / LRT station",
-  );
+  const transitPopup = page.locator(".transit-stop-popup");
+  await expect(transitPopup).not.toContainText("MRT / LRT station");
+  await expect(transitPopup).not.toContainText("Expand station information");
+  await page.getByRole('button', { name: /Show .+ station information/ }).click();
+  const details = page.getByRole('dialog', { name: /information/ });
+  await expect(details).toContainText('Scheduled departures');
+  await expect(details.getByRole('heading', { name: 'Predicted crowdedness' })).toBeVisible();
+  await expect(details.getByRole('img', { name: 'Moderate crowdedness' })).toHaveCount(2);
+  await expect(details.getByRole('img', { name: 'Low crowdedness' })).toBeVisible();
+  await expect(details.getByRole('img', { name: 'High crowdedness' })).toBeVisible();
+  expect(await details.getByRole('img', { name: 'High crowdedness' }).locator('.filled').count()).toBe(3);
+  await expect(details).toContainText('Tuas Link');
+  await expect(details).toContainText('not live train tracking');
+  await page.getByRole('button', { name: 'Close station or stop information' }).click();
   await page.locator(".leaflet-popup-close-button").click();
 
   const mapBox = await page.locator(".journey-map").boundingBox();
@@ -740,7 +903,42 @@ test("opens local MRT and bus-stop details from map icons", async ({
   } else {
     await busStop.click();
   }
-  await expect(page.locator(".transit-stop-popup")).toContainText("Bus stop");
+  await expect(page.locator(".transit-stop-popup")).not.toContainText("Bus stop");
+  const serviceButton = page.locator('.stop-service-buttons button').first();
+  const service = (await serviceButton.textContent())!;
+  await page.route('**/api/buses/*', route => route.fulfill({ json: {
+    status: 'live', updatedAt: new Date().toISOString(), buses: [{ service, stop: clickableBusId!.replace('lta-bus:', ''), eta: new Date(Date.now() + 240000).toISOString(), monitored: true, status: 'live', load: 'high', type: 'DD', wheelchair: true }],
+  } }));
+  await expect(page.locator(".transit-stop-popup")).not.toContainText(
+    "More stop information",
+  );
+  await page.getByRole('button', { name: /Show .+ stop information/ }).click();
+  await expect(details).toContainText('Live bus arrivals');
+  await expect(details).toContainText('Crowding: high');
+  await expect(details).toContainText('Double-deck bus');
+  await page.setViewportSize({ width: 320, height: 740 });
+  expect(await details.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Close station or stop information' }).click();
+  await serviceButton.click();
+  await expect(page.getByRole('region', { name: 'Bus service map' })).toContainText('Stops served');
+  await expect(page.locator('.bus-line-stop').first()).toBeAttached();
+  await expect(page.locator('.bus-service-schematic')).toBeAttached();
+  const busMapPanel = page.getByRole('region', { name: 'Bus service map' });
+  const pointsChip = page.locator('.points-counter');
+  const [busMapPanelBox, pointsChipBox] = await Promise.all([
+    busMapPanel.boundingBox(),
+    pointsChip.boundingBox(),
+  ]);
+  expect(busMapPanelBox!.y).toBeGreaterThanOrEqual(
+    pointsChipBox!.y + pointsChipBox!.height + 6,
+  );
+  expect(
+    await page.locator('.bus-line-stop').first().evaluate((marker) =>
+      marker.parentElement?.className.includes('bus-service-stop-pane'),
+    ),
+  ).toBe(true);
+  await page.getByRole('button', { name: 'Clear bus stops' }).click();
+  await expect(page.locator('.bus-line-stop')).toHaveCount(0);
 });
 
 test("keeps Commutes and Disruptions content inside the phone gutter", async ({
@@ -1601,6 +1799,22 @@ test("starts with automatic location, a Where to prompt, and leave now", async (
   });
   await page.goto("/");
   await expect(page.getByLabel("FROM")).toHaveValue("Current location");
+  await expect(page.locator(".weather-status")).toContainText(
+    "29° · Partly cloudy",
+  );
+  await expect(page.locator(".weather-status time")).toHaveText(
+    /\d{1,2}:\d{2}\s*(am|pm)/i,
+  );
+  await page
+    .getByRole("button", { name: /Open weather details/ })
+    .click();
+  const weatherDialog = page.getByRole("dialog", {
+    name: "Weather right now",
+  });
+  await expect(weatherDialog).toContainText("Partly cloudy");
+  await expect(weatherDialog).toContainText("29°C");
+  await expect(weatherDialog).toContainText("NEA two-hr-forecast");
+  await page.getByRole("button", { name: "Close dialog" }).click();
   const destinationInput = page.getByLabel("TO", { exact: true });
   const locationMarker = page.locator(".current-location-marker.device");
   await expect(locationMarker).toBeVisible();
@@ -1669,6 +1883,7 @@ test("fits a narrow phone without horizontal overflow", async ({ page }) => {
   await expect(startJourneyButton(page)).toBeEnabled();
   await openDeveloperDemos(page);
   await page.getByRole("button", { name: "Start demo" }).click();
+  await expect(page.locator(".weather-status time")).toHaveText(/7:40\s*am/i);
   await expect(page.getByLabel("FROM")).toHaveValue(
     "Simulated current location",
   );
@@ -1677,6 +1892,21 @@ test("fits a narrow phone without horizontal overflow", async ({ page }) => {
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  const topStatus = (await page.locator(".top-status").boundingBox())!;
+  const weatherStatus = (await page
+    .locator(".weather-status")
+    .boundingBox())!;
+  const pointsCounter = (await page
+    .locator(".points-counter")
+    .boundingBox())!;
+  const alertControl = (await page
+    .locator(".map-controls .icon-button")
+    .first()
+    .boundingBox())!;
+  expect(topStatus.x + topStatus.width).toBeLessThanOrEqual(alertControl.x);
+  expect(weatherStatus.y + weatherStatus.height).toBeLessThanOrEqual(
+    pointsCounter.y,
+  );
   const button = await startJourneyButton(page).boundingBox();
   expect(button!.height).toBeGreaterThanOrEqual(44);
 });

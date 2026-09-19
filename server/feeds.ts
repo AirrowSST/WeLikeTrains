@@ -608,6 +608,172 @@ export function demoConditions(
   };
 }
 
+export async function getLiveWeather(request: {
+  departure: string;
+  origin?: { lat: number; lon: number };
+}): Promise<Pick<Conditions, "weather" | "feeds" | "updatedAt">> {
+  const result: Pick<Conditions, "weather" | "feeds" | "updatedAt"> = {
+    weather: {
+      forecast: "Weather unavailable",
+      rain: false,
+      walkStatus: "valid",
+      cycleStatus: "valid",
+    },
+    feeds: [],
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    const horizon = (Date.parse(request.departure) - Date.now()) / 3600000;
+    const endpoint =
+      horizon <= 2
+        ? "two-hr-forecast"
+        : horizon <= 24
+          ? "twenty-four-hr-forecast"
+          : "four-day-outlook";
+    const response = await cachedFetch(
+      `weather-${endpoint}`,
+      `https://api-open.data.gov.sg/v2/real-time/api/${endpoint}`,
+      600000,
+    );
+    const origin = request.origin ?? { lat: 1.35285, lon: 103.9405 };
+    const [rainfall, airTemperature] = await Promise.allSettled([
+      cachedFetch(
+        "weather-rainfall",
+        "https://api-open.data.gov.sg/v2/real-time/api/rainfall",
+        300000,
+      ),
+      cachedFetch(
+        "weather-air-temperature",
+        "https://api-open.data.gov.sg/v2/real-time/api/air-temperature",
+        300000,
+      ),
+    ]);
+    const rainfallMm =
+      horizon <= 2 && rainfall.status === "fulfilled" && !rainfall.value.stale
+        ? nearestReading(rainfall.value.value, origin)
+        : undefined;
+    const temperature =
+      horizon <= 2 &&
+      airTemperature.status === "fulfilled" &&
+      !airTemperature.value.stale
+        ? nearestReading(airTemperature.value.value, origin)
+        : undefined;
+    const record =
+      response.value?.data?.items?.[0] ?? response.value?.data?.records?.[0];
+    const at = Date.parse(request.departure);
+    const inWindow = (window: Obj) =>
+      window && Date.parse(window.start) <= at && Date.parse(window.end) >= at;
+    let text = "Weather unavailable for this travel window";
+    let valid = false;
+    let detail = "data.gov.sg official forecast";
+    if (endpoint === "two-hr-forecast" && inWindow(record?.valid_period)) {
+      const area = [...response.value.data.area_metadata].sort(
+        (a: Obj, b: Obj) =>
+          Math.hypot(
+            a.label_location.latitude - origin.lat,
+            a.label_location.longitude - origin.lon,
+          ) -
+          Math.hypot(
+            b.label_location.latitude - origin.lat,
+            b.label_location.longitude - origin.lon,
+          ),
+      )[0]?.name;
+      text =
+        record.forecasts.find((forecast: Obj) => forecast.area === area)
+          ?.forecast ?? text;
+      valid = true;
+      detail += `; ${area}, matches departure time`;
+    } else if (endpoint === "twenty-four-hr-forecast") {
+      const period = record?.periods?.find((period: Obj) =>
+        inWindow(period.timePeriod),
+      );
+      const region =
+        origin.lon > 103.89
+          ? "east"
+          : origin.lon < 103.8
+            ? "west"
+            : origin.lat > 1.37
+              ? "north"
+              : origin.lat < 1.31
+                ? "south"
+                : "central";
+      if (period) {
+        text =
+          period.regions?.[region]?.text ??
+          record.general?.forecast?.text ??
+          text;
+        valid = true;
+        detail += `; ${region} region, matches departure time`;
+      } else if (inWindow(record?.general?.validPeriod)) {
+        text = record.general.forecast.text;
+        valid = true;
+        detail += "; broad 24-hour outlook";
+      }
+    } else if (endpoint === "four-day-outlook") {
+      const day = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Singapore",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(request.departure));
+      const forecast = record?.forecasts?.find((forecast: Obj) =>
+        String(forecast.timestamp).startsWith(day),
+      );
+      if (forecast) {
+        text = forecast.forecast.summary ?? forecast.forecast.text;
+        valid = true;
+        detail += "; broad daily outlook, not an hour-specific prediction";
+      }
+    }
+    const rain =
+      valid &&
+      endpoint !== "four-day-outlook" &&
+      /rain|showers|thunder/i.test(text);
+    const heavyRain = (rainfallMm ?? 0) >= 7.2 || /heavy|thunder/i.test(text);
+    const heat =
+      (temperature ?? 0) >= 33 ||
+      ((temperature ?? 0) >= 32 && /fair|sunny|partly cloudy/i.test(text));
+    result.weather = {
+      forecast: text,
+      rain,
+      rainfallMm,
+      temperature,
+      walkStatus: heavyRain ? "invalid" : rain || heat ? "limited" : "valid",
+      cycleStatus:
+        heavyRain || (temperature ?? 0) >= 34
+          ? "invalid"
+          : rain || heat
+            ? "limited"
+            : "valid",
+    };
+    result.feeds.push({
+      name: `NEA ${endpoint}`,
+      status: response.stale ? "stale" : valid ? "live" : "unavailable",
+      updatedAt:
+        record?.update_timestamp ??
+        record?.timestamp ??
+        new Date(response.at).toISOString(),
+      detail,
+    });
+    result.feeds.push({
+      name: "NEA rainfall & air temperature",
+      status:
+        rainfallMm !== undefined || temperature !== undefined
+          ? "live"
+          : "unavailable",
+      updatedAt: new Date().toISOString(),
+      detail: "Nearest available weather station to the journey origin",
+    });
+  } catch {
+    result.feeds.push({
+      name: "NEA 2-hour forecast",
+      status: "unavailable",
+      detail: "Weather could not be reached",
+    });
+  }
+  return result;
+}
+
 export async function getConditions(
   request: Pick<
     PlanRequest,
@@ -804,24 +970,6 @@ export async function getConditions(
         });
       }
     }),
-    lta("RoadWorks", "Planned road works", 3600000, (r) => {
-      for (const [i, v] of toList(r.value).slice(0, 15).entries())
-        conditions.notices.push({
-          id: `road-${i}`,
-          title: v.RoadName ?? "Planned road works",
-          roadName: v.RoadName,
-          description:
-            v.Description ??
-            `Works from ${v.StartDate ?? "announced date"} to ${v.EndDate ?? "further notice"}. Check nearby bus diversions.`,
-          stations: [],
-          kind: "advisory",
-          severity: "info",
-          startsAt: v.StartDate ?? conditions.updatedAt,
-          endsAt: v.EndDate,
-          delayMinutes: 0,
-          source: "LTA RoadWorks; informational until geospatially matched",
-        });
-    }),
     lta(LTA_ENDPOINTS.floodAlerts, "PUB flood alerts", 60000, (r) =>
       conditions.notices.push(...parseFloodAlerts(r, conditions.updatedAt)),
     ),
@@ -838,163 +986,9 @@ export async function getConditions(
       (r) => conditions.traffic.push(...parseEstimatedTravelTimes(r)),
     ),
     (async () => {
-      try {
-        const horizon = (Date.parse(request.departure) - Date.now()) / 3600000;
-        const endpoint =
-          horizon <= 2
-            ? "two-hr-forecast"
-            : horizon <= 24
-              ? "twenty-four-hr-forecast"
-              : "four-day-outlook";
-        const r = await cachedFetch(
-          `weather-${endpoint}`,
-          `https://api-open.data.gov.sg/v2/real-time/api/${endpoint}`,
-          600000,
-        );
-        const origin = request.origin ?? { lat: 1.35285, lon: 103.9405 };
-        const [rainfall, airTemperature] = await Promise.allSettled([
-          cachedFetch(
-            "weather-rainfall",
-            "https://api-open.data.gov.sg/v2/real-time/api/rainfall",
-            300000,
-          ),
-          cachedFetch(
-            "weather-air-temperature",
-            "https://api-open.data.gov.sg/v2/real-time/api/air-temperature",
-            300000,
-          ),
-        ]);
-        const rainfallMm =
-          horizon <= 2 &&
-          rainfall.status === "fulfilled" &&
-          !rainfall.value.stale
-            ? nearestReading(rainfall.value.value, origin)
-            : undefined;
-        const temperature =
-          horizon <= 2 &&
-          airTemperature.status === "fulfilled" &&
-          !airTemperature.value.stale
-            ? nearestReading(airTemperature.value.value, origin)
-            : undefined;
-        const record = r.value?.data?.items?.[0] ?? r.value?.data?.records?.[0];
-        const at = Date.parse(request.departure);
-        const inWindow = (window: Obj) =>
-          window &&
-          Date.parse(window.start) <= at &&
-          Date.parse(window.end) >= at;
-        let text = "Weather unavailable for this travel window";
-        let valid = false;
-        let detail = "data.gov.sg official forecast";
-        if (endpoint === "two-hr-forecast" && inWindow(record?.valid_period)) {
-          const area = [...r.value.data.area_metadata].sort(
-            (a: Obj, b: Obj) =>
-              Math.hypot(
-                a.label_location.latitude - origin.lat,
-                a.label_location.longitude - origin.lon,
-              ) -
-              Math.hypot(
-                b.label_location.latitude - origin.lat,
-                b.label_location.longitude - origin.lon,
-              ),
-          )[0]?.name;
-          text =
-            record.forecasts.find((f: Obj) => f.area === area)?.forecast ??
-            text;
-          valid = true;
-          detail += `; ${area}, matches departure time`;
-        } else if (endpoint === "twenty-four-hr-forecast") {
-          const period = record?.periods?.find((p: Obj) =>
-            inWindow(p.timePeriod),
-          );
-          const region =
-            origin.lon > 103.89
-              ? "east"
-              : origin.lon < 103.8
-                ? "west"
-                : origin.lat > 1.37
-                  ? "north"
-                  : origin.lat < 1.31
-                    ? "south"
-                    : "central";
-          if (period) {
-            text =
-              period.regions?.[region]?.text ??
-              record.general?.forecast?.text ??
-              text;
-            valid = true;
-            detail += `; ${region} region, matches departure time`;
-          } else if (inWindow(record?.general?.validPeriod)) {
-            text = record.general.forecast.text;
-            valid = true;
-            detail += "; broad 24-hour outlook";
-          }
-        } else if (endpoint === "four-day-outlook") {
-          const day = new Intl.DateTimeFormat("en-CA", {
-            timeZone: "Asia/Singapore",
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-          }).format(new Date(request.departure));
-          const forecast = record?.forecasts?.find((f: Obj) =>
-            String(f.timestamp).startsWith(day),
-          );
-          if (forecast) {
-            text = forecast.forecast.summary ?? forecast.forecast.text;
-            valid = true;
-            detail += "; broad daily outlook, not an hour-specific prediction";
-          }
-        }
-        const rain =
-          valid &&
-          endpoint !== "four-day-outlook" &&
-          /rain|showers|thunder/i.test(text);
-        const heavyRain =
-          (rainfallMm ?? 0) >= 7.2 || /heavy|thunder/i.test(text);
-        const heat =
-          (temperature ?? 0) >= 33 ||
-          ((temperature ?? 0) >= 32 && /fair|sunny|partly cloudy/i.test(text));
-        conditions.weather = {
-          forecast: text,
-          rain,
-          rainfallMm,
-          temperature,
-          walkStatus: heavyRain
-            ? "invalid"
-            : rain || heat
-              ? "limited"
-              : "valid",
-          cycleStatus:
-            heavyRain || (temperature ?? 0) >= 34
-              ? "invalid"
-              : rain || heat
-                ? "limited"
-                : "valid",
-        };
-        conditions.feeds.push({
-          name: `NEA ${endpoint}`,
-          status: r.stale ? "stale" : valid ? "live" : "unavailable",
-          updatedAt:
-            record?.update_timestamp ??
-            record?.timestamp ??
-            new Date(r.at).toISOString(),
-          detail,
-        });
-        conditions.feeds.push({
-          name: "NEA rainfall & air temperature",
-          status:
-            rainfallMm !== undefined || temperature !== undefined
-              ? "live"
-              : "unavailable",
-          updatedAt: new Date().toISOString(),
-          detail: "Nearest available weather station to the journey origin",
-        });
-      } catch {
-        conditions.feeds.push({
-          name: "NEA 2-hour forecast",
-          status: "unavailable",
-          detail: "Weather could not be reached",
-        });
-      }
+      const weather = await getLiveWeather(request);
+      conditions.weather = weather.weather;
+      conditions.feeds.push(...weather.feeds);
     })(),
   ]);
   if (connection.simulated) {

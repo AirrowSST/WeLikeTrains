@@ -36,6 +36,21 @@ const jsonResponse = (body: unknown) =>
   ({ ok: true, json: async () => body }) as Response;
 
 describe("official data contracts", () => {
+  it("excludes road works from live requests and feed diagnostics", async () => {
+    vi.stubEnv("LTA_ACCOUNT_KEY", "test-key");
+    const fetcher = vi.fn(async (_input: unknown) => jsonResponse({ value: [] }));
+    vi.stubGlobal("fetch", fetcher);
+    const result = await getConditions({
+      dataMode: "live",
+      scenario: "normal",
+      departure: "2026-09-21T07:40:00+08:00",
+    });
+    const urls = fetcher.mock.calls.map((args) => String(args[0]));
+    expect(urls.some((url) => url.includes("TrainServiceAlerts"))).toBe(true);
+    expect(urls.some((url) => /RoadWorks/i.test(url))).toBe(false);
+    expect(result.feeds.some((feed) => /road works/i.test(feed.name))).toBe(false);
+    expect(result.notices.some((notice) => /RoadWorks/i.test(notice.source))).toBe(false);
+  });
   it("keeps per-segment mitigations, direction and the separate advisory stream", () => {
     const data = {
       value: {

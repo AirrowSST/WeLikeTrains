@@ -9,8 +9,13 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { NoUsableRouteError, planJourney } from "./planner";
 import { planChatContext } from "./chat-context";
-import { getBusArrivals } from "./feeds";
+import { getBusArrivals, getLiveWeather } from "./feeds";
 import { listTransitStops } from "./network";
+import {
+  busServiceMap,
+  stationCrowds,
+  stationDepartures,
+} from "./transit-details";
 import { chat, searchPlaces, speech } from "./providers";
 import { requestOriginAllowed } from "./origin-policy";
 import { places, profiles, scenarios } from "../shared/catalog";
@@ -60,18 +65,50 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "https://accounts.google.com/gsi/client"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-eval'",
+          "https://accounts.google.com/gsi/client",
+          "https://*.googleapis.com",
+          "https://*.gstatic.com",
+          "https://*.google.com",
+          "https://*.ggpht.com",
+          "https://*.googleusercontent.com",
+          "blob:",
+        ],
         styleSrc: [
           "'self'",
           "'unsafe-inline'",
           "https://accounts.google.com/gsi/style",
+          "https://fonts.googleapis.com",
         ],
-        imgSrc: ["'self'", "data:", "blob:", "https://www.onemap.gov.sg"],
-        connectSrc: ["'self'", "https://accounts.google.com/gsi/"],
-        frameSrc: ["https://accounts.google.com/gsi/"],
-        fontSrc: ["'self'", "https://cdn.fontshare.com"],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "blob:",
+          "https://www.onemap.gov.sg",
+          "https://*.googleapis.com",
+          "https://*.gstatic.com",
+          "https://*.google.com",
+          "https://*.googleusercontent.com",
+        ],
+        connectSrc: [
+          "'self'",
+          "https://accounts.google.com/gsi/",
+          "https://*.googleapis.com",
+          "https://*.gstatic.com",
+          "https://*.google.com",
+          "data:",
+          "blob:",
+        ],
+        frameSrc: ["https://accounts.google.com/gsi/", "https://*.google.com"],
+        fontSrc: [
+          "'self'",
+          "https://cdn.fontshare.com",
+          "https://fonts.gstatic.com",
+        ],
         mediaSrc: ["'self'", "blob:"],
-        workerSrc: ["'self'"],
+        workerSrc: ["'self'", "blob:"],
         upgradeInsecureRequests:
           process.env.NODE_ENV === "production" ? [] : null,
       },
@@ -123,9 +160,11 @@ app.get("/api/config", (_req, res) =>
       tts: process.env.ENABLE_CLOUD_TTS === "true",
       push: pushConfigured(),
       googleAccounts: accountsConfigured(),
+      googlePlaces: !!process.env.GOOGLE_MAPS_API_KEY,
     },
     vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? null,
     googleClientId: accountsConfigured() ? process.env.GOOGLE_CLIENT_ID : null,
+    googlePlacesApiKey: process.env.GOOGLE_MAPS_API_KEY ?? null,
   }),
 );
 app.get("/api/auth/session", async (req, res) => {
@@ -179,6 +218,54 @@ app.get("/api/places", async (req, res) =>
 app.get("/api/transit-stops", (_req, res) => {
   res.set("Cache-Control", "public, max-age=86400");
   res.json(listTransitStops());
+});
+app.get("/api/bus-service", (req, res) => {
+  const query = z
+    .object({
+      service: z
+        .string()
+        .regex(/^[A-Za-z0-9]+$/)
+        .max(12),
+      stop: z.string().regex(/^\d{5}$/),
+    })
+    .parse(req.query);
+  res.json(busServiceMap(query.service, query.stop));
+});
+app.get("/api/station-board", async (req, res) => {
+  const query = z
+    .object({
+      id: z.string().max(120),
+      at: z.iso.datetime({ offset: true }).optional(),
+      demo: z.enum(["true"]).optional(),
+    })
+    .parse(req.query);
+  const stop = listTransitStops().find(
+    (s) => s.id === query.id && s.mode === "rail",
+  );
+  if (!stop) {
+    res.status(404).json({ error: "Station unavailable" });
+    return;
+  }
+  const board = stationDepartures(
+    stop,
+    query.demo && query.at ? Date.parse(query.at) : Date.now(),
+  );
+  [board.crowds, board.forecasts] = query.demo ? [[], []] : await Promise.all([stationCrowds(stop), stationCrowds(stop, true)]);
+  res.json(board);
+});
+app.get("/api/weather", async (req, res) => {
+  const origin = z
+    .object({
+      lat: z.coerce.number().min(1.2).max(1.48),
+      lon: z.coerce.number().min(103.6).max(104.1),
+    })
+    .parse(req.query);
+  res.json(
+    await getLiveWeather({
+      departure: new Date().toISOString(),
+      origin,
+    }),
+  );
 });
 app.post("/api/plan", async (req, res) => {
   const request = planSchema.parse(req.body);

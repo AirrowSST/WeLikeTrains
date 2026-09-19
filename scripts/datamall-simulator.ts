@@ -116,7 +116,6 @@ export async function startDatamallSimulator(
           "v4/TrafficSpeedBands",
           "EstTravelTimes",
           "PubFloodAlerts",
-          "RoadWorks",
           "TrafficIncidents",
         ].includes(endpoint)
       )
@@ -249,7 +248,6 @@ export async function startDatamallSimulator(
         "PCDRealTime",
         "PCDForecast",
         "v2/FacilitiesMaintenance",
-        "RoadWorks",
         "TrafficIncidents",
       ].includes(endpoint)
     )

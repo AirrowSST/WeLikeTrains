@@ -319,28 +319,6 @@ export function applyConditions(
     }
     for (const notice of conditions.notices) {
       if (
-        notice.kind === "advisory" &&
-        notice.roadName &&
-        noticeActive(notice, request.departure, journey.duration)
-      ) {
-        const normalizeRoad = (name: string) =>
-          name
-            .toLowerCase()
-            .replace(/\brd\b/g, "road")
-            .replace(/\bave\b/g, "avenue")
-            .replace(/\bst\b/g, "street")
-            .replace(/\s+/g, " ")
-            .trim();
-        if (
-          s.roadNames?.some(
-            (name) => normalizeRoad(name) === normalizeRoad(notice.roadName!),
-          )
-        )
-          warnings.push(
-            `Planned works along this bus service: ${notice.title}. Exact affected section and delay are unconfirmed.`,
-          );
-      }
-      if (
         !noticeActive(notice, request.departure, journey.duration) ||
         !segmentAffected(notice, s)
       )
@@ -563,7 +541,7 @@ function journeyFromSegments(
       "Timings use distance, estimated speed, dwell and waiting allowances; they are not a published timetable.",
       ...(segments.some((s) => s.geometryKind === "schematic")
         ? [
-            "Bus map includes schematic stop-to-stop lines, not the roads travelled. Bus distance uses DataMall; road-specific conditions cannot be verified on schematic sections.",
+            "Bus map highlights served stops where road geometry is unavailable. Bus distance uses DataMall; road-specific conditions cannot be verified on those sections.",
           ]
         : []),
     ],
@@ -865,7 +843,7 @@ export function localJourneys(
           accessibility: "unknown",
           instructions: "",
           source: edge.busReference
-            ? `LTA DataMall stop sequence and distance · ${edge.geometryKind === "schematic" ? "schematic stop-to-stop map, not road geometry" : "OSM matched map geometry"}`
+            ? `LTA DataMall stop sequence and distance · ${edge.geometryKind === "schematic" ? "served stops highlighted; road geometry unavailable" : "OSM matched map geometry"}`
             : "OpenStreetMap route relation",
         };
         const impacted = variant.live
@@ -928,7 +906,7 @@ export function localJourneys(
           if (edge.geometryKind === "schematic") {
             last.geometryKind = "schematic";
             last.source =
-              "LTA DataMall stop sequence and distance · includes schematic stop-to-stop map, not road geometry";
+              "LTA DataMall stop sequence and distance · served stops highlighted; road geometry unavailable";
           }
           last.instructions = `Take ${edge.mode === "bus" ? "bus " : ""}${edge.line} towards ${edge.direction}. Alight at ${to.name}. Includes an estimated boarding wait.`;
         } else

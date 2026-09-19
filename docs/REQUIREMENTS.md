@@ -8,7 +8,7 @@ Source: the supplied “Problem Statement 2 — Smart Commuter Companion”. Use
 | Rachel primary end to end | Public Tampines/Raffles endpoints, 07:40/08:45 defaults, scenario route/steps/save | Public landmarks stand in for private addresses |
 | Arjun / Mdm Lim selectable | Isolated Developer-mode faux-account presets, cycling/crowd/shelter/slow walking/step-free/large text | Accessibility is explicitly unverified; demo state never syncs |
 | Guest and Google accounts | Local guest preferences and multiple daily commutes; server-verified Google sign-in merges and syncs account state | Sign-out restores the separate guest space; account data is user-deletable |
-| Actual origin/destination/time routes | Local OSM graph, LTA schedule/reference/geospatial joins, input validation and local place search | Partial bus geometry; estimated access and bus running time |
+| Actual origin/destination/time routes | Singapore-scoped Google Places UI Kit selection when configured, indexed local fallback, local OSM graph and LTA schedule/reference/geospatial joins | Search coverage does not guarantee walking-graph access; partial bus geometry and estimated access/running time remain |
 | Revised route as conditions change | Condition-aware search; compare unconstrained original vs alternatives | Live upstream outages fall back honestly |
 | Rail, bus, walk, cycle where needed | Transit adjacency, access A*, cycling-to-transit candidate; route leg icons | Cycle graph incomplete; no bike-on-train guarantee |
 | Door-to-door legs | Walking first and last segments, real coordinates, instructions | Last metres/station entrances may be approximate |
@@ -18,7 +18,7 @@ Source: the supplied “Problem Statement 2 — Smart Commuter Companion”. Use
 | Crowd in one glance | Low/moderate/high/unknown labels; station real-time + forecast and per-bus occupancy | Unknown stays unknown; bus occupancy only near departure |
 | Time and delay comparison | Option durations, arrival, buffers, walking, reasons | Estimated intervals are not confidence bounds |
 | Proactive action, meaningful threshold | One-line advice, saved routines, opt-in Scheduler/Web Push, cooldown/dedup | Daily repeats, max 100 records/run, OS delivery constraints |
-| Planned and unplanned events | Structured alerts, station lift maintenance, road works/advisories, demo closures, next-day relevant warning | Unstructured road/rail planned notices informational until safely mapped |
+| Planned and unplanned events | Structured rail alerts, station lift maintenance, traffic incidents, released bus changes, demo closures and next-day relevant warning | Road works are currently out of product scope; unstructured advisories remain informational until safely mapped |
 | Correct TrainServiceAlerts nesting | Parser reads `AffectedSegments` and separate `Message`; unit fixtures | Feed delay allowance is an app estimate |
 | Mitigation in official feed | Displays per-segment free boarding/shuttle information in notices/chat | No invented shuttle route geometry |
 | Canonical aliases | STL/SLRT, PTL/PLRT, CEL/CCL, CGL/EWL etc. in shared catalog | Station references from OSM are not always complete |

@@ -19,6 +19,8 @@ import {
   ChevronRight,
   CircleUserRound,
   Clock3,
+  CloudLightning,
+  CloudRain,
   CloudSun,
   DoorOpen,
   Footprints,
@@ -100,6 +102,14 @@ import JourneyMap from "./Map";
 import { useJourneySheet } from "./useJourneySheet";
 import GoogleSignIn, { disableGoogleAutoSelect } from "./GoogleSignIn";
 import {
+  googleSelectionToPlace,
+  loadGooglePlacesUi,
+  type BasicPlaceAutocompleteElement,
+  type GooglePlaceSelection,
+  type PlaceDetailsCompactElement,
+  type PlaceDetailsPlaceRequestElement,
+} from "./google-places";
+import {
   demoJourneyFix,
   demoLocationFix,
   deviceLocationFix,
@@ -154,6 +164,7 @@ type ModalName =
   | "help"
   | "proactive"
   | "alerts"
+  | "weather"
   | null;
 interface LegacySaved {
   profile: "profile-1";
@@ -171,6 +182,10 @@ interface Activity {
   weekday: string;
   date: string;
 }
+type WeatherSnapshot = Pick<
+  PlanResponse["conditions"],
+  "weather" | "feeds" | "updatedAt"
+>;
 const PROFILE_KEY = "wlt-profile-v1",
   GUEST_KEY = "wlt-guest-v2",
   PLAN_KEY = "wlt-journey-v1",
@@ -189,7 +204,7 @@ const UNSET_ORIGIN: Place = {
 const UNSET_DESTINATION: Place = {
   id: "destination-unset",
   name: "",
-  subtitle: "Search stations, landmarks, or addresses",
+  subtitle: "Search indexed stations, bus stops, or landmarks",
   lat: 0,
   lon: 0,
 };
@@ -503,6 +518,22 @@ const ModeIcon = ({ mode, size = 17 }: { mode: string; size?: number }) =>
   ) : (
     <TrainFront size={size} />
   );
+function WeatherStatusIcon({
+  forecast,
+  rain,
+}: {
+  forecast: string;
+  rain: boolean;
+}) {
+  const normalized = forecast.toLowerCase();
+  if (/thunder|lightning/.test(normalized))
+    return <CloudLightning size={20} aria-hidden="true" />;
+  if (rain || /rain|showers/.test(normalized))
+    return <CloudRain size={20} aria-hidden="true" />;
+  if (/fair|clear|sunny/.test(normalized))
+    return <Sun size={20} aria-hidden="true" />;
+  return <CloudSun size={20} aria-hidden="true" />;
+}
 function LinePill({ segment }: { segment: Segment }) {
   return (
     <span
@@ -744,24 +775,210 @@ function Onboarding({
     </dialog>
   );
 }
+function GooglePlacesInput({
+  apiKey,
+  controlId,
+  value,
+  placeholder,
+  onChange,
+  onUnavailable,
+}: {
+  apiKey: string;
+  controlId: string;
+  value: Place;
+  placeholder?: string;
+  onChange: (place: Place) => void;
+  onUnavailable: (message: string) => void;
+}) {
+  const host = useRef<HTMLDivElement>(null);
+  const detailsHost = useRef<HTMLDivElement>(null);
+  const control = useRef<BasicPlaceAutocompleteElement | null>(null);
+  const latestTypedLabel = useRef(value.name);
+  const pendingSelection = useRef<{ id: string; label: string } | null>(null);
+  const onChangeRef = useRef(onChange);
+  const onUnavailableRef = useRef(onUnavailable);
+  const [ready, setReady] = useState(false);
+  onChangeRef.current = onChange;
+  onUnavailableRef.current = onUnavailable;
+
+  useEffect(() => {
+    let cancelled = false;
+    let inputListener: ((event: Event) => void) | undefined;
+    let selectListener: ((event: Event) => void) | undefined;
+    let errorListener: (() => void) | undefined;
+    let detailsLoadListener: (() => void) | undefined;
+    let details: PlaceDetailsCompactElement | undefined;
+    loadGooglePlacesUi(apiKey)
+      .then(({ BasicPlaceAutocompleteElement }) => {
+        if (cancelled || !host.current || !detailsHost.current) return;
+        const picker = new BasicPlaceAutocompleteElement();
+        picker.id = controlId;
+        picker.placeholder = value.name || placeholder || "Search all Singapore";
+        picker.includedRegionCodes = ["sg"];
+        picker.requestedLanguage = "en";
+        picker.requestedRegion = "sg";
+        inputListener = (event) => {
+          const input = event
+            .composedPath()
+            .find(
+              (candidate): candidate is HTMLInputElement =>
+                candidate instanceof HTMLInputElement,
+            );
+          const typed = (input?.value || picker.value || "").trim();
+          if (typed) latestTypedLabel.current = typed;
+        };
+        details = document.createElement(
+          "gmp-place-details-compact",
+        ) as PlaceDetailsCompactElement;
+        details.className = "google-place-details";
+        details.setAttribute("orientation", "horizontal");
+        details.setAttribute("truncation-preferred", "");
+        details.hidden = true;
+        const detailsRequest = document.createElement(
+          "gmp-place-details-place-request",
+        ) as PlaceDetailsPlaceRequestElement;
+        details.append(
+          detailsRequest,
+          document.createElement("gmp-place-standard-content"),
+        );
+        detailsLoadListener = () => {
+          const pending = pendingSelection.current;
+          if (!pending || !details?.place) return;
+          const place = googleSelectionToPlace(
+            { ...details.place, id: details.place.id || pending.id },
+            pending.label,
+          );
+          if (!place) {
+            onUnavailableRef.current(
+              "That result has no routable Singapore coordinate. Try another place.",
+            );
+            return;
+          }
+          pendingSelection.current = null;
+          picker.placeholder = place.name;
+          onChangeRef.current(place);
+        };
+        selectListener = (event) => {
+          const selected =
+            (
+              event as Event & {
+                place?: GooglePlaceSelection;
+                detail?: { place?: GooglePlaceSelection };
+              }
+            ).place ??
+            (
+              event as Event & {
+                detail?: { place?: GooglePlaceSelection };
+              }
+            ).detail?.place;
+          if (!selected?.id) {
+            onUnavailableRef.current(
+              "Choose a Google result located within Singapore.",
+            );
+            return;
+          }
+          pendingSelection.current = {
+            id: selected.id,
+            label:
+              selected.displayName ||
+              picker.value?.trim() ||
+              latestTypedLabel.current ||
+              "Selected Google place",
+          };
+          details!.hidden = false;
+          detailsRequest.place = selected.id;
+        };
+        picker.addEventListener("input", inputListener);
+        picker.addEventListener("gmp-select", selectListener);
+        errorListener = () =>
+          onUnavailableRef.current(
+            "Online address search is unavailable. Using the offline index.",
+          );
+        picker.addEventListener("gmp-error", errorListener);
+        details.addEventListener("gmp-load", detailsLoadListener);
+        details.addEventListener("gmp-error", errorListener);
+        host.current.replaceChildren(picker);
+        detailsHost.current.replaceChildren(details);
+        control.current = picker;
+        setReady(true);
+      })
+      .catch(() => {
+        if (!cancelled)
+          onUnavailableRef.current(
+            "Online address search is unavailable. Using the offline index.",
+          );
+      });
+    return () => {
+      cancelled = true;
+      if (control.current && inputListener)
+        control.current.removeEventListener("input", inputListener);
+      if (control.current && selectListener)
+        control.current.removeEventListener("gmp-select", selectListener);
+      if (control.current && errorListener)
+        control.current.removeEventListener("gmp-error", errorListener);
+      if (details && detailsLoadListener)
+        details.removeEventListener("gmp-load", detailsLoadListener);
+      if (details && errorListener)
+        details.removeEventListener("gmp-error", errorListener);
+      control.current?.remove();
+      details?.remove();
+      control.current = null;
+    };
+  }, [apiKey, controlId, placeholder]);
+
+  useEffect(() => {
+    latestTypedLabel.current = value.name;
+    if (control.current)
+      control.current.placeholder =
+        value.name || placeholder || "Search all Singapore";
+  }, [placeholder, value]);
+
+  return (
+    <div className="google-place-shell">
+      <div
+        className="google-place-control"
+        ref={host}
+        aria-busy={!ready}
+        aria-label={
+          !ready ? "Loading online Singapore address search" : undefined
+        }
+      />
+      {!ready && (
+        <span className="google-place-loading">Loading address search…</span>
+      )}
+      <div className="google-place-details-host" ref={detailsHost} />
+    </div>
+  );
+}
+
 function PlacePicker({
   label,
   value,
   onChange,
   fieldKey,
   placeholder,
+  googlePlacesApiKey,
+  online,
 }: {
   label: string;
   value: Place;
   onChange: (p: Place) => void;
   fieldKey: "A" | "B";
   placeholder?: string;
+  googlePlacesApiKey?: string;
+  online: boolean;
 }) {
   const [query, setQuery] = useState(value.name);
   const [editing, setEditing] = useState(false);
   const [results, setResults] = useState(places);
   const [busy, setBusy] = useState(false);
+  const [googleUnavailable, setGoogleUnavailable] = useState(false);
+  const [searchNote, setSearchNote] = useState("");
   const container = useRef<HTMLDivElement>(null);
+  const useGoogle = !!googlePlacesApiKey && online && !googleUnavailable;
+  useEffect(() => {
+    if (googlePlacesApiKey && online) setGoogleUnavailable(false);
+  }, [googlePlacesApiKey, online]);
   useEffect(() => setQuery(value.name), [value]);
   useEffect(() => {
     if (!editing) return;
@@ -795,42 +1012,60 @@ function PlacePicker({
     <div className="place-field" ref={container}>
       <div>
         <label htmlFor={`place-${fieldKey}`}>{label}</label>
-        <input
-          id={`place-${fieldKey}`}
-          autoComplete="off"
-          role="combobox"
-          aria-expanded={editing}
-          aria-controls={`places-${fieldKey}`}
-          value={query}
-          placeholder={placeholder}
-          onFocus={() => {
-            setEditing(true);
-            setResults(places);
-          }}
-          onChange={(e) => setQuery(e.target.value)}
-          onBlur={() =>
-            setTimeout(() => {
-              setEditing(false);
-              setQuery(value.name);
-            }, 150)
-          }
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              setEditing(false);
-              setQuery(value.name);
-            }
-            if (e.key === "Enter" && editing) {
-              e.preventDefault();
-              if (results[0]) {
-                onChange(results[0]);
+        {useGoogle ? (
+          <GooglePlacesInput
+            apiKey={googlePlacesApiKey}
+            controlId={`place-${fieldKey}`}
+            value={value}
+            placeholder={placeholder}
+            onChange={(place) => {
+              setQuery(place.name);
+              setSearchNote("");
+              onChange(place);
+            }}
+            onUnavailable={(message) => {
+              setSearchNote(message);
+              setGoogleUnavailable(true);
+            }}
+          />
+        ) : (
+          <input
+            id={`place-${fieldKey}`}
+            autoComplete="off"
+            role="combobox"
+            aria-expanded={editing}
+            aria-controls={`places-${fieldKey}`}
+            value={query}
+            placeholder={placeholder}
+            onFocus={() => {
+              setEditing(true);
+              setResults(places);
+            }}
+            onChange={(e) => setQuery(e.target.value)}
+            onBlur={() =>
+              setTimeout(() => {
                 setEditing(false);
-              }
+                setQuery(value.name);
+              }, 150)
             }
-          }}
-        />
-        <small>{value.subtitle}</small>
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setEditing(false);
+                setQuery(value.name);
+              }
+              if (e.key === "Enter" && editing) {
+                e.preventDefault();
+                if (results[0]) {
+                  onChange(results[0]);
+                  setEditing(false);
+                }
+              }
+            }}
+          />
+        )}
+        <small>{searchNote || value.subtitle}</small>
       </div>
-      {editing && (
+      {editing && !useGoogle && (
         <ul className="place-results" id={`places-${fieldKey}`} role="listbox">
           {busy && <li className="searching">Finding places…</li>}
           {results.map((p) => (
@@ -852,7 +1087,7 @@ function PlacePicker({
           ))}
           {!busy && !results.length && (
             <li className="searching">
-              No match. Try a station, landmark, or full Singapore address.
+              No match. Try an indexed station, bus stop, or landmark.
             </li>
           )}
         </ul>
@@ -878,6 +1113,8 @@ export default function App() {
       ? readSaved<PlanResponse>(PLAN_KEY)
       : null,
   );
+  const [liveWeather, setLiveWeather] = useState<WeatherSnapshot | null>(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("today");
   const [modal, setModal] = useState<ModalName>(null);
@@ -1373,6 +1610,63 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
+    const updateClock = () => setClockNow(Date.now());
+    const timer = window.setInterval(updateClock, 30000);
+    window.addEventListener("focus", updateClock);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", updateClock);
+    };
+  }, []);
+  useEffect(() => {
+    if (request.dataMode !== "live" || currentLocation?.source !== "device") {
+      if (request.dataMode === "live") setLiveWeather(null);
+      return;
+    }
+    let controller: AbortController | null = null;
+    const loadWeather = async () => {
+      if (!navigator.onLine || document.visibilityState !== "visible") return;
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        const response = await fetch(
+          `/api/weather?lat=${encodeURIComponent(currentLocation.lat)}&lon=${encodeURIComponent(currentLocation.lon)}`,
+          { signal: controller.signal },
+        );
+        if (!response.ok) throw new Error("Weather request failed");
+        setLiveWeather((await response.json()) as WeatherSnapshot);
+      } catch (reason) {
+        if ((reason as Error).name === "AbortError") return;
+        setLiveWeather((previous) =>
+          previous
+            ? {
+                ...previous,
+                feeds: [
+                  {
+                    name: "NEA weather",
+                    status: "stale",
+                    updatedAt: previous.updatedAt,
+                    detail: "Last weather retained after a refresh failure",
+                  },
+                ],
+              }
+            : null,
+        );
+      }
+    };
+    void loadWeather();
+    const timer = window.setInterval(() => void loadWeather(), 300000);
+    return () => {
+      controller?.abort();
+      window.clearInterval(timer);
+    };
+  }, [
+    currentLocation?.lat,
+    currentLocation?.lon,
+    currentLocation?.source,
+    request.dataMode,
+  ]);
+  useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 5000);
     return () => clearTimeout(timer);
@@ -1769,24 +2063,88 @@ export default function App() {
   const pointsAlreadyCollected =
     !!plan &&
     wallet.entries.some((entry) => entry.id === pointsJourneyId(plan));
+  const headerConditions =
+    request.dataMode === "demo"
+      ? plan?.conditions
+      : (liveWeather ??
+        (plan?.conditions.mode === "live" ? plan.conditions : null));
+  const headerWeather = headerConditions?.weather;
+  const weatherFeed = headerConditions?.feeds.find((feed) =>
+    /weather|NEA .*forecast/i.test(feed.name),
+  );
+  const forecast = (
+    headerWeather?.forecast ??
+    (currentLocation?.source === "device"
+      ? "Updating weather"
+      : "Weather unavailable")
+  ).replace(/^SIMULATED ·\s*/i, "");
+  const weatherState = !online
+    ? "Offline"
+    : request.dataMode === "demo"
+      ? "Demo"
+      : weatherFeed?.status === "stale"
+        ? "Stale"
+        : weatherFeed?.status === "unavailable"
+          ? "Unavailable"
+          : "";
+  const weatherPrefix =
+    weatherState === "Unavailable" && /unavailable/i.test(forecast)
+      ? ""
+      : weatherState
+        ? `${weatherState} · `
+        : "";
+  const weatherLabel = `${weatherPrefix}${
+    headerWeather?.temperature !== undefined
+      ? `${Math.round(headerWeather.temperature)}° · `
+      : ""
+  }${forecast}`;
+  const clockDate = request.timeline
+    ? new Date(timelineTime(request.timeline))
+    : new Date(clockNow);
+  const clockLabel = new Intl.DateTimeFormat("en-SG", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Singapore",
+  }).format(clockDate);
   return (
     <div className="app-shell">
       <a href="#main" className="skip-link">
         Skip to journey
       </a>
-      <button
-        type="button"
-        className={`points-counter ${tab === "today" && !primaryPage ? "on-map" : ""}`}
-        aria-label={`${request.dataMode === "demo" ? "Demo: " : ""}${balance} points. Open rewards`}
-        onClick={() => {
-          setTab("rewards");
-          setModal(null);
-        }}
+      <div
+        className={`top-status ${tab === "today" && !primaryPage ? "on-map" : ""}`}
       >
-        <Leaf size={18} aria-hidden="true" />
-        <strong>{balance.toLocaleString()}</strong>
-        <span>{request.dataMode === "demo" ? "demo pts" : "pts"}</span>
-      </button>
+        <button
+          type="button"
+          className="weather-status"
+          aria-label={`${weatherLabel}. Singapore time ${clockLabel}. Open weather details`}
+          title={`${weatherLabel} · ${clockLabel}`}
+          onClick={() => setModal("weather")}
+        >
+          <WeatherStatusIcon
+            forecast={forecast}
+            rain={headerWeather?.rain ?? false}
+          />
+          <span>
+            <strong>{weatherLabel}</strong>
+            <time dateTime={clockDate.toISOString()}>{clockLabel}</time>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="points-counter"
+          aria-label={`${request.dataMode === "demo" ? "Demo: " : ""}${balance} points. Open rewards`}
+          onClick={() => {
+            setTab("rewards");
+            setModal(null);
+          }}
+        >
+          <Leaf size={18} aria-hidden="true" />
+          <strong>{balance.toLocaleString()}</strong>
+          <span>{request.dataMode === "demo" ? "demo pts" : "pts"}</span>
+        </button>
+      </div>
       <header className="site-header">
         <nav aria-label="Main navigation">
           <button
@@ -1923,6 +2281,7 @@ export default function App() {
             >
               <div className="journey-map-slot">
                 <JourneyMap
+                  request={request}
                   plan={plan}
                   selected={selected}
                   location={currentLocation}
@@ -2034,6 +2393,12 @@ export default function App() {
                               fieldKey="A"
                               value={request.origin}
                               placeholder="Current location"
+                              googlePlacesApiKey={
+                                request.dataMode === "live"
+                                  ? config?.googlePlacesApiKey
+                                  : undefined
+                              }
+                              online={online}
                               onChange={(p) => {
                                 clearLocation();
                                 updateRequestAndPlan({ origin: p });
@@ -2044,6 +2409,12 @@ export default function App() {
                               fieldKey="B"
                               value={request.destination}
                               placeholder="Where to?"
+                              googlePlacesApiKey={
+                                request.dataMode === "live"
+                                  ? config?.googlePlacesApiKey
+                                  : undefined
+                              }
+                              online={online}
                               onChange={(p) =>
                                 updateRequest({ destination: p })
                               }
@@ -2527,8 +2898,8 @@ export default function App() {
                                   )}
                                   {s.geometryKind === "schematic" && (
                                     <p className="step-detail">
-                                      Schematic bus line · not the roads
-                                      travelled
+                                      Served stops highlighted · road geometry
+                                      unavailable
                                     </p>
                                   )}
                                 </div>
@@ -2987,6 +3358,93 @@ export default function App() {
           </div>
         </Modal>
       )}
+      {modal === "weather" && (
+        <Modal title="Weather right now" onClose={() => setModal(null)}>
+          <div className="modal-body weather-detail">
+            <div className="weather-detail-summary">
+              <span className="weather-detail-icon">
+                <WeatherStatusIcon
+                  forecast={forecast}
+                  rain={headerWeather?.rain ?? false}
+                />
+              </span>
+              <span>
+                <small>{weatherState || "Current conditions"}</small>
+                <strong>{forecast}</strong>
+                <time dateTime={clockDate.toISOString()}>
+                  {clockLabel} Singapore time
+                </time>
+              </span>
+            </div>
+            <div className="weather-detail-grid">
+              <div>
+                <small>Temperature</small>
+                <strong>
+                  {headerWeather?.temperature !== undefined
+                    ? `${Math.round(headerWeather.temperature)}°C`
+                    : "Not reported"}
+                </strong>
+              </div>
+              <div>
+                <small>Rainfall</small>
+                <strong>
+                  {headerWeather?.rainfallMm !== undefined
+                    ? `${headerWeather.rainfallMm.toFixed(1)} mm`
+                    : "Not reported"}
+                </strong>
+              </div>
+              <div>
+                <small>Walking</small>
+                <strong>
+                  {headerWeather?.walkStatus === "invalid"
+                    ? "Not recommended"
+                    : headerWeather?.walkStatus === "limited"
+                      ? "Use extra care"
+                      : headerWeather
+                        ? "Normal"
+                        : "Unavailable"}
+                </strong>
+              </div>
+              <div>
+                <small>Cycling</small>
+                <strong>
+                  {headerWeather?.cycleStatus === "invalid"
+                    ? "Not recommended"
+                    : headerWeather?.cycleStatus === "limited"
+                      ? "Use extra care"
+                      : headerWeather
+                        ? "Normal"
+                        : "Unavailable"}
+                </strong>
+              </div>
+            </div>
+            <div className="weather-detail-source">
+              <span
+                className={`status-dot ${request.dataMode === "demo" ? "amber" : weatherFeed?.status === "stale" || weatherFeed?.status === "unavailable" || !online ? "muted" : ""}`}
+              />
+              <span>
+                <strong>
+                  {weatherFeed?.name ?? "Weather source unavailable"}
+                </strong>
+                <small>
+                  {!online
+                    ? "Offline · showing the last available conditions"
+                    : (weatherFeed?.detail ??
+                      "No current weather source is available")}
+                  {weatherFeed?.updatedAt
+                    ? ` · Updated ${new Date(weatherFeed.updatedAt).toLocaleString("en-SG", { timeZone: "Asia/Singapore", hour: "numeric", minute: "2-digit", hour12: true })}`
+                    : ""}
+                </small>
+              </span>
+            </div>
+            <p className="weather-detail-note">
+              {request.dataMode === "demo"
+                ? "Simulated weather follows the isolated demo timeline and is not a live observation."
+                : "Weather is matched to your foreground device location. Conditions can change between updates."}
+            </p>
+          </div>
+        </Modal>
+      )}
       {modal === "profile" && (
         <main className="nav-page" aria-labelledby="account-page-title">
           <header className="nav-page-header">
@@ -3401,10 +3859,13 @@ export default function App() {
               >
                 OpenStreetMap contributors
               </a>
-              , ODbL. The bundled extract powers the map, station search and
-              routing. No public map, geocoding or routing requests are made.
-              Local timings are estimates; coverage, station access and shelter
-              are not fully verified.
+              , ODbL. The bundled extract powers offline map/search fallback and
+              routing. When configured in normal mode, Google Places UI Kit
+              provides online Singapore address search; typed searches are sent
+              to Google and the selected coordinate is routed on Wayce's local
+              graph. Google does not calculate the journey. Local timings are
+              estimates; coverage, station access and shelter are not fully
+              verified.
             </p>
             <h3>Official transport data</h3>
             <p>
@@ -3522,7 +3983,7 @@ export default function App() {
                 <p>{selected.segments[journeyStep].instructions}</p>
                 {selected.segments[journeyStep].geometryKind ===
                   "schematic" && (
-                  <p>Schematic bus line · not the roads travelled</p>
+                  <p>Served stops highlighted · road geometry unavailable</p>
                 )}
                 {["bus", "rail"].includes(
                   selected.segments[journeyStep].mode,

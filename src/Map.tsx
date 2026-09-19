@@ -7,7 +7,14 @@ import type {
   PlanResponse,
   Segment,
   TransitStop,
+  PlanRequest,
 } from "../shared/types";
+import StopDetails from "./StopDetails";
+import {
+  stationColor,
+  stationTextColor,
+  type BusServiceMap,
+} from "../shared/transit-details";
 import { lineColors } from "../shared/catalog";
 import { crowdDescription } from "../shared/crowding";
 import type { LocationFix } from "./location";
@@ -22,7 +29,7 @@ const oneMapTiles =
 const oneMapAttribution =
   '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" alt="" style="height:16px;width:16px;vertical-align:text-bottom" />&nbsp;<a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a>&nbsp;&copy;&nbsp;contributors&nbsp;|&nbsp;<a href="https://www.sla.gov.sg/" target="_blank" rel="noopener noreferrer">Singapore Land Authority</a>';
 // Bus-stop density becomes useful only once the map is at neighbourhood scale.
-const busStopsMinZoom = 17;
+const busStopsMinZoom = 15;
 
 const mapIcons: Record<Mode | "landmark" | "rain", string> = {
   walk: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 5Zm-2.2 4.1 2.4 2.2 1.5 4.1 2.2 5.2h2.6l-2.4-6.4-1.2-4.4 2.4 1.4 1.5 2.6 2-1.1-1.9-3.4-4.4-2.6c-.8-.5-1.8-.7-2.7-.4l-4.1 1.4-2.4 4.1 2 1.2 2.5-3.9Zm.3 4-2.2 3.1L5 20.2l1.7 1.9 4.3-3.8 2-2.7-1.9-2Z"/></svg>`,
@@ -56,30 +63,65 @@ function labelledIcon(
   return root;
 }
 
-function transitStopIcon(mode: TransitStop["mode"]) {
+function transitStopIcon(stop: TransitStop) {
   const root = document.createElement("span");
   root.className = "transit-stop-symbol";
   root.setAttribute("aria-hidden", "true");
-  root.innerHTML = mapIcons[mode];
+  root.innerHTML = mapIcons[stop.mode];
+  if (stop.mode === "rail") {
+    const colors = [
+      ...new Set(stop.codes.map((code) => stationColor(code, stop.lines))),
+    ];
+    root.style.background =
+      colors.length > 1
+        ? `linear-gradient(135deg, ${colors.map((color, i) => `${color} ${(i / colors.length) * 100}%, ${color} ${((i + 1) / colors.length) * 100}%`).join(", ")})`
+        : stationColor(stop.codes[0] ?? "", stop.lines);
+  }
   return root;
 }
 
-function transitStopPopup(stop: TransitStop) {
+function transitStopPopup(
+  stop: TransitStop,
+  onExpand: () => void,
+  onService: (service: string) => void,
+) {
   const root = document.createElement("section");
   root.className = "transit-stop-popup";
-  const heading = document.createElement("strong");
-  heading.textContent = stop.name;
-  const kind = document.createElement("span");
-  kind.textContent = stop.mode === "rail" ? "MRT / LRT station" : "Bus stop";
-  root.append(heading, kind);
+  const heading = document.createElement("button");
+  heading.className = "transit-stop-popup-heading";
+  heading.type = "button";
+  heading.setAttribute(
+    "aria-label",
+    `Show ${stop.name} ${stop.mode === "rail" ? "station" : "stop"} information`,
+  );
+  heading.onclick = onExpand;
   if (stop.codes.length) {
     const codes = document.createElement("small");
-    codes.textContent = `${stop.mode === "rail" ? "Station" : "Stop"} ${stop.codes.join(" · ")}`;
-    root.append(codes);
+    codes.className = "station-code-list";
+    stop.codes.forEach((code) => {
+      const badge = document.createElement("b");
+      badge.className = "station-code";
+      badge.textContent = code;
+      badge.style.background = stationColor(code, stop.lines);
+      badge.style.color = stationTextColor(stationColor(code, stop.lines));
+      codes.append(badge);
+    });
+    heading.append(codes);
   }
-  if (stop.lines.length) {
-    const lines = document.createElement("small");
-    lines.textContent = `${stop.mode === "rail" ? "Lines" : "Mapped services"} ${stop.lines.join(" · ")}`;
+  const name = document.createElement("strong");
+  name.textContent = stop.name;
+  heading.append(name);
+  root.append(heading);
+  if (stop.mode === "bus" && stop.lines.length) {
+    const lines = document.createElement("div");
+    lines.className = "stop-service-buttons";
+    stop.lines.forEach((service) => {
+      const button = document.createElement("button");
+      button.textContent = service;
+      button.setAttribute("aria-label", `Show bus ${service} stops`);
+      button.onclick = () => onService(service);
+      lines.append(button);
+    });
     root.append(lines);
   }
   return root;
@@ -120,7 +162,7 @@ function routeSegmentPopup(segment: Segment) {
     addDetail("Board", segment.from);
     addDetail("Alight", segment.to);
     if (segment.geometryKind === "schematic")
-      addDetail("Map", "Schematic stop-to-stop line · not the roads travelled");
+      addDetail("Map", "Served stops highlighted · road geometry unavailable");
     if (segment.direction) addDetail("Towards", segment.direction);
     if (segment.waitMinutes !== undefined)
       addDetail("Wait", `${Math.ceil(segment.waitMinutes)} min`);
@@ -173,12 +215,14 @@ export default function JourneyMap({
   location,
   onViewAlerts,
   hasAlerts,
+  request,
 }: {
   plan: PlanResponse | null;
   selected: Journey | null;
   location: LocationFix | null;
   onViewAlerts: () => void;
   hasAlerts: boolean;
+  request: PlanRequest;
 }) {
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -188,6 +232,103 @@ export default function JourneyMap({
   const activeSegmentPath = useRef<L.Polyline | null>(null);
   const segmentPaths = useRef(new Map<string, L.Polyline>());
   const centeredOnLocation = useRef(false);
+  const [detailStop, setDetailStop] = useState<TransitStop | null>(null);
+  const [busSelection, setBusSelection] = useState<{
+    stop: TransitStop;
+    service: string;
+  } | null>(null);
+  const [busMap, setBusMap] = useState<BusServiceMap | null>(null);
+  const [busDirection, setBusDirection] = useState(0);
+  const [busError, setBusError] = useState(false);
+  useEffect(() => {
+    setDetailStop(null);
+    setBusSelection(null);
+  }, [request.dataMode, request.timeline?.id]);
+  useEffect(() => {
+    setBusMap(null);
+    setBusError(false);
+    setBusDirection(0);
+    if (!busSelection) return;
+    const controller = new AbortController();
+    const query = new URLSearchParams({
+      service: busSelection.service,
+      stop: busSelection.stop.codes[0],
+    });
+    fetch(`/api/bus-service?${query}`, { signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
+      .then((data) => {
+        if (!controller.signal.aborted) setBusMap(data);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setBusError(true);
+      });
+    return () => controller.abort();
+  }, [busSelection]);
+  useEffect(() => {
+    const m = map.current;
+    const direction = busMap?.directions[busDirection];
+    if (!m || !direction?.stops.length) return;
+    const serviceStopPane = "bus-service-stop-pane";
+    if (!m.getPane(serviceStopPane)) {
+      // Keep the selected service's numbered stops readable above the normal
+      // transit markers and their labels, while leaving popups on top.
+      m.createPane(serviceStopPane).style.zIndex = "675";
+    }
+    const layer = L.layerGroup().addTo(m);
+    // DataMall supplies an ordered stop sequence, not road geometry. Mark the
+    // served stops with a deliberately thin dotted schematic connector, not a
+    // depiction of the roads travelled.
+    L.polyline(
+      direction.stops.map((stop) => [stop.lat, stop.lon]),
+      {
+        className: "bus-service-schematic",
+        color: "#6852b8",
+        weight: 2,
+        opacity: 0.8,
+        dashArray: "3 6",
+        lineCap: "round",
+        interactive: false,
+      },
+    ).addTo(layer);
+    direction.stops.forEach((stop) => {
+      const label = document.createElement("span");
+      label.textContent = `${stop.sequence}. ${stop.name} (${stop.codes[0]})`;
+      const number = document.createElement("span");
+      number.textContent = String(stop.sequence);
+      L.marker([stop.lat, stop.lon], {
+        title: label.textContent,
+        pane: serviceStopPane,
+        zIndexOffset: 1_000,
+        icon: L.divIcon({
+          className: "bus-line-stop",
+          html: number,
+          iconSize: [44, 44],
+          iconAnchor: [22, 22],
+        }),
+      })
+        .bindTooltip(label)
+        .bindPopup(
+          transitStopPopup(
+            stop,
+            () => setDetailStop(stop),
+            (service) => setBusSelection({ stop, service }),
+          ),
+        )
+        .addTo(layer);
+    });
+    m.closePopup();
+    m.fitBounds(L.latLngBounds(direction.stops.map((s) => [s.lat, s.lon])), {
+      paddingTopLeft: [35, 160],
+      paddingBottomRight: [35, 240],
+      maxZoom: 15,
+    });
+    return () => {
+      layer.remove();
+    };
+  }, [busMap, busDirection]);
   const [mapError, setMapError] = useState(false);
   const [mapDetail, setMapDetail] = useState<
     "loading" | "detailed" | "offline"
@@ -354,7 +495,6 @@ export default function JourneyMap({
       const zoom = m.getZoom();
       const bounds = m.getBounds().pad(0.12);
       const showBusStops = zoom >= busStopsMinZoom;
-      const visibleLimit = zoom <= 12 ? 60 : Number.POSITIVE_INFINITY;
       const candidates =
         zoom < 12
           ? []
@@ -370,31 +510,9 @@ export default function JourneyMap({
                   m.distance(m.getCenter(), [a.lat, a.lon]) -
                     m.distance(m.getCenter(), [b.lat, b.lon]),
               );
-      const markerSpacing = m.distance(
-        m.containerPointToLatLng([0, 0]),
-        m.containerPointToLatLng([42, 0]),
-      );
-      const selectedRailStops: TransitStop[] = [];
-      for (const stop of candidates) {
-        if (stop.mode === "bus") continue;
-        if (
-          selectedRailStops.some(
-            (selectedStop) =>
-              m.distance(
-                [stop.lat, stop.lon],
-                [selectedStop.lat, selectedStop.lon],
-              ) < markerSpacing,
-          )
-        )
-          continue;
-        selectedRailStops.push(stop);
-        if (selectedRailStops.length >= visibleLimit) break;
-      }
-      const selectedStops = [
-        ...selectedRailStops,
-        ...candidates.filter((stop) => stop.mode === "bus"),
-      ];
-      const visibleStops = new Set(selectedStops.map((stop) => stop.id));
+      // Rail stations remain individually discoverable even when their icons
+      // overlap at the current zoom level.
+      const visibleStops = new Set(candidates.map((stop) => stop.id));
       for (const [id, marker] of transitMarkers)
         if (!visibleStops.has(id) && !marker.isPopupOpen()) {
           transitLayer.removeLayer(marker);
@@ -410,13 +528,25 @@ export default function JourneyMap({
           zIndexOffset: stop.mode === "rail" ? 220 : 180,
           icon: L.divIcon({
             className: `transit-stop-marker ${stop.mode}`,
-            html: transitStopIcon(stop.mode),
+            html: transitStopIcon(stop),
             iconSize: [44, 44],
             iconAnchor: [22, 22],
             popupAnchor: [0, -19],
           }),
         })
-          .bindPopup(transitStopPopup(stop), { maxWidth: 230 })
+          .bindPopup(
+            transitStopPopup(
+              stop,
+              () => setDetailStop(stop),
+              (service) => setBusSelection({ stop, service }),
+            ),
+            {
+              maxWidth: 260,
+              keepInView: true,
+              autoPanPaddingTopLeft: [16, 72],
+              autoPanPaddingBottomRight: [16, 100],
+            },
+          )
           .addTo(transitLayer);
         marker.on("popupclose", updateTransitStops);
         const markerElement = marker.getElement();
@@ -572,6 +702,7 @@ export default function JourneyMap({
       });
     }
     journey.segments.forEach((s) => {
+      const schematicBus = s.mode === "bus" && s.geometryKind === "schematic";
       const issues = s.issues ?? [];
       const severe =
         issues.includes("flood") || issues.includes("road-closure");
@@ -590,6 +721,60 @@ export default function JourneyMap({
                   : (lineColors[s.line] ?? "#235ba8");
       const tooltip = document.createElement("span");
       tooltip.textContent = `${s.from} → ${s.to}`;
+      if (schematicBus) {
+        const stops = s.hops?.length
+          ? s.hops.flatMap((hop, index) =>
+              index === 0
+                ? [
+                    { name: hop.from, coord: hop.geometry[0] },
+                    { name: hop.to, coord: hop.geometry.at(-1) },
+                  ]
+                : [{ name: hop.to, coord: hop.geometry.at(-1) }],
+            )
+          : [
+              { name: s.from, coord: s.geometry[0] },
+              { name: s.to, coord: s.geometry.at(-1) },
+            ];
+        // These are ordered DataMall stop occurrences. The connector makes
+        // the sequence legible, but its thin dotted treatment keeps clear
+        // that it is a schematic rather than the road path travelled.
+        L.polyline(s.geometry, {
+          className: "bus-route-schematic",
+          color: "#6852b8",
+          weight: 2,
+          opacity: 0.8,
+          dashArray: "3 6",
+          lineCap: "round",
+          interactive: false,
+        }).addTo(group);
+        stops.forEach((stop, index) => {
+          if (!stop.coord) return;
+          const label = document.createElement("span");
+          label.textContent = `${index + 1}. ${stop.name} · Bus ${s.line}`;
+          const number = document.createElement("span");
+          number.textContent = String(index + 1);
+          L.marker(stop.coord, {
+            title: label.textContent,
+            zIndexOffset: 350,
+            icon: L.divIcon({
+              className: "bus-line-stop bus-route-stop",
+              html: number,
+              iconSize: [44, 44],
+              iconAnchor: [22, 22],
+            }),
+          })
+            .bindTooltip(label)
+            .bindPopup(routeSegmentPopup(s), {
+              className: "route-segment-detail-popover",
+              maxWidth: 270,
+              keepInView: true,
+              autoPanPaddingTopLeft: [16, 72],
+              autoPanPaddingBottomRight: [16, 120],
+            })
+            .addTo(group);
+        });
+        return;
+      }
       L.polyline(s.geometry, {
         color: "#fff",
         weight: s.mode === "walk" ? 8 : 11,
@@ -859,6 +1044,51 @@ export default function JourneyMap({
   );
   return (
     <div className="map-wrap">
+      {detailStop && (
+        <StopDetails
+          key={`${request.dataMode}:${detailStop.id}`}
+          stop={detailStop}
+          demo={request.dataMode === "demo"}
+          at={request.departure}
+          conditions={plan?.conditions}
+          onClose={() => setDetailStop(null)}
+        />
+      )}
+      {busSelection && (
+        <section className="bus-map-panel" aria-label="Bus service map">
+          <div>
+            <strong>Bus {busSelection.service}</strong>
+            <button
+              className="text-button"
+              onClick={() => setBusSelection(null)}
+            >
+              Clear bus stops
+            </button>
+          </div>
+        <small>Stops served · road geometry unavailable</small>
+          {busMap?.directions.length ? (
+            <label>
+              Direction
+              <select
+                value={busDirection}
+                onChange={(e) => setBusDirection(Number(e.target.value))}
+              >
+                {busMap.directions.map((d, i) => (
+                  <option key={d.direction} value={i}>
+                    {d.direction} · {d.stops[0]?.name} → {d.stops.at(-1)?.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p role="status">
+              {busError || busMap
+                ? "Service map unavailable."
+                : "Loading stops…"}
+            </p>
+          )}
+        </section>
+      )}
       <div
         ref={element}
         className="journey-map"

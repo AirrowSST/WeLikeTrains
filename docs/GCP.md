@@ -9,7 +9,7 @@ Public URL: https://weliketrains-191711317812.asia-southeast1.run.app
 - Cloud Run hosts both mobile web assets and the Express API; 1 vCPU/1 GiB, minimum zero, maximum two instances, concurrency eight.
 - Cloud Build and Artifact Registry build/store the container from `Dockerfile`.
 - `weliketrains-runtime` has Vertex invocation, service usage, Firestore (when enabled), and individual secret access. Build and scheduler identities are separate. No service-account JSON key is created.
-- Secret Manager holds the LTA AccountKey and Web Push private key. VAPID public key is intentionally public. Legacy OneMap secrets may remain in the project but are no longer read or bound by the deployment script.
+- Secret Manager holds the LTA AccountKey, Web Push private key and optional Google Places browser key. VAPID public key is intentionally public. The Places key is returned to the browser by design and must be protected with API and HTTP-referrer restrictions. Legacy OneMap secrets may remain in the project but are no longer read or bound by the deployment script.
 - Vertex AI uses the global endpoint; Cloud Text-to-Speech provides MP3 output.
 - Firestore `(default)` in Singapore stores consented routines with TTL on `routines.expiresAt` and optional user-controlled account preferences/commutes without a TTL.
 - `weliketrains-reminders` runs every five minutes using an OIDC identity; `/api/internal/reminders` rejects unauthenticated calls at application level.
@@ -40,6 +40,16 @@ Account sync is optional; without it the app remains a fully usable local guest 
 3. Run the infrastructure setup only after an explicit deployment request. A code-only deployment retains the resulting environment and secret bindings.
 
 The browser uses Google’s rendered sign-in button. The server verifies the returned ID token against `GOOGLE_CLIENT_ID`, uses the immutable `sub` claim as the identity, and issues a 30-day signed HttpOnly, Secure, SameSite=Lax session cookie. Preferences and up to ten live daily commutes persist in Firestore until the user deletes them. Guest data is merged by commute ID, with the most recently changed preference state winning. Simulated requests are rejected by the account API. See Google’s official [web setup](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid) and [server verification](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token) guides.
+
+## Google Places address discovery
+
+Online island-wide place/address discovery is optional. Without it, the app keeps its bundled station, bus-stop and landmark index. To enable it:
+
+1. Enable **Places UI Kit** on the same billing-enabled project. `deploy-gcp.ps1` enables its `placewidgets.googleapis.com` service during an explicitly authorised infrastructure deployment.
+2. Create a browser API key. Restrict the key to the Places UI Kit API and restrict website use to the exact hosted origin plus required local development origins, for example `https://weliketrains-191711317812.asia-southeast1.run.app`, `http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:8080` and `http://127.0.0.1:8080`. These restrictions deliberately omit path patterns because the loader uses `auth_referrer_policy=origin`. If Vite selects another port, add that exact origin temporarily rather than broadening the production key. Do not use an IP-address restriction for this browser key.
+3. Put the key in ignored `.env` as `GOOGLE_MAPS_API_KEY`, then run the infrastructure setup only after an explicit deployment request. The script imports the value to Secret Manager and binds it to Cloud Run without printing it.
+
+`/api/config` deliberately exposes this referrer-restricted browser key so the Google component can authenticate. The rendered Basic Autocomplete and compact Place Details UI Kit components handle the Google content and attribution. They are restricted to Singapore; the resulting place ID and coordinate are bounds-checked and passed into Wayce’s existing local `Place` contract. Google does not calculate the route and is not used as the basemap. Typed online searches go to Google, while demo, offline, unconfigured and provider-failure paths remain local. See Google’s [Places UI Kit setup](https://developers.google.com/maps/documentation/javascript/places-ui-kit/get-started) and [Basic Autocomplete guide](https://developers.google.com/maps/documentation/javascript/places-ui-kit/basic-autocomplete).
 
 ## Manual deployments from the development device
 
