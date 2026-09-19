@@ -43,21 +43,19 @@ The browser uses Google’s rendered sign-in button. The server verifies the ret
 
 ## Manual deployments from the development device
 
-By user decision on 2026-09-19, this repository has no GitHub Actions workflows and no push-to-deploy behavior. No remote workflow verifies a push or changes production; the configured local pre-push hook runs the fast `npm run verify:push` gate, but it never deploys. Deploy only from the authenticated development device after the user explicitly asks for it in chat:
+By user decision on 2026-09-19, this repository has no GitHub Actions workflows, no push-to-deploy behavior, and no mandatory local test gate. Deploy only from the authenticated development device after the user explicitly asks for it in chat:
 
 ```powershell
 pwsh -File scripts/deploy-code.ps1
-# Explicit time-critical exception after relevant targeted browser checks:
-pwsh -File scripts/deploy-code.ps1 -VerificationMode Fast
 ```
 
-The script refuses non-`main` branches and uncommitted changes by default. Its default `Full` mode runs `npm run verify`. Explicit `Fast` mode still creates the production build, typechecks and runs every unit test, but skips Playwright when the user knowingly accepts that time-critical exception. Both modes inspect the exact Cloud Build upload list for protected credential paths, deploy with the existing runtime and builder identities, then read the ready revision and check `/api/health`. The service is labelled with `wayce-verification` and `wayce-source` so the verification mode and source commit remain inspectable after rollout. `-AllowNonMain` and `-AllowDirty` remain separate explicit escape hatches and should be used only when the user knowingly requests that exact source state.
+The script refuses non-`main` branches and uncommitted changes by default. It does not run tests automatically. It inspects the exact Cloud Build upload list for protected credential paths, deploys with the existing runtime and builder identities, then reads the ready revision and checks `/api/health`. The service is labelled with `wayce-source` so the source commit remains inspectable after rollout. `-AllowNonMain` and `-AllowDirty` remain separate explicit escape hatches and should be used only when the user knowingly requests that exact source state.
 
 The original development device also has a personal Codex skill at `C:\Users\Yaw Tia\.codex\skills\weliketrains-deploy` (`$weliketrains-deploy`). It preserves the explicit-request rule, invokes the repository script, diagnoses regional Cloud Build failures, prevents automatic paid retries, verifies traffic and the canonical URL, and records results in `docs/IMPLEMENTATION.md`. The skill is not committed and is not required on another machine; this document and the repository script are the portable workflow.
 
-The container build uses `npm ci --ignore-scripts` because the repository's `prepare` lifecycle script configures workstation Git hooks while the intentional Cloud Build context has neither Git nor `.git`. `.gcloudignore` and `.dockerignore` also exclude `gha-creds-*.json` and the unrelated `temp.txt` from uploads and Docker contexts.
+The container build uses `npm ci --ignore-scripts` in the intentional Git-free Cloud Build context. `.gcloudignore` and `.dockerignore` also exclude `gha-creds-*.json` and the unrelated `temp.txt` from uploads and Docker contexts.
 
-Allow roughly **5–7 minutes** for full verification, build and rollout under recent conditions. Fast mode recently measured about **2–3 minutes** when the cloud service was healthy, but this is an operational estimate rather than a guarantee. A deployment is complete only after the script reports the ready revision and successful application health check.
+Allow time for build and rollout. A deployment is complete only after the script reports the ready revision and successful application health check.
 
 The former GitHub Workload Identity provider and deployer service account may still exist in the temporary GCP project but are unused. They were not deleted because IAM cleanup is a separate infrastructure change; do not reuse them as an implicit deployment path.
 

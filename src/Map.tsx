@@ -9,6 +9,7 @@ import type {
   TransitStop,
 } from "../shared/types";
 import { lineColors } from "../shared/catalog";
+import { crowdDescription } from "../shared/crowding";
 import type { LocationFix } from "./location";
 
 let basemapPromise: Promise<any> | undefined;
@@ -20,6 +21,8 @@ const oneMapTiles =
   "https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png";
 const oneMapAttribution =
   '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" alt="" style="height:16px;width:16px;vertical-align:text-bottom" />&nbsp;<a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a>&nbsp;&copy;&nbsp;contributors&nbsp;|&nbsp;<a href="https://www.sla.gov.sg/" target="_blank" rel="noopener noreferrer">Singapore Land Authority</a>';
+// Bus-stop density becomes useful only once the map is at neighbourhood scale.
+const busStopsMinZoom = 17;
 
 const mapIcons: Record<Mode | "landmark" | "rain", string> = {
   walk: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 5Zm-2.2 4.1 2.4 2.2 1.5 4.1 2.2 5.2h2.6l-2.4-6.4-1.2-4.4 2.4 1.4 1.5 2.6 2-1.1-1.9-3.4-4.4-2.6c-.8-.5-1.8-.7-2.7-.4l-4.1 1.4-2.4 4.1 2 1.2 2.5-3.9Zm.3 4-2.2 3.1L5 20.2l1.7 1.9 4.3-3.8 2-2.7-1.9-2Z"/></svg>`,
@@ -116,15 +119,12 @@ function routeSegmentPopup(segment: Segment) {
   if (segment.mode === "rail" || segment.mode === "bus") {
     addDetail("Board", segment.from);
     addDetail("Alight", segment.to);
+    if (segment.geometryKind === "schematic")
+      addDetail("Map", "Schematic stop-to-stop line · not the roads travelled");
     if (segment.direction) addDetail("Towards", segment.direction);
     if (segment.waitMinutes !== undefined)
       addDetail("Wait", `${Math.ceil(segment.waitMinutes)} min`);
-    addDetail(
-      "Crowding",
-      segment.crowd === "unknown"
-        ? "Unknown"
-        : `${segment.crowd[0].toUpperCase()}${segment.crowd.slice(1)}`,
-    );
+    addDetail("Crowding", crowdDescription(segment));
   } else {
     addDetail("Distance", `${Math.round(segment.distance)} m`);
     if (segment.sheltered) addDetail("Shelter", "Mapped sheltered path");
@@ -348,13 +348,12 @@ export default function JourneyMap({
     );
     const transitLayer = L.layerGroup().addTo(m);
     let transitStops: TransitStop[] = [];
-    let busStopsBesideStations = new Set<string>();
     const transitMarkers = new Map<string, L.Marker>();
     const updateTransitStops = () => {
       if (!alive) return;
       const zoom = m.getZoom();
       const bounds = m.getBounds().pad(0.12);
-      const showBusStops = zoom >= 14;
+      const showBusStops = zoom >= busStopsMinZoom;
       const visibleLimit = zoom <= 12 ? 60 : Number.POSITIVE_INFINITY;
       const candidates =
         zoom < 12
@@ -363,7 +362,6 @@ export default function JourneyMap({
               .filter(
                 (stop) =>
                   (stop.mode === "rail" || showBusStops) &&
-                  !busStopsBesideStations.has(stop.id) &&
                   bounds.contains([stop.lat, stop.lon]),
               )
               .sort(
@@ -376,10 +374,11 @@ export default function JourneyMap({
         m.containerPointToLatLng([0, 0]),
         m.containerPointToLatLng([42, 0]),
       );
-      const selectedStops: TransitStop[] = [];
+      const selectedRailStops: TransitStop[] = [];
       for (const stop of candidates) {
+        if (stop.mode === "bus") continue;
         if (
-          selectedStops.some(
+          selectedRailStops.some(
             (selectedStop) =>
               m.distance(
                 [stop.lat, stop.lon],
@@ -388,9 +387,13 @@ export default function JourneyMap({
           )
         )
           continue;
-        selectedStops.push(stop);
-        if (selectedStops.length >= visibleLimit) break;
+        selectedRailStops.push(stop);
+        if (selectedRailStops.length >= visibleLimit) break;
       }
+      const selectedStops = [
+        ...selectedRailStops,
+        ...candidates.filter((stop) => stop.mode === "bus"),
+      ];
       const visibleStops = new Set(selectedStops.map((stop) => stop.id));
       for (const [id, marker] of transitMarkers)
         if (!visibleStops.has(id) && !marker.isPopupOpen()) {
@@ -431,22 +434,6 @@ export default function JourneyMap({
       .then((stops) => {
         if (!alive) return;
         transitStops = stops;
-        const railStops = stops.filter((stop) => stop.mode === "rail");
-        busStopsBesideStations = new Set(
-          stops
-            .filter(
-              (stop) =>
-                stop.mode === "bus" &&
-                railStops.some(
-                  (station) =>
-                    m.distance(
-                      [stop.lat, stop.lon],
-                      [station.lat, station.lon],
-                    ) < 85,
-                ),
-            )
-            .map((stop) => stop.id),
-        );
         updateTransitStops();
       })
       .catch((error) => {
@@ -619,13 +606,15 @@ export default function JourneyMap({
         opacity: 1,
         className: visibleClassName,
         dashArray:
-          s.mode === "walk"
-            ? "2 8"
-            : s.mode === "bus"
-              ? "12 7"
-              : s.mode === "cycle"
-                ? "4 5"
-                : undefined,
+          s.geometryKind === "schematic"
+            ? "3 9"
+            : s.mode === "walk"
+              ? "2 8"
+              : s.mode === "bus"
+                ? "12 7"
+                : s.mode === "cycle"
+                  ? "4 5"
+                  : undefined,
         lineCap: "round",
         interactive: false,
       }).addTo(group);
@@ -665,7 +654,8 @@ export default function JourneyMap({
         hitElement.setAttribute("data-segment-id", s.id);
         hitElement.addEventListener("keydown", (event) => {
           const keyboardEvent = event as KeyboardEvent;
-          if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
+          if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ")
+            return;
           keyboardEvent.preventDefault();
           const midpoint = s.geometry[Math.floor(s.geometry.length / 2)];
           hitPath.openPopup(midpoint);

@@ -14,7 +14,7 @@ The app opens as a standard guest using live-mode source labels. No account or A
 2. Compare the original and revised route on the detailed OneMap basemap. Swipe route cards for time, crowd and walking trade-offs. Open **Full details** for directions and limitations. When OneMap is unavailable, the map visibly falls back to the bundled OSM extract.
 3. In normal Live mode, Wayce requests a one-shot foreground location when it opens, starts with **Where to?**, and defaults departure to **Now**. Permission failures stay visible and the origin remains editable. In a demo, tap **Use simulated location** to preview the labelled position. The active journey can show continuous foreground location until it is closed; progress remains manual and there is no background tracking.
 4. Open the companion, consent to sending route context, then type or tap the microphone to dictate a question. Voice input stays as a reviewable draft until you send it; browser speech recognition may use the browser vendor's online service. Review preference changes before applying them, or tap the speaker to hear a reply.
-5. **Data & sources → Live feeds** switches to LTA and NEA conditions while place search and routing stay on the bundled OSM snapshot. Each feed reports its own freshness or failure; live failures never silently inject demo data.
+5. **Data & sources → Live feeds** switches to LTA and NEA conditions while routing stays local on bundled OSM and DataMall snapshots. Each feed reports its own freshness or failure; live failures never silently inject demo data.
 
 ## Run from a clean machine
 
@@ -82,7 +82,7 @@ directly: `node --import tsx scripts/dev-datamall.ts --port=8091 --scenario=miss
 Without
 `--clock`, arrivals are relative to the current time. The missed-bus scenario
 returns arrivals at +6/+11/+18 minutes, suitable for an eight-minute access walk.
-For supported OSM bus routes, the live planner advances through the access walk,
+For supported DataMall bus connections, the live planner advances through the access walk,
 ignores arrivals that leave before the commuter reaches the boarding stop, and
 replaces the fixed wait with the first fresh monitored arrival. It rechecks later
 bus legs after earlier condition delays. Stale, unmonitored or unavailable
@@ -110,12 +110,13 @@ regressions, including the fixed-clock Bus 27 missed-first-bus journey.
 
 ```sh
 npx playwright install chromium
-npm run verify:push
-npm run verify
+npm run check
+npm test
+npm run test:e2e
 npm run evaluate
 ```
 
-This is a fast-moving hackathon project: keep checks proportionate and avoid rerunning slow, unaffected suites. `npm run verify:push` runs TypeScript and the unit suite and is the routine pre-push gate installed by `npm ci`. Use targeted browser tests while changing UI behavior. `npm run verify` remains the full gate: it builds fresh client and server assets, then runs the unit and browser suites. Browser runs use process-isolated local ports, avoiding collisions between concurrent or recently stopped Playwright processes.
+These checks are optional; no Git hook or deployment command runs them automatically. Browser runs use process-isolated local ports, avoiding collisions between concurrent or recently stopped Playwright processes.
 
 Unit tests cover OSM routing, rerouting, closures, lift avoidance, parser nesting, canonical line codes, crowd sources, preferences and input validation. Browser checks cover the mobile-only layout at phone and wide viewports, main interactions, offline reload and automated WCAG A/AA rules. These are **not a substitute for a real-phone field test**; see [demo and phone checklist](docs/DEMO.md).
 
@@ -125,15 +126,13 @@ Unit tests cover OSM routing, rerouting, closures, lift avoidance, parser nestin
 
 See [GCP setup and operations](docs/GCP.md). The provisioned project is `qwiklabs-gcp-02-7df98c2d8335`, Cloud Run region `asia-southeast1`.
 
-Deployments are deliberately manual. GitHub Actions workflows have been removed, so no remote workflow verifies or deploys a push or merge. The configured local pre-push hook runs the fast TypeScript-and-unit gate, but it never deploys. When a deployment is explicitly requested, run the guarded local code-deployment script from a clean `main` checkout on the authenticated development device:
+Deployments are deliberately manual. GitHub Actions workflows have been removed, so no remote workflow verifies or deploys a push or merge. Pushes and the deployment command do not run tests automatically. When a deployment is explicitly requested, run the guarded local code-deployment script from a clean `main` checkout on the authenticated development device:
 
 ```powershell
 pwsh -File scripts/deploy-code.ps1
-# Explicit time-critical exception:
-pwsh -File scripts/deploy-code.ps1 -VerificationMode Fast
 ```
 
-The default mode runs the complete local verification suite. Explicit `Fast` mode still performs a production build, TypeScript and all unit tests, while skipping Playwright only for a knowingly accepted time-critical release. Both modes check the Cloud Build upload set for protected files, deploy with the existing service identities, label the service with the verification mode and source commit, and verify the resulting `/api/health` endpoint. The script does not reimport or rotate secrets.
+The script checks the Cloud Build upload set for protected files, deploys with the existing service identities, labels the service with the source commit, and verifies the resulting `/api/health` endpoint. The script does not reimport or rotate secrets.
 
 On the original development device, the personal Codex skill `$weliketrains-deploy` wraps this documented workflow for chat-requested deployments. It is a local convenience, not a repository or clean-clone requirement; `scripts/deploy-code.ps1` and `docs/GCP.md` remain authoritative.
 
@@ -148,11 +147,11 @@ This enables APIs, creates scoped service accounts, imports nonempty `.env` cred
 
 ## What is real, estimated, and experimental
 
-- OSM geometry, local station search, graph search, first/last walking legs and the live official condition-feed adapters are implemented. Official OneMap tiles provide the detailed online visual basemap, with committed OSM vectors as the offline fallback. Travel times are estimates, not official timetables.
+- OSM supplies walking/rail geometry, supplemented by official LTA station exits and covered-linkway/cycling matches. DataMall stop sequences and distances drive bus routing; matching OSM bus shapes are optional, with other sections displayed as labelled schematic lines, not the roads travelled. Rail uses the official planned GTFS timetable; walking, station access and bus running times remain estimates. Fresh bus arrivals and available train realtime updates adjust catchable departures. OneMap supplies display tiles with the bundled OSM fallback. See [current routing data status](docs/ROUTING-DATA-STATUS.md) for exact coverage and limitations.
 - Gemini on Vertex AI explains and selects among computed routes and interviews preferences; Cloud Text-to-Speech reads replies. Bounded function calls turn chat input into validated preference proposals or supplied-route recommendations. Routes are computed outside the model, returned IDs are checked, and preference changes require confirmation. A labelled local guide remains available if AI fails.
 - The disruption **risk index is rule-based**, not a trained AI predictor or calibrated probability. No historical accuracy claim is made. A lack of signals does not mean disruption is impossible.
 - Step-free mode excludes mapped stairs and known station lift outages, but station access, unmapped obstacles and shelter are **not fully verified**. Do not treat this prototype as certified accessible navigation. Rachel is the primary validated persona.
-- The map's bundled DataMall reference snapshot covers all bus stops and service/route rows returned by the three official endpoints at its recorded access date. Door-to-door routing geometry still covers rail and selected OSM bus relations, not every bus or address in Singapore; the reference snapshot does not manufacture missing road geometry. Place search covers the curated landmarks and named stops in the routable extract. Planned road-work notices are informational without verified route geometry. Unstructured advisories are shown verbatim, not automatically turned into closures.
+- The bundled DataMall bus graph contains 25,682 accepted stop-to-stop connections across 601 services / 797 directions; 343 gapped or inconsistent-distance adjacencies are rejected. This is not a promise of complete service or islandwide door-to-door coverage: OSM walking access remains limited. Schematic lines cannot establish a road-specific traffic effect. Place search covers curated landmarks and indexed stops. Planned road-work notices are informational without verified route geometry. Unstructured advisories are shown verbatim, not automatically turned into closures.
 - Background alerts require opt-in browser permission and compatible installed-web-app support. Saved routines repeat daily and expire after 30 days. Delivery is not guaranteed when a device or platform restricts push.
 - Guest preferences and commutes remain local. Google account sync is optional, uses a server-verified Google identity and persists until the user deletes the account data. Signing out restores the separate guest space. Faux demo accounts never sync or register reminders.
 - Foreground browser location is opt-in. Demo mode uses a labelled deterministic position without requesting device permission; live failures remain visible and never become simulated data. Live tracking stops when the active journey closes.

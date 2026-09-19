@@ -10,6 +10,7 @@ import type {
 } from "../shared/types";
 import { canonicalLine, crowdValue } from "../shared/catalog";
 import { ltaConnection } from "./lta-client";
+import { trainRealtime } from "./rail-realtime";
 import { timelineInputs } from "../shared/timelines";
 
 type Obj = Record<string, any>;
@@ -125,19 +126,19 @@ export function parseCrowds(
             ? `${String(day).slice(0, 10)}T${s}+08:00`
             : String(s)
           : "";
-      const start = timestamp(v.StartTime ?? v.Time);
-      result.push({
-        station: name,
-        line: canonicalLine(line),
-        level: crowdValue(v.CrowdLevel),
-        start,
-        end:
-          timestamp(v.EndTime) ||
-          (start
-            ? new Date(new Date(start).getTime() + 1800000).toISOString()
-            : ""),
-        forecast,
-      });
+      const start = timestamp(v.StartTime ?? v.Start ?? v.Time);
+      const end = timestamp(v.EndTime ?? v.End);
+      const startMs = Date.parse(start);
+      const endMs = end ? Date.parse(end) : startMs + 1800000;
+      if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs)
+        result.push({
+          station: name,
+          line: canonicalLine(line),
+          level: crowdValue(v.CrowdLevel),
+          start,
+          end: new Date(endMs).toISOString(),
+          forecast,
+        });
     }
     for (const [key, item] of Object.entries(v))
       if (item && typeof item === "object") visit(item, name, day);
@@ -217,7 +218,7 @@ const coordinateOf = (
 };
 export function parseTrafficSpeedBands(raw: Obj): TrafficReading[] {
   return toList(raw.value ?? raw)
-    .slice(0, 120)
+    .slice(0, 500)
     .map((row, index) => {
       const linkId = String(row.LinkID ?? index);
       const roadName = String(row.RoadName ?? "Unnamed road").trim();
@@ -346,29 +347,37 @@ export function parseFloodAlerts(
       };
     });
 }
-function nearestReading(raw: Obj, origin: { lat: number; lon: number }) {
-  const candidates: { value: number; lat?: number; lon?: number }[] = [];
-  const visit = (value: any) => {
-    if (!value || typeof value !== "object") return;
-    if (Array.isArray(value)) return value.forEach(visit);
-    const reading = numberAt(value.value ?? value.Value ?? value.reading);
-    const point = locationOf(value);
-    if (reading !== undefined)
-      candidates.push({ value: reading, lat: point?.[0], lon: point?.[1] });
-    Object.values(value).forEach(visit);
-  };
-  visit(raw?.data?.records ?? raw?.data?.items ?? raw);
-  return candidates.sort(
-    (a, b) =>
-      Math.hypot(
-        (a.lat ?? origin.lat) - origin.lat,
-        (a.lon ?? origin.lon) - origin.lon,
-      ) -
-      Math.hypot(
-        (b.lat ?? origin.lat) - origin.lat,
-        (b.lon ?? origin.lon) - origin.lon,
-      ),
-  )[0]?.value;
+export function nearestReading(
+  raw: Obj,
+  origin: { lat: number; lon: number },
+  now = Date.now(),
+) {
+  const stations = new Map<string, [number, number]>();
+  for (const station of raw?.data?.stations ?? []) {
+    const point = locationOf(station.location ?? station);
+    if (point) stations.set(station.id, point);
+  }
+  const latest = [...(raw?.data?.readings ?? [])].sort(
+    (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+  )[0];
+  const timestamp = Date.parse(latest?.timestamp);
+  if (
+    !Number.isFinite(timestamp) ||
+    now - timestamp > 20 * 60000 ||
+    timestamp > now + 60000
+  )
+    return undefined;
+  return (latest.data ?? [])
+    .map((row: Obj) => ({
+      value: numberAt(row.value),
+      coord: stations.get(row.stationId),
+    }))
+    .filter((row: any) => row.value !== undefined && row.coord)
+    .sort(
+      (a: any, b: any) =>
+        Math.hypot(a.coord[0] - origin.lat, a.coord[1] - origin.lon) -
+        Math.hypot(b.coord[0] - origin.lat, b.coord[1] - origin.lon),
+    )[0]?.value as number | undefined;
 }
 export function demoConditions(
   scenario: Scenario,
@@ -698,7 +707,9 @@ export async function getConditions(
         ttl,
         { AccountKey: connection.key, Accept: "application/json" },
       );
-      consume(item.value);
+      // Expired occupancy is not a usable crowd reading for a new journey.
+      if (!item.stale || !/station crowds|crowd forecast/.test(name))
+        consume(item.value);
       conditions.feeds.push({
         name: connection.simulated ? `SIMULATED · ${name}` : name,
         status: item.stale ? "stale" : connection.simulated ? "demo" : "live",
@@ -733,6 +744,20 @@ export async function getConditions(
     "BPL",
   ];
   await Promise.allSettled([
+    ...(
+      [
+        "GTFSRealtimeTrainTripUpdates",
+        "GTFSRealTimeTrainServiceAlerts",
+      ] as const
+    ).map(async (endpoint) => {
+      const result = await trainRealtime(endpoint);
+      conditions.trainUpdates = [
+        ...(conditions.trainUpdates ?? []),
+        ...result.updates,
+      ];
+      conditions.notices.push(...result.notices);
+      conditions.feeds.push(result.feed);
+    }),
     lta("TrainServiceAlerts", "LTA service alerts", 60000, (r) =>
       conditions.notices.push(...parseTrainAlerts(r)),
     ),
@@ -784,6 +809,7 @@ export async function getConditions(
         conditions.notices.push({
           id: `road-${i}`,
           title: v.RoadName ?? "Planned road works",
+          roadName: v.RoadName,
           description:
             v.Description ??
             `Works from ${v.StartDate ?? "announced date"} to ${v.EndDate ?? "further notice"}. Check nearby bus diversions.`,
@@ -839,11 +865,15 @@ export async function getConditions(
           ),
         ]);
         const rainfallMm =
-          rainfall.status === "fulfilled"
+          horizon <= 2 &&
+          rainfall.status === "fulfilled" &&
+          !rainfall.value.stale
             ? nearestReading(rainfall.value.value, origin)
             : undefined;
         const temperature =
-          airTemperature.status === "fulfilled"
+          horizon <= 2 &&
+          airTemperature.status === "fulfilled" &&
+          !airTemperature.value.stale
             ? nearestReading(airTemperature.value.value, origin)
             : undefined;
         const record = r.value?.data?.items?.[0] ?? r.value?.data?.records?.[0];
@@ -952,8 +982,7 @@ export async function getConditions(
         conditions.feeds.push({
           name: "NEA rainfall & air temperature",
           status:
-            rainfall.status === "fulfilled" ||
-            airTemperature.status === "fulfilled"
+            rainfallMm !== undefined || temperature !== undefined
               ? "live"
               : "unavailable",
           updatedAt: new Date().toISOString(),

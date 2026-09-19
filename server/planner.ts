@@ -10,6 +10,9 @@ import type {
   Segment,
 } from "../shared/types";
 import { sgTime } from "../shared/catalog";
+import { busOperating, frequencyWait, referenceWait } from "./bus-routing";
+import { getGeospatial, stationExits } from "./geospatial";
+import { trafficAllowance } from "./traffic-timing";
 import { estimateRisk } from "../shared/risk";
 import {
   distance,
@@ -36,6 +39,7 @@ export function noticeActive(n: Notice, departure: string, duration = 120) {
 export function segmentAffected(n: Notice, s: Segment) {
   if (n.kind === "flood")
     return (
+      s.geometryKind !== "schematic" &&
       !!n.location &&
       s.geometry.some((point) => distance(point, n.location!) < 180)
     );
@@ -58,12 +62,12 @@ const worstCrowd = (values: Crowd[]): Crowd =>
       : values.includes("low")
         ? "low"
         : "unknown";
-function crowdAt(
+function crowdRowsAt(
   c: Conditions,
   stationCodes: string[],
   line: string,
   departure: string,
-): Crowd {
+) {
   const time = Date.parse(departure);
   const rows = c.crowd.filter(
     (r) =>
@@ -72,7 +76,15 @@ function crowdAt(
       (!r.start || Date.parse(r.start) <= time) &&
       (!r.end || Date.parse(r.end) > time),
   );
-  return worstCrowd(rows.map((r) => r.level));
+  return rows;
+}
+function crowdAt(
+  c: Conditions,
+  codes: string[],
+  line: string,
+  departure: string,
+): Crowd {
+  return worstCrowd(crowdRowsAt(c, codes, line, departure).map((r) => r.level));
 }
 function atJourneyMinute(departure: string, elapsedMinutes: number) {
   return new Date(Date.parse(departure) + elapsedMinutes * 60000).toISOString();
@@ -103,7 +115,10 @@ function retimeBusSegment(
   readyAt: number,
 ) {
   const currentWait = segment.waitMinutes ?? 0;
-  const estimatedWait = segment.estimatedWaitMinutes ?? currentWait;
+  const estimatedWait =
+    referenceWait(segment, readyAt) ??
+    segment.estimatedWaitMinutes ??
+    currentWait;
   const inVehicleMinutes = Math.max(0, segment.minutes - currentWait);
   const stop = busBoardingStop(segment);
   const arrival = buses
@@ -133,7 +148,7 @@ function retimeBusSegment(
     segment.waitMinutes = estimatedWait;
     segment.minutes = inVehicleMinutes + estimatedWait;
     segment.source = `${source} · estimated boarding-wait fallback`;
-    segment.instructions = `${action} bus ${segment.line} towards ${segment.direction ?? "the destination"}. Allow ${estimatedWait} min for the estimated boarding wait. Alight at ${segment.to}.`;
+    segment.instructions = `${action} bus ${segment.line} towards ${segment.direction ?? "the destination"}. Allow ${estimatedWait} min for the estimated boarding wait${segment.busReference ? " based on LTA dispatch frequency" : ""}. Alight at ${segment.to}.`;
   }
   return arrival;
 }
@@ -205,12 +220,31 @@ export function applyConditions(
     (warning) =>
       warning !== LIVE_BUS_WARNING && warning !== BUS_FALLBACK_WARNING,
   );
-  const segments = journey.segments.map((s) => {
+  const segments = journey.segments.map((s, segmentIndex) => {
     const segment = {
       ...s,
       geometry: s.geometry.map((c) => [...c] as [number, number]),
     };
     let selectedBus: BusArrival | undefined;
+    // Re-evaluate rail after preceding bus waits, weather and disruption delays.
+    if (s.mode === "rail" && s.source.includes("GTFS")) {
+      const directTransfer =
+        journey.segments[segmentIndex - 1]?.mode === "rail";
+      const allowance = request.preferences.stepFree
+        ? directTransfer
+          ? 5
+          : 4
+        : directTransfer
+          ? 3
+          : 2;
+      const timing = evaluateRailSegments(
+        [segment],
+        atJourneyMinute(request.departure, elapsedMinutes),
+        loadRailScheduleSnapshot(),
+        { stationAccessMinutes: allowance, updates: conditions.trainUpdates },
+      );
+      Object.assign(segment, timing.segments[0]);
+    }
     if (s.mode === "bus" && (request.dataMode === "live" || request.timeline)) {
       selectedBus = retimeBusSegment(
         segment,
@@ -228,10 +262,32 @@ export function applyConditions(
       s.mode === "rail"
         ? crowdAt(conditions, s.stops, s.line, boardingAt)
         : s.crowd;
+    segment.crowdSource = undefined;
+    if (s.mode === "rail" && segment.crowd !== "unknown") {
+      const rows = crowdRowsAt(conditions, s.stops, s.line, boardingAt).filter(
+        (r) => r.level === segment.crowd,
+      );
+      segment.crowdSource =
+        request.dataMode === "demo" ||
+        request.timeline ||
+        conditions.feeds.some(
+          (f) => f.status === "demo" && /crowd/i.test(f.name),
+        )
+          ? "simulated"
+          : rows.every((r) => r.forecast)
+            ? "forecast"
+            : rows.every((r) => !r.forecast)
+              ? "current"
+              : "mixed";
+    }
     segment.delay = 0;
     segment.affected = false;
     segment.affectedGeometry = [];
     segment.issues = segment.sheltered && s.mode === "walk" ? ["shelter"] : [];
+    if (segment.unavailable) {
+      blocked = true;
+      warnings.push(segment.instructions);
+    }
     if (s.mode === "bus") {
       const boardingTime = Date.parse(boardingAt);
       const boardingStop = busBoardingStop(s);
@@ -251,6 +307,10 @@ export function applyConditions(
               .sort((a, b) => Date.parse(a.eta) - Date.parse(b.eta))[0];
       if (bus) {
         segment.crowd = bus.load;
+        segment.crowdSource =
+          bus.status === "demo" || request.dataMode === "demo"
+            ? "simulated"
+            : "current";
         if (request.preferences.stepFree && !bus.wheelchair)
           warnings.push(
             `The next bus ${bus.service} is not marked wheelchair-accessible. Wait for a confirmed accessible vehicle.`,
@@ -258,6 +318,28 @@ export function applyConditions(
       }
     }
     for (const notice of conditions.notices) {
+      if (
+        notice.kind === "advisory" &&
+        notice.roadName &&
+        noticeActive(notice, request.departure, journey.duration)
+      ) {
+        const normalizeRoad = (name: string) =>
+          name
+            .toLowerCase()
+            .replace(/\brd\b/g, "road")
+            .replace(/\bave\b/g, "avenue")
+            .replace(/\bst\b/g, "street")
+            .replace(/\s+/g, " ")
+            .trim();
+        if (
+          s.roadNames?.some(
+            (name) => normalizeRoad(name) === normalizeRoad(notice.roadName!),
+          )
+        )
+          warnings.push(
+            `Planned works along this bus service: ${notice.title}. Exact affected section and delay are unconfirmed.`,
+          );
+      }
       if (
         !noticeActive(notice, request.departure, journey.duration) ||
         !segmentAffected(notice, s)
@@ -309,10 +391,27 @@ export function applyConditions(
       }
     }
     if (s.mode === "bus") {
+      const speedFeed = conditions.feeds.find((f) =>
+        /Traffic speeds/.test(f.name),
+      );
+      const trafficDelay =
+        speedFeed && ["live", "demo"].includes(speedFeed.status)
+          ? trafficAllowance(s, conditions.traffic)
+          : 0;
+      if (trafficDelay > 0) {
+        segment.delay += trafficDelay;
+        segment.affected = true;
+        segment.issues.push("congestion");
+        segment.affectedGeometry.push(s.geometry);
+        reasons.push(
+          "Slow road traffic adds a bounded bus allowance; bus running time remains estimated",
+        );
+      }
       for (const traffic of conditions.traffic) {
         if (
           traffic.delayMinutes <= 0 ||
           !traffic.location ||
+          s.geometryKind === "schematic" ||
           !s.geometry.some((point) => distance(point, traffic.location!) < 250)
         )
           continue;
@@ -429,7 +528,7 @@ export function applyConditions(
 }
 function journeyFromSegments(
   segments: Segment[],
-  source = "OpenStreetMap network · estimated timings",
+  source = "Local OSM walking/rail · DataMall bus connections · estimated timings",
 ): Journey {
   const duration = Math.ceil(segments.reduce((s, e) => s + e.minutes, 0));
   const transit = segments.filter((s) => s.mode === "rail" || s.mode === "bus");
@@ -462,6 +561,11 @@ function journeyFromSegments(
     reasons: [],
     warnings: [
       "Timings use distance, estimated speed, dwell and waiting allowances; they are not a published timetable.",
+      ...(segments.some((s) => s.geometryKind === "schematic")
+        ? [
+            "Bus map includes schematic stop-to-stop lines, not the roads travelled. Bus distance uses DataMall; road-specific conditions cannot be verified on schematic sections.",
+          ]
+        : []),
     ],
     source,
     blocked: false,
@@ -508,7 +612,7 @@ function applyRailSchedule(
     score: duration,
     warnings,
     source: timing.scheduledSegments
-      ? "OpenStreetMap route geometry · LTA DataMall GTFS Schedule · estimated access and walking"
+      ? `${journey.source} · LTA DataMall GTFS Schedule · estimated access and walking`
       : journey.source,
   };
 }
@@ -528,6 +632,57 @@ export function localJourneys(
       request.destination.lon,
     ];
   const all = [...net.stations.values()];
+  function accessLeg(
+    station: (typeof all)[number],
+    endpoint: [number, number],
+    name: string,
+    outbound: boolean,
+  ) {
+    const exits = station.mode === "rail" ? stationExits(station.name) : [];
+    const candidates = exits
+      .map((exit) => ({
+        exit,
+        leg: outbound
+          ? walkSegment(
+              exit.coord,
+              endpoint,
+              station.name,
+              name,
+              request.preferences,
+            )
+          : walkSegment(
+              endpoint,
+              exit.coord,
+              name,
+              station.name,
+              request.preferences,
+            ),
+      }))
+      .filter((candidate) => candidate.leg !== null)
+      .sort((a, b) => a.leg!.minutes - b.leg!.minutes);
+    if (candidates[0]) {
+      const { leg, exit } = candidates[0];
+      if (outbound) leg!.minutes += request.preferences.stepFree ? 4 : 2;
+      leg!.instructions += ` Use ${station.name} exit ${exit.exit} (LTA location); entrance-to-platform access remains estimated and step-free access is unverified.`;
+      leg!.source += " · LTA TrainStationExit";
+      return leg;
+    }
+    return outbound
+      ? walkSegment(
+          station.coord,
+          endpoint,
+          station.name,
+          name,
+          request.preferences,
+        )
+      : walkSegment(
+          endpoint,
+          station.coord,
+          name,
+          station.name,
+          request.preferences,
+        );
+  }
   function nearby(c: [number, number]) {
     return ["rail", "bus"].flatMap((mode) =>
       all
@@ -543,26 +698,14 @@ export function localJourneys(
   const starts = nearby(origin)
     .map((s) => ({
       s,
-      leg: walkSegment(
-        origin,
-        s.coord,
-        request.origin.name,
-        s.name,
-        request.preferences,
-      ),
+      leg: accessLeg(s, origin, request.origin.name, false),
     }))
     .filter((x) => x.leg !== null);
   const ends = new Map(
     nearby(destination)
       .map((s) => [
         s.id,
-        walkSegment(
-          s.coord,
-          destination,
-          s.name,
-          request.destination.name,
-          request.preferences,
-        ),
+        accessLeg(s, destination, request.destination.name, true),
       ])
       .filter((x) => x[1] !== null) as [string, Segment][],
   );
@@ -588,6 +731,10 @@ export function localJourneys(
     }
   }
   const found: Journey[] = [];
+  // A transfer walk is independent of the bus used to reach its start stop.
+  // Keep each walk result for this request so the larger bus graph cannot churn
+  // the process-wide bounded walking cache on every service/direction state.
+  const transferLegs = new Map<string, Segment | null>();
   const direct = walkSegment(
     origin,
     destination,
@@ -596,6 +743,40 @@ export function localJourneys(
     request.preferences,
   );
   if (direct) found.push(journeyFromSegments([direct]));
+  // An optimistic reverse graph (no boarding waits or condition penalties)
+  // provides an admissible lower bound for A*. This keeps national bus coverage
+  // from requiring a near-exhaustive islandwide search for every alternative.
+  const reverse = new Map<string, { from: string; minutes: number }[]>();
+  const reverseAdd = (to: string, from: string, minutes: number) => {
+    const rows = reverse.get(to) ?? [];
+    rows.push({ from, minutes });
+    reverse.set(to, rows);
+  };
+  for (const edges of net.transit.values())
+    for (const edge of edges) reverseAdd(edge.to, edge.from, edge.minutes);
+  for (const [from, links] of net.connectors)
+    for (const link of links)
+      reverseAdd(
+        link.to,
+        from,
+        link.distance / request.preferences.walkingSpeed,
+      );
+  const remaining = new Map<string, number>();
+  const reverseHeap = new Heap<string>();
+  for (const [id, leg] of ends) {
+    remaining.set(id, leg.minutes);
+    reverseHeap.push(leg.minutes, id);
+  }
+  while (reverseHeap.size) {
+    const { cost, value: id } = reverseHeap.pop()!;
+    if (cost !== remaining.get(id)) continue;
+    for (const edge of reverse.get(id) ?? []) {
+      const next = cost + edge.minutes;
+      if (next >= (remaining.get(edge.from) ?? Infinity)) continue;
+      remaining.set(edge.from, next);
+      reverseHeap.push(next, edge.from);
+    }
+  }
   const variants = [
     { avoid: "", live: false, busOnly: false },
     { avoid: "", live: true, busOnly: false },
@@ -612,6 +793,7 @@ export function localJourneys(
     };
     const heap = new Heap<State>();
     const best = new Map<string, number>();
+    const bestTransfer = new Map<string, number>();
     for (const start of starts) {
       const state = {
         station: start.s.id,
@@ -619,7 +801,8 @@ export function localJourneys(
         segments: [start.leg!],
         cost: start.leg!.minutes,
       };
-      heap.push(state.cost, state);
+      if (!remaining.has(state.station)) continue;
+      heap.push(state.cost + remaining.get(state.station)!, state);
       best.set(`${state.station}|`, state.cost);
     }
     let visited = 0;
@@ -628,15 +811,24 @@ export function localJourneys(
       const { value: state } = heap.pop()!;
       if (state.cost > (best.get(`${state.station}|${state.line}`) ?? Infinity))
         continue;
-      if (goal && state.cost >= goal.cost) break;
+      if (
+        goal &&
+        state.cost + (remaining.get(state.station) ?? Infinity) >= goal.cost
+      )
+        break;
       const end = ends.get(state.station);
-      if (end && (!goal || state.cost + end.minutes < goal.cost)) {
+      if (
+        end &&
+        state.segments.some((s) => s.mode === "rail" || s.mode === "bus") &&
+        (!goal || state.cost + end.minutes < goal.cost)
+      ) {
         goal = {
           cost: state.cost + end.minutes,
           journey: journeyFromSegments([...state.segments, end]),
         };
       }
       for (const edge of net.transit.get(state.station) ?? []) {
+        if (!remaining.has(edge.to)) continue;
         if (
           (variant.busOnly && edge.mode !== "bus") ||
           edge.line === variant.avoid
@@ -652,6 +844,9 @@ export function localJourneys(
           geometry: edge.geometry,
         };
         const probe: Segment = {
+          geometryKind: edge.geometryKind,
+          roadNames: edge.roadNames,
+          busReference: edge.busReference,
           id: "",
           mode: edge.mode,
           line: edge.line,
@@ -669,7 +864,9 @@ export function localJourneys(
           sheltered: true,
           accessibility: "unknown",
           instructions: "",
-          source: "OpenStreetMap route relation",
+          source: edge.busReference
+            ? `LTA DataMall stop sequence and distance · ${edge.geometryKind === "schematic" ? "schematic stop-to-stop map, not road geometry" : "OSM matched map geometry"}`
+            : "OpenStreetMap route relation",
         };
         const impacted = variant.live
           ? conditions.notices.filter(
@@ -685,8 +882,25 @@ export function localJourneys(
           )
         )
           continue;
-        const changed = state.line !== edge.line;
-        const wait = changed ? (state.line ? 5 : 4) : 0;
+        // Include the stop occurrence: loop routes may visit the same stop twice.
+        const serviceKey = edge.busReference
+          ? `${edge.busReference.key}|${edge.busReference.boarding.stopSequence + 1}`
+          : edge.line;
+        const changed = edge.busReference
+          ? state.line !==
+            `${edge.busReference.key}|${edge.busReference.boarding.stopSequence}`
+          : state.line !== edge.line;
+        const readyAt = Date.parse(request.departure) + state.cost * 60000;
+        if (
+          changed &&
+          edge.busReference &&
+          busOperating(edge.busReference.boarding, readyAt) === false
+        )
+          continue;
+        const wait = changed
+          ? (frequencyWait(edge.busReference?.service, readyAt) ??
+            (state.line ? 5 : 4))
+          : 0;
         const crowd = crowdAt(
           conditions,
           codes,
@@ -699,7 +913,7 @@ export function localJourneys(
             0,
           ) + (request.preferences.avoidCrowds && crowd === "high" ? 5 : 0);
         const nextCost = state.cost + edge.minutes + wait + penalty;
-        const key = `${edge.to}|${edge.line}`;
+        const key = `${edge.to}|${serviceKey}`;
         if (nextCost >= (best.get(key) ?? Infinity)) continue;
         best.set(key, nextCost);
         const segments = state.segments.map((s) => ({ ...s }));
@@ -711,39 +925,55 @@ export function localJourneys(
           last.geometry = [...last.geometry, ...edge.geometry];
           last.stops = [...new Set([...last.stops, ...codes])];
           last.hops = [...(last.hops ?? []), hop];
+          if (edge.geometryKind === "schematic") {
+            last.geometryKind = "schematic";
+            last.source =
+              "LTA DataMall stop sequence and distance · includes schematic stop-to-stop map, not road geometry";
+          }
           last.instructions = `Take ${edge.mode === "bus" ? "bus " : ""}${edge.line} towards ${edge.direction}. Alight at ${to.name}. Includes an estimated boarding wait.`;
         } else
           segments.push({
             ...probe,
-            id: `${edge.line}-${from.name}`,
+            id: edge.busReference
+              ? `${edge.busReference.key}-${edge.busReference.boarding.stopSequence}`
+              : `${edge.line}-${from.name}`,
             minutes: edge.minutes + wait,
             waitMinutes: wait,
             instructions: `${state.line ? "Change to" : "Board"} ${edge.mode === "bus" ? "bus " : ""}${edge.line} towards ${edge.direction}. Alight at ${to.name}. Allow ${wait} min for ${state.line ? "transfer and boarding" : "boarding"}.`,
           });
-        heap.push(nextCost, {
+        heap.push(nextCost + remaining.get(edge.to)!, {
           station: edge.to,
-          line: edge.line,
+          line: serviceKey,
           segments,
           cost: nextCost,
         });
       }
+      if (state.segments.at(-1)?.mode === "walk") continue;
+      if (state.cost >= (bestTransfer.get(state.station) ?? Infinity)) continue;
+      bestTransfer.set(state.station, state.cost);
       for (const link of net.connectors.get(state.station) ?? []) {
-        if (state.segments.at(-1)?.mode === "walk") continue;
+        if (!remaining.has(link.to)) continue;
         const from = net.stations.get(state.station)!,
           to = net.stations.get(link.to)!;
-        const leg = walkSegment(
-          from.coord,
-          to.coord,
-          from.name,
-          to.name,
-          request.preferences,
-        );
+        const transferKey = `${from.id}|${to.id}`;
+        if (!transferLegs.has(transferKey))
+          transferLegs.set(
+            transferKey,
+            walkSegment(
+              from.coord,
+              to.coord,
+              from.name,
+              to.name,
+              request.preferences,
+            ),
+          );
+        const leg = transferLegs.get(transferKey);
         if (!leg) continue;
         const key = `${link.to}|`;
         const nextCost = state.cost + leg.minutes + 2;
         if (nextCost >= (best.get(key) ?? Infinity)) continue;
         best.set(key, nextCost);
-        heap.push(nextCost, {
+        heap.push(nextCost + remaining.get(link.to)!, {
           station: link.to,
           line: "",
           segments: [...state.segments, leg],
@@ -792,6 +1022,12 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
       "Hosted with Wayce; route geometry is local and travel times are estimates",
   });
   const railSchedule = loadRailScheduleSnapshot();
+  conditions.feeds.push({
+    name: "LTA local routing layers",
+    status: getGeospatial().accessedAt ? "local" : "unavailable",
+    updatedAt: getGeospatial().accessedAt,
+    detail: `Station exits, covered links and cycling paths. DataMall bus graph: ${getNetwork().busCoverage.services} services, ${getNetwork().busCoverage.directions} directions; ${getNetwork().busCoverage.matched} OSM-matched and ${getNetwork().busCoverage.schematic} schematic hops, ${getNetwork().busCoverage.missing} rejected. Walking coverage remains limited.`,
+  });
   const departureDate = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Singapore",
     year: "numeric",

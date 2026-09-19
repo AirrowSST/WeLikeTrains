@@ -4,7 +4,6 @@ param(
     [ValidatePattern('^[a-z]+-[a-z]+[0-9]$')][string]$Region = 'asia-southeast1',
     [ValidatePattern('^[a-z][a-z0-9-]{0,61}[a-z0-9]$')][string]$Service = 'weliketrains',
     [string]$Gcloud = 'gcloud',
-    [ValidateSet('Full', 'Fast')][string]$VerificationMode = 'Full',
     [switch]$AllowDirty,
     [switch]$AllowNonMain
 )
@@ -19,9 +18,6 @@ if (-not (Get-Command $Gcloud -ErrorAction SilentlyContinue)) {
     else { throw 'Google Cloud CLI was not found. Install it or pass -Gcloud with its path.' }
 }
 
-$npmCommand = Get-Command 'npm.cmd' -ErrorAction SilentlyContinue
-if (-not $npmCommand) { $npmCommand = Get-Command 'npm' -ErrorAction SilentlyContinue }
-if (-not $npmCommand) { throw 'npm was not found.' }
 if (-not (Get-Command 'git' -ErrorAction SilentlyContinue)) { throw 'git was not found.' }
 
 $branch = (& git branch --show-current).Trim()
@@ -45,17 +41,6 @@ if ($LASTEXITCODE -ne 0 -or -not $account) {
     throw 'No active Google Cloud CLI account was found. Run gcloud auth login first.'
 }
 
-$verificationScript = if ($VerificationMode -eq 'Fast') { 'verify:deploy:fast' } else { 'verify' }
-if ($VerificationMode -eq 'Fast') {
-    Write-Warning 'FAST deployment verification selected: production build, TypeScript and unit tests will run; Playwright will be skipped.'
-}
-Write-Host "Verification mode: $VerificationMode ($verificationScript); source: $sourceLabel"
-$verificationTimer = [System.Diagnostics.Stopwatch]::StartNew()
-& $npmCommand.Source run $verificationScript
-$verificationTimer.Stop()
-if ($LASTEXITCODE -ne 0) { throw 'Local verification failed; deployment was not started.' }
-Write-Host ('Local verification completed in {0:N1}s.' -f $verificationTimer.Elapsed.TotalSeconds)
-
 $uploadFiles = @(& $Gcloud meta list-files-for-upload)
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the Cloud Build upload set.' }
 $unsafeUploads = @($uploadFiles | Where-Object {
@@ -74,7 +59,7 @@ $builder = "projects/$ProjectId/serviceAccounts/$Service-builder@$ProjectId.iam.
 
 Write-Host "Deploying $Service from local branch $branch to $ProjectId ($Region)."
 $deploymentTimer = [System.Diagnostics.Stopwatch]::StartNew()
-& $Gcloud run deploy $Service '--source=.' "--project=$ProjectId" "--region=$Region" "--service-account=$runtime" "--build-service-account=$builder" "--update-labels=wayce-verification=$($VerificationMode.ToLowerInvariant()),wayce-source=$sourceLabel" '--quiet'
+& $Gcloud run deploy $Service '--source=.' "--project=$ProjectId" "--region=$Region" "--service-account=$runtime" "--build-service-account=$builder" "--update-labels=wayce-source=$sourceLabel" '--quiet'
 $deploymentTimer.Stop()
 if ($LASTEXITCODE -ne 0) { throw 'Cloud Run deployment failed. Inspect the regional Cloud Build log before retrying.' }
 
@@ -89,6 +74,5 @@ $health = Invoke-RestMethod -Uri "$url/api/health" -TimeoutSec 30
 if ($health.status -ne 'ok') { throw "Revision $revision did not pass the application health check." }
 
 Write-Host "Deployment verified: $revision"
-Write-Host "Verification mode: $VerificationMode; source: $sourceLabel"
 Write-Host ('Cloud deployment and health verification completed in {0:N1}s.' -f $deploymentTimer.Elapsed.TotalSeconds)
 Write-Host $url

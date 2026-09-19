@@ -18,6 +18,7 @@ async function useDeterministicPlans(
   loadOneMap = false,
   seedSavedRoute = true,
   showOnboarding = false,
+  schematicBuses = false,
 ) {
   if (!showOnboarding) {
     await page.addInitScript(() => {
@@ -100,6 +101,15 @@ async function useDeterministicPlans(
       templates.set(fixtureKey, template);
     }
     const plan = await template;
+    if (schematicBuses)
+      for (const journey of [
+        plan.recommended,
+        plan.original,
+        ...plan.alternatives,
+      ]) {
+        for (const segment of journey.segments)
+          if (segment.mode === "bus") segment.geometryKind = "schematic";
+      }
     latestTemplate = plan;
     await route.fulfill({
       contentType: "application/json",
@@ -549,15 +559,22 @@ test("opens transit details when a selected journey path is chosen", async ({
   await expect(details).toContainText("Alight");
   await expect(details).toContainText("Crowding");
   await expect(details).toContainText("Timing:");
+  await expect(details).toContainText("Station/platform crowding:");
+  await expect(
+    page.locator(".timeline .segment-crowding").first(),
+  ).toContainText("Station/platform crowding:");
 });
 test("opens bus details from the path on a narrow phone", async ({ page }) => {
-  await useDeterministicPlans(page, true, false);
+  await useDeterministicPlans(page, true, false, false, true);
   await page.setViewportSize({ width: 320, height: 700 });
   await page.goto("/");
   await openDeveloperDemos(page);
   await page.getByRole("button", { name: /Mdm Lim/ }).click();
   await page.getByRole("button", { name: "Start demo" }).click();
-  await page.getByRole("button", { name: /^View Bus / }).click();
+  await page
+    .getByRole("button", { name: /^View Bus / })
+    .first()
+    .click();
 
   const busPath = page.locator(".route-segment-hit.bus").first();
   await expect(busPath).toHaveAttribute("role", "button");
@@ -576,9 +593,18 @@ test("opens bus details from the path on a narrow phone", async ({ page }) => {
   await expect(details).toContainText("Board");
   await expect(details).toContainText("Alight");
   await expect(details).toContainText("Crowding");
-  const popupBox = await details.boundingBox();
-  expect(popupBox!.x).toBeGreaterThanOrEqual(0);
-  expect(popupBox!.x + popupBox!.width).toBeLessThanOrEqual(320);
+  await expect(details).toContainText("Bus occupancy:");
+  await expect(details).toContainText("Schematic stop-to-stop line");
+  await expect(page.locator(".timeline")).toContainText("Schematic bus line");
+  await expect(
+    page.locator(".timeline .segment-crowding").first(),
+  ).toContainText("Bus occupancy:");
+  await expect
+    .poll(async () => {
+      const box = await details.boundingBox();
+      return !!box && box.x >= 0 && box.x + box.width <= 320;
+    })
+    .toBe(true);
 });
 test("opens local MRT and bus-stop details from map icons", async ({
   page,

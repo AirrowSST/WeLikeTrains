@@ -1,0 +1,8 @@
+{
+  "source": "https://datamall2.mytransport.sg/ltaodataservice/PlannedBusRoutes",
+  "accessedAt": "2026-09-19T00:17:02.779Z",
+  "releasedRows": 0,
+  "licence": "Singapore Open Data Licence v1.0",
+  "sha256": "d9823f3ac5446993ba4ca3dab9d109fe261875dc1277c15e981bc5411289c508",
+  "restriction": "Only rows already effective at import time are retained; refresh explicitly with npm run data:planned-buses"
+}

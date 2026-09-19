@@ -76,6 +76,7 @@ import {
   sgTime,
 } from "../shared/catalog";
 import { meetsDelayAlertThreshold } from "../shared/alerts";
+import { crowdDescription } from "../shared/crowding";
 import {
   timelineDefinition,
   timelineTime,
@@ -2337,6 +2338,23 @@ export default function App() {
                                       {s.instructions}
                                     </p>
                                   )}
+                                  {(s.mode === "bus" || s.mode === "rail") && (
+                                    <p
+                                      className={`segment-crowding ${s.crowd}`}
+                                    >
+                                      <UsersRound
+                                        size={14}
+                                        aria-hidden="true"
+                                      />
+                                      {crowdDescription(s)}
+                                    </p>
+                                  )}
+                                  {s.geometryKind === "schematic" && (
+                                    <p className="step-detail">
+                                      Schematic bus line · not the roads
+                                      travelled
+                                    </p>
+                                  )}
                                 </div>
                                 <span className="step-duration">
                                   {Math.ceil(s.minutes)} min
@@ -3177,7 +3195,7 @@ export default function App() {
             <p>
               Normal mode requests LTA DataMall and NEA feeds concurrently and
               marks every signal with its source and availability. Demo
-              scenarios use actual OpenStreetMap routes with simulated
+              scenarios use local OSM and DataMall routes with simulated
               disruptions, crowds, weather and works. Demo location is labelled;
               normal live mode requests a one-shot device location when it
               opens, with a visible manual fallback if permission fails.
@@ -3311,6 +3329,18 @@ export default function App() {
                 </p>
                 <h2>{selected.segments[journeyStep].to}</h2>
                 <p>{selected.segments[journeyStep].instructions}</p>
+                {selected.segments[journeyStep].geometryKind ===
+                  "schematic" && (
+                  <p>Schematic bus line · not the roads travelled</p>
+                )}
+                {["bus", "rail"].includes(
+                  selected.segments[journeyStep].mode,
+                ) && (
+                  <p className="segment-crowding">
+                    <UsersRound size={16} aria-hidden="true" />
+                    {crowdDescription(selected.segments[journeyStep])}
+                  </p>
+                )}
                 <div className="active-step-meta">
                   <Clock3 size={19} />
                   {Math.ceil(selected.segments[journeyStep].minutes)} min ·{" "}

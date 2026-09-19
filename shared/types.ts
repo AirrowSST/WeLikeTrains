@@ -90,6 +90,11 @@ export interface AccountUser {
   picture?: string;
 }
 export interface Segment {
+  geometryKind?: "mapped" | "schematic";
+  crowdSource?: "current" | "forecast" | "mixed" | "simulated";
+  roadNames?: string[];
+  unavailable?: boolean;
+  busReference?: import("../server/bus-routing").BusReference;
   id: string;
   mode: Mode;
   line: string;
@@ -206,6 +211,7 @@ export interface BusArrival {
   status?: "live" | "demo" | "stale";
 }
 export interface Conditions {
+  trainUpdates?: import("../server/rail-realtime").TrainUpdate[];
   notices: Notice[];
   crowd: CrowdReading[];
   buses: BusArrival[];

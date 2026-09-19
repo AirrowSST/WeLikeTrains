@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import type { Segment } from "../shared/types";
 import { canonicalLine } from "../shared/catalog";
+import { predictedStopTime, type TrainUpdate } from "./rail-realtime";
 
 export const LTA_GTFS_ENDPOINT =
   "https://datamall2.mytransport.sg/ltaodataservice/GTFSScheduleTrain";
@@ -345,6 +346,7 @@ const segmentEndpointCodes = (segment: Segment) => {
 };
 
 export interface CatchableTrainRequest {
+  updates?: TrainUpdate[];
   line: string;
   fromCodes: string[];
   toCodes: string[];
@@ -352,6 +354,7 @@ export interface CatchableTrainRequest {
 }
 
 export interface CatchableTrain {
+  realtime?: boolean;
   tripId: string;
   serviceDate: string;
   fromCode: string;
@@ -383,9 +386,17 @@ export function selectCatchableTrain(
     const midnight = Date.parse(`${serviceDate}T00:00:00+08:00`);
     for (const trip of snapshot.trips) {
       if (trip.line !== request.line || !active.has(trip.serviceId)) continue;
+      const update = request.updates?.find(
+        (u) =>
+          u.tripId === trip.id &&
+          u.startDate === serviceDate.replaceAll("-", ""),
+      );
+      if (update?.cancelled) continue;
       for (let fromIndex = 0; fromIndex < trip.stops.length - 1; fromIndex++) {
         const from = trip.stops[fromIndex];
         if (!fromCodes.has(from[0])) continue;
+        if (update?.stops.some((s) => s.code === from[0] && s.skipped))
+          continue;
         for (
           let toIndex = fromIndex + 1;
           toIndex < trip.stops.length;
@@ -393,15 +404,36 @@ export function selectCatchableTrain(
         ) {
           const to = trip.stops[toIndex];
           if (!toCodes.has(to[0])) continue;
-          const departure = midnight + from[2] * 1000;
-          let arrival = midnight + to[1] * 1000;
+          if (update?.stops.some((s) => s.code === to[0] && s.skipped))
+            continue;
+          const codes = trip.stops.map((s) => s[0]);
+          const times = trip.stops.map((s) => midnight + s[2] * 1000);
+          const departure = predictedStopTime(
+            update,
+            codes,
+            fromIndex,
+            midnight + from[2] * 1000,
+            true,
+            times,
+          );
+          let arrival = predictedStopTime(
+            update,
+            codes,
+            toIndex,
+            midnight + to[1] * 1000,
+            false,
+            times,
+          );
+          if (update && arrival < departure) continue;
           while (arrival < departure) arrival += 86_400_000;
           if (
             departure < readyAt ||
+            departure - readyAt > 2 * 3600_000 ||
             (best && departure >= Date.parse(best.departureAt))
           )
             break;
           best = {
+            realtime: !!update,
             tripId: trip.id,
             serviceDate,
             fromCode: from[0],
@@ -431,7 +463,11 @@ export function evaluateRailSegments(
   input: Segment[],
   departure: string,
   snapshot: RailScheduleSnapshot | undefined,
-  options: { stationAccessMinutes?: number; interchangeMinutes?: number } = {},
+  options: {
+    stationAccessMinutes?: number;
+    interchangeMinutes?: number;
+    updates?: TrainUpdate[];
+  } = {},
 ) {
   const segments = input.map((segment) => ({
     ...segment,
@@ -469,9 +505,27 @@ export function evaluateRailSegments(
           fromCodes: endpointCodes.from,
           toCodes: endpointCodes.to,
           readyAt,
+          updates: options.updates,
         })
       : undefined;
     if (!scheduled) {
+      if (
+        snapshot &&
+        options.updates?.length &&
+        selectCatchableTrain(snapshot, {
+          line: segment.line,
+          fromCodes: endpointCodes.from,
+          toCodes: endpointCodes.to,
+          readyAt,
+        })
+      ) {
+        segment.unavailable = true;
+        segment.source = "LTA GTFS Realtime · no catchable service";
+        segment.instructions =
+          "No catchable train remains after realtime cancellations or skipped stops. Re-plan.";
+        clock += segment.minutes * 60_000;
+        continue;
+      }
       fallbackSegments++;
       segment.source = `${segment.source} · timetable fallback`;
       segment.instructions = `${segment.instructions} Scheduled timing is unavailable for this leg, so Wayce is using its local estimate.`;
@@ -485,6 +539,13 @@ export function evaluateRailSegments(
       (Date.parse(scheduled.departureAt) - legStart) / 60_000;
     segment.instructions = `${previous?.mode === "rail" ? "Change to" : "Board"} ${segment.line} towards ${segment.direction ?? "the destination"}. The first catchable scheduled train leaves at ${singaporeClock(scheduled.departureAt)} after an estimated ${allowance}-minute ${previous?.mode === "rail" ? "interchange" : "station-access"} allowance. Alight at ${segment.to}.`;
     segment.source = `LTA DataMall GTFS Schedule (accessed ${snapshot!.accessedOn}) · station access estimated`;
+    if (scheduled.realtime) {
+      segment.source += " · LTA GTFS Realtime";
+      segment.instructions = segment.instructions.replace(
+        "scheduled train",
+        "predicted train",
+      );
+    }
     scheduledSegments++;
   }
   return { segments, scheduledSegments, fallbackSegments };
@@ -512,6 +573,7 @@ export function loadRailScheduleSnapshot(path = defaultSnapshotUrl) {
       !Array.isArray(parsed.trips)
     )
       throw new Error("Unsupported rail schedule snapshot");
+    for (const trip of parsed.trips) trip.line = canonicalLine(trip.line);
     if (isDefault) cachedSnapshot = parsed as RailScheduleSnapshot;
     return parsed as RailScheduleSnapshot;
   } catch {

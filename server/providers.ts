@@ -43,7 +43,9 @@ export async function searchPlaces(query: string): Promise<Place[]> {
   const stations = [...getNetwork().stations.values()].map((station) => ({
     sourceRank: station.mode === "rail" ? 1 : 2,
     place: {
-      id: `osm-station-${station.id}`,
+      id: station.id.startsWith("bus:datamall:")
+        ? `datamall-stop-${station.codes[0]}`
+        : `osm-station-${station.id}`,
       name: station.name,
       subtitle: `${station.codes.join(" · ") || "Mapped stop"} · ${station.mode === "rail" ? "Rail station" : "Bus stop"}`,
       lat: station.coord[0],

@@ -25,23 +25,14 @@ describe("deployment guardrails", () => {
     },
   );
 
-  it("keeps full verification as the default and makes fast deployment explicit", () => {
+  it("keeps deployment source-labelled without requiring local test commands", () => {
     const deployScript = readFileSync(
       resolve(root, "scripts", "deploy-code.ps1"),
       "utf8",
     );
-    const packageScripts = JSON.parse(
-      readFileSync(resolve(root, "package.json"), "utf8"),
-    ).scripts;
-
-    expect(deployScript).toContain("[ValidateSet('Full', 'Fast')]");
-    expect(deployScript).toContain("$VerificationMode = 'Full'");
-    expect(deployScript).toContain("'verify:deploy:fast'");
-    expect(deployScript).toContain("wayce-verification");
     expect(deployScript).toContain("wayce-source");
-    expect(packageScripts["verify:deploy:fast"]).toBe(
-      "npm run build && npm test",
-    );
+    expect(deployScript).not.toContain("npm run verify");
+    expect(deployScript).not.toContain("VerificationMode");
   });
 
   it("isolates Playwright runs instead of sharing a fixed test port", () => {

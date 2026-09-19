@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
+import { replacePlannedDirections } from './planned-buses';
 import type { TransitStop } from "../shared/types";
 
 export const LTA_BUS_REFERENCE_ENDPOINTS = [
@@ -290,7 +291,13 @@ export function loadBusNetworkSnapshot(path = defaultSnapshotUrl) {
       !Array.isArray(parsed.services)
     )
       throw new Error("Unsupported bus network snapshot");
-    if (isDefault) cachedSnapshot = parsed as BusNetworkSnapshot;
+    if (isDefault) {
+      try {
+        const planned = JSON.parse(gunzipSync(readFileSync(new URL('../data/planned-buses.json.gz', import.meta.url))).toString());
+        if (planned.version === 1 && planned.baseAccessedAt === parsed.accessedAt && Date.parse(planned.accessedAt) <= Date.now()) parsed.routes = replacePlannedDirections(parsed.routes, planned.routes);
+      } catch { /* Optional released changes must not break the base snapshot. */ }
+      cachedSnapshot = parsed as BusNetworkSnapshot;
+    }
     return parsed as BusNetworkSnapshot;
   } catch {
     if (isDefault) cachedSnapshot = null;

@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import type { Coord, Preferences, Segment, TransitStop } from "../shared/types";
 import { canonicalLine } from "../shared/catalog";
 import { listDataMallBusStops } from "./bus-network";
+import { joinOfficialBusRoutes, type BusReference } from "./bus-routing";
+import { getGeospatial } from "./geospatial";
 interface RawWay {
   id: number;
   nodes: number[];
@@ -27,6 +29,9 @@ export interface Station {
   mode: "rail" | "bus";
 }
 export interface TransitEdge {
+  geometryKind?: "mapped" | "schematic";
+  roadNames?: string[];
+  busReference?: BusReference;
   from: string;
   to: string;
   line: string;
@@ -104,6 +109,7 @@ function buildNetwork() {
   const walk = new Map<number, WalkEdge[]>();
   const stations = new Map<string, Station>();
   const transit = new Map<string, TransitEdge[]>();
+  const official = getGeospatial();
   for (const way of raw.ways) {
     const t = way.tags;
     if (
@@ -128,7 +134,8 @@ function buildNetwork() {
         distance: distance(ac, bc),
         covered:
           ["yes", "arcade", "colonnade"].includes(t.covered) ||
-          t.tunnel === "yes",
+          t.tunnel === "yes" ||
+          official.covered.matches(ac, bc),
         steps: t.highway === "steps",
         cycle:
           t.bicycle !== "no" &&
@@ -139,7 +146,8 @@ function buildNetwork() {
               "service",
               "tertiary",
               "unclassified",
-            ].includes(t.highway)),
+            ].includes(t.highway) ||
+            official.cycling.matches(ac, bc)),
         name:
           t.name ??
           (t.highway === "steps"
@@ -222,6 +230,16 @@ function buildNetwork() {
         metres = distance(from.coord, to.coord) * 1.15;
       }
       const edge: TransitEdge = {
+        roadNames:
+          mode === "bus"
+            ? [
+                ...new Set(
+                  route.ways
+                    .map((id) => ways.get(id)?.tags.name)
+                    .filter((name): name is string => !!name),
+                ),
+              ]
+            : undefined,
         from: from.id,
         to: to.id,
         line,
@@ -237,11 +255,25 @@ function buildNetwork() {
       transit.get(from.id)!.push(edge);
     }
   }
+  const busCoverage = joinOfficialBusRoutes(stations, transit);
   // Transfer between distinct, nearby surface stops. All are visible walking legs.
   const list = [...stations.values()];
   const connectors = new Map<string, { to: string; distance: number }[]>();
+  const stopGrid = new Map<string, Station[]>();
+  for (const station of list) {
+    const key = `${Math.floor(station.coord[0] * 500)},${Math.floor(station.coord[1] * 500)}`;
+    const bucket = stopGrid.get(key) ?? [];
+    bucket.push(station);
+    stopGrid.set(key, bucket);
+  }
   for (const s of list) {
-    const nearby = list.filter(
+    const gx = Math.floor(s.coord[0] * 500),
+      gy = Math.floor(s.coord[1] * 500);
+    const candidates: Station[] = [];
+    for (let x = -1; x <= 1; x++)
+      for (let y = -1; y <= 1; y++)
+        candidates.push(...(stopGrid.get(`${gx + x},${gy + y}`) ?? []));
+    const nearby = candidates.filter(
       (t) =>
         t.id !== s.id &&
         (s.mode !== t.mode || s.mode === "bus") &&
@@ -291,6 +323,7 @@ function buildNetwork() {
     grid,
     componentByNode,
     timestamp: raw.timestamp,
+    busCoverage,
   };
 }
 export function getNetwork() {
@@ -366,6 +399,15 @@ function calculateWalkingPath(
   verified: boolean;
   instructions: string;
 } | null {
+  if (distance(from, to) < 1)
+    return {
+      geometry: [from, to],
+      distance: 0,
+      sheltered: false,
+      verified: true,
+      instructions:
+        "Already at this location; no walking connection is needed.",
+    };
   const { coords, walk, grid, componentByNode } = getNetwork();
   const nearestByComponent = (c: Coord) => {
     const nearest = new Map<number, { id: number; distance: number }>();
@@ -509,6 +551,6 @@ export function walkSegment(
     accessibility: "unknown",
     instructions: path.instructions,
     source:
-      "Bundled OpenStreetMap pedestrian graph; access connections approximate",
+      "OpenStreetMap pedestrian graph with LTA covered-linkway/cycling matches; access connections approximate",
   };
 }

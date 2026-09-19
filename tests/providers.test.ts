@@ -44,7 +44,21 @@ describe("place search", () => {
   it("does not match a query inside the middle of an unrelated word", async () => {
     const results = await searchPlaces("NTU");
 
-    expect(results).toEqual([]);
+    // The national DataMall index includes NTUC stops, a legitimate prefix
+    // match. "Century" must still not match a query in the middle of a word.
+    expect(results.length).toBeGreaterThan(0);
+    expect(
+      results.every((place) =>
+        place.name
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .some((word) => word.startsWith("ntu")),
+      ),
+    ).toBe(true);
+    expect(results.some((place) => /century/i.test(place.name))).toBe(false);
+    expect(
+      results.every((place) => place.id.startsWith("datamall-stop-")),
+    ).toBe(true);
   });
 
   it("exposes deduplicated rail stations and bus stops for the map", () => {

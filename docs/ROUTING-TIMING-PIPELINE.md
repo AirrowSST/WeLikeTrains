@@ -1,6 +1,6 @@
 # Routing and timing data pipeline
 
-Status: pre-implementation engineering report, 2026-09-19
+Status: historical design report with incremental implementation notes, 2026-09-19. The early comparison tables describe the pre-integration baseline, not current behavior. See [current routing data status](ROUTING-DATA-STATUS.md) for the implemented joins, imports, realtime adapters, verification and remaining limits.
 
 ## Executive summary
 

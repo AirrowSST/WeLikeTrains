@@ -230,7 +230,9 @@ describe("real OSM journeys", () => {
     expect(p.recommended.blocked).toBe(false);
     expect(p.recommended.segments[0].mode).toBe("walk");
     expect(
-      p.recommended.segments.some((segment) => segment.line === "172"),
+      p.recommended.segments.some(
+        (segment) => segment.mode === "bus" && !!segment.busReference,
+      ),
     ).toBe(true);
     expect(p.recommended.segments[0].geometry.length).toBeGreaterThan(2);
     expect(p.recommended.segments[0].instructions).not.toContain(
