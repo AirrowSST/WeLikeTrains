@@ -374,7 +374,7 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   await expect(
     page
       .getByRole("navigation")
-      .getByRole("button", { name: "Preferences", exact: true }),
+      .getByRole("button", { name: "Rewards", exact: true }),
   ).toBeVisible();
   await expect(
     page
@@ -1257,9 +1257,7 @@ test("shows companion data agreement once and lets Preferences revoke it", async
 }, info) => {
   await useDeterministicPlans(page);
   await page.goto("/");
-  await page
-    .getByRole("button", { name: "A little help for the journey" })
-    .click();
+  await page.getByRole("button", { name: "Open Chatbot" }).click();
 
   const agreement = page.locator(".chat-consent-overlay");
   await expect(agreement).toBeVisible();
@@ -1297,15 +1295,16 @@ test("shows companion data agreement once and lets Preferences revoke it", async
   await page.getByRole("button", { name: "Close dialog" }).click();
   await page.reload();
   await expect(startJourneyButton(page)).toBeEnabled();
-  await page
-    .getByRole("button", { name: "A little help for the journey" })
-    .click();
+  await page.getByRole("button", { name: "Open Chatbot" }).click();
   await expect(agreement).toHaveCount(0);
   await page.getByRole("button", { name: "Close dialog" }).click();
 
   await page
     .getByRole("navigation")
-    .getByRole("button", { name: "Preferences", exact: true })
+    .getByRole("button", { name: "Account", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /Preferences Travel choices/ })
     .click();
   const setting = page.getByRole("checkbox", {
     name: "Companion data sharing",
@@ -1316,9 +1315,7 @@ test("shows companion data agreement once and lets Preferences revoke it", async
     .getByRole("navigation")
     .getByRole("button", { name: "Journey", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "A little help for the journey" })
-    .click();
+  await page.getByRole("button", { name: "Open Chatbot" }).click();
   await expect(agreement).toBeVisible();
 });
 test("transcribes voice input into a reviewable chat draft", async ({
@@ -1693,11 +1690,18 @@ test("supports large text and preserves a previously loaded journey offline", as
   await expect(startJourneyButton(page)).toBeEnabled();
   await page
     .getByRole("navigation")
-    .getByRole("button", { name: "Preferences", exact: true })
+    .getByRole("button", { name: "Account", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /Preferences Travel choices/ })
     .click();
   await page.getByLabel("Larger, easier-to-read text").check();
   await page.getByRole("button", { name: "Apply my preferences" }).click();
   await expect(page.locator("html")).toHaveClass("large-text");
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Journey", exact: true })
+    .click();
   await expect(startJourneyButton(page)).toBeEnabled();
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;

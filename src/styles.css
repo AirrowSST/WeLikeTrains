@@ -5435,7 +5435,7 @@ body {
   order: 7;
 }
 
-/* Preferences and Account are peer navigation pages, not modal surfaces. */
+/* Account and its Preferences subpage share the phone layout. */
 .app-shell .nav-page {
   width: 100%;
   min-height: calc(100dvh - 70px - env(safe-area-inset-bottom));
@@ -5880,3 +5880,100 @@ html.journey-sheet-active body {
   flex-shrink: 0;
   margin-top: 2px;
 }
+
+/* Rewards keep the same single-column phone interface on every viewport. */
+.points-counter {
+  position: fixed;
+  top: calc(14px + env(safe-area-inset-top));
+  left: max(16px, calc(50% - 224px));
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  max-width: 210px;
+  padding: 10px 15px;
+  border: 1px solid #dce8d6;
+  border-radius: 24px;
+  color: #184e40;
+  background: #fcfff5;
+  box-shadow: 0 3px 16px #143c2020;
+}
+.points-counter strong { font-size: 17px; }
+.points-counter span { font-size: 12px; }
+.points-counter.on-map { z-index: 480; }
+.app-shell .nav-page-header { padding-top: calc(76px + env(safe-area-inset-top)); }
+.app-shell main.secondary-tab-page { padding-top: calc(76px + env(safe-area-inset-top)); }
+.account-preferences-link {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 20px 15px;
+  margin: 18px 0;
+  border: 1px solid #dce5d7;
+  border-radius: 16px;
+  background: #fff;
+  text-align: left;
+}
+.account-preferences-link span { flex: 1; min-width: 0; }
+.account-preferences-link strong, .account-preferences-link small { display: block; }
+.account-preferences-link small { margin-top: 4px; color: #607367; line-height: 1.4; }
+.rewards-page { display: grid; gap: 27px; padding-bottom: 18px; }
+.rewards-balance { padding: 26px 23px; border-radius: 24px; background: #194e40; color: #fff; }
+.rewards-balance .eyebrow { color: #dfeeb6; letter-spacing: 1.5px; }
+.rewards-balance > div { display: flex; align-items: baseline; gap: 12px; margin: 10px 0; }
+.rewards-balance > div svg { align-self: center; color: #dfeeaf; }
+.rewards-balance strong { font-size: clamp(36px, 12vw, 54px); line-height: 1.1; letter-spacing: -2px; overflow-wrap: anywhere; }
+.rewards-balance p { font-size: 16px; color: #fff; }
+.rewards-balance small { display: block; margin-top: 12px; font-size: 11px; color: #d8e7dd; }
+.app-shell .rewards-balance p { color: #fff !important; }
+.app-shell .rewards-balance small { color: #d8e7dd !important; }
+.rewards-section > h2 { margin-bottom: 7px; font-size: 21px; color: #203c31; }
+.rewards-section > p { color: #576b60; font-size: 13px; }
+.earn-points-row { display: grid; grid-template-columns: 44px 1fr; gap: 10px 12px; padding: 18px 0; border-bottom: 1px solid #dfe7dc; }
+.reward-icon { display: flex; flex-wrap: wrap; align-content: center; justify-content: center; color: #236243; }
+.earn-points-row h3 { font-size: 15px; margin-bottom: 3px; }
+.earn-points-row p { font-size: 13px; line-height: 1.5; color: #53675b; }
+.earn-points-row > strong { grid-column: 2; color: #215e36; font-size: 12px; }
+.rewards-section .rewards-note { margin-top: 12px; font-size: 12px; line-height: 1.6; }
+.rewards-catalogue { display: grid; gap: 18px; margin-top: 18px; }
+.reward-card { overflow: hidden; border-radius: 20px; background: #fff; border: 1px solid #e0e7d9; }
+.reward-art { display: flex; align-items: center; justify-content: center; gap: 24px; min-height: 118px; background: #eee5d6; color: #644829; }
+.reward-art.smoothie { background: #f4dfd6; color: #934733; }
+.reward-art.cycle { background: #dceccf; color: #366440; }
+.reward-art span { font-size: 10px; letter-spacing: 1.5px; font-weight: 700; }
+.reward-card-body { padding: 18px; }
+.reward-card h3 { font-size: 18px; margin-bottom: 5px; }
+.reward-card p { color: #5b6d62; font-size: 13px; }
+.reward-card-body > strong { display: block; font-size: 18px; margin: 15px 0; }
+.reward-card button { white-space: normal; min-height: 46px; }
+.reward-confirm { padding-top: 5px; }
+.reward-confirm p { margin-bottom: 10px; }
+.points-activity { list-style: none; margin: 12px 0 0; padding: 0; }
+.points-activity li { display: flex; align-items: center; gap: 12px; padding: 16px 0; border-bottom: 1px solid #dfe7dc; }
+.points-activity li > div { flex: 1; min-width: 0; }
+.points-activity strong { display: block; font-size: 14px; overflow-wrap: anywhere; }
+.points-activity small { display: block; margin-top: 5px; font-size: 12px; color: #586e60; }
+.points-activity b { color: #226039; }
+.rewards-empty { margin-top: 10px; padding: 18px; border-radius: 15px; background: #edf1e8; }
+.route-points { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 12px; color: #26613c; font-size: 12px; font-weight: 650; }
+.route-points small { flex-basis: 100%; margin-left: 19px; font-size: 11px; font-weight: 400; }
+.journey-points-earned { padding: 22px 16px; margin: 18px 0; border-radius: 18px; background: #e9f3d5; text-align: center; }
+.journey-points-earned strong { display: block; margin: 8px 0; font-size: 22px; color: #1e5637; }
+.journey-points-earned p { font-size: 13px; }
+
+.transit-arrivals { margin: 18px 0; padding: 16px; border: 1px solid #d4e2cd; border-radius: 16px; background: #f3f8ed; text-align: left; }
+.transit-arrivals header { display: flex; align-items: center; gap: 10px; }
+.transit-arrivals header > div { flex: 1; min-width: 0; }
+.transit-arrivals header strong, .transit-arrivals header small { display: block; overflow-wrap: anywhere; }
+.transit-arrivals header small { margin-top: 4px; font-size: 12px; }
+.transit-arrivals .icon-button { flex-shrink: 0; min-width: 44px; min-height: 44px; }
+.app-shell .transit-arrivals .arrival-direction { font-size: 13px; margin: 10px 0; }
+.arrival-source { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #245a39; }
+.arrival-times { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; list-style: none; margin: 12px 0; padding: 0; }
+.arrival-times li { padding: 12px 3px; border-radius: 10px; background: #fff; border: 1px solid #dbe5d4; text-align: center; }
+.arrival-times strong { display: block; font-size: 18px; color: #1e5037; }
+.arrival-times span { display: block; font-size: 12px; margin-top: 5px; }
+.app-shell .transit-arrivals .arrival-note, .app-shell .transit-arrivals .arrival-empty { font-size: 12px; margin: 10px 0 0; line-height: 1.55; }
+.arrival-updated { display: block; margin-top: 10px; font-size: 11px; }

@@ -12,8 +12,18 @@ import { planChatContext } from "./chat-context";
 import { getBusArrivals } from "./feeds";
 import { listTransitStops } from "./network";
 import { chat, searchPlaces, speech } from "./providers";
+import { requestOriginAllowed } from "./origin-policy";
 import { places, profiles, scenarios } from "../shared/catalog";
-import { accountStateSchema, planSchema } from "./validation";
+import {
+  accountStateSchema,
+  planSchema,
+  trainArrivalsSchema,
+} from "./validation";
+import {
+  loadRailScheduleSnapshot,
+  nextTrainDepartures,
+  segmentEndpointCodes,
+} from "./rail-schedule";
 import {
   accountSession,
   accountsConfigured,
@@ -82,19 +92,15 @@ app.use(
 app.use("/api", (req, res, next) => {
   res.setHeader("Cache-Control", "no-store");
   const origin = req.headers.origin;
-  if (origin) {
-    const allowed = new Set([
-      process.env.PUBLIC_URL,
-      "http://localhost:5173",
-      "http://localhost:8080",
-    ]);
-    if (
-      !allowed.has(origin) &&
-      origin !== `${req.protocol}://${req.get("host")}`
-    ) {
-      res.status(403).json({ error: "Request origin is not allowed" });
-      return;
-    }
+  if (
+    origin &&
+    !requestOriginAllowed(origin, {
+      publicUrl: process.env.PUBLIC_URL,
+      requestOrigin: `${req.protocol}://${req.get("host")}`,
+    })
+  ) {
+    res.status(403).json({ error: "Request origin is not allowed" });
+    return;
   }
   next();
 });
@@ -188,6 +194,26 @@ app.get("/api/buses/:stop", async (req, res) =>
     ),
   ),
 );
+app.post("/api/train-arrivals", (req, res) => {
+  const body = trainArrivalsSchema.parse(req.body);
+  const endpoints = segmentEndpointCodes(body);
+  const snapshot = loadRailScheduleSnapshot();
+  const departures = nextTrainDepartures(snapshot, {
+    line: body.line,
+    fromCodes: endpoints.from,
+    toCodes: endpoints.to,
+    readyAt: body.at ?? Date.now(),
+  });
+  res.json({
+    status: departures.length ? "scheduled" : "unavailable",
+    departures: departures.map(({ departureAt, arrivalAt }) => ({
+      departureAt,
+      arrivalAt,
+    })),
+    accessedOn: snapshot?.accessedOn,
+    updatedAt: new Date().toISOString(),
+  });
+});
 app.post(
   "/api/chat",
   rateLimit({ windowMs: 60000, limit: 12, skip: skipTestRateLimit }),

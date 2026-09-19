@@ -13,6 +13,13 @@ export const preferencesSchema = z.object({
   maxWalk: z.number().min(200).max(3500),
   alertThreshold: z.number().int().min(3).max(60),
 });
+export const trainArrivalsSchema = z.object({
+  line: z.string().regex(/^[A-Z]{2,4}$/),
+  from: z.string().min(1).max(200),
+  to: z.string().min(1).max(200),
+  stops: z.array(z.string().max(100)).min(2).max(150),
+  at: z.string().datetime({ offset: true }).optional(),
+});
 export const placeSchema = z.object({
   id: z.string().max(200),
   name: z.string().min(1).max(200),

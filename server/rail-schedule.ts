@@ -332,7 +332,9 @@ const previousDate = (date: string) =>
 const normalizeRequestedCodes = (values: string[]) =>
   new Set(stationCodes(...values));
 
-const segmentEndpointCodes = (segment: Segment) => {
+export const segmentEndpointCodes = (
+  segment: Pick<Segment, "line" | "stops" | "from" | "to">,
+) => {
   const codes = stationCodes(...segment.stops);
   const prefixes = linePrefixes[segment.line] ?? [];
   const matching = codes.filter((code) =>
@@ -449,6 +451,28 @@ export function selectCatchableTrain(
     }
   }
   return best;
+}
+
+// Bounded station-board lookup, using the same dated/directional timetable
+// selection as the planner. These are departures, not live train movements.
+export function nextTrainDepartures(
+  snapshot: RailScheduleSnapshot | undefined,
+  request: CatchableTrainRequest,
+) {
+  const departures: CatchableTrain[] = [];
+  const start =
+    typeof request.readyAt === "number"
+      ? request.readyAt
+      : Date.parse(request.readyAt);
+  if (!snapshot || !Number.isFinite(start)) return departures;
+  let readyAt = start;
+  for (let i = 0; i < 3; i++) {
+    const next = selectCatchableTrain(snapshot, { ...request, readyAt });
+    if (!next || Date.parse(next.departureAt) - start > 90 * 60000) break;
+    departures.push(next);
+    readyAt = Date.parse(next.departureAt) + 1;
+  }
+  return departures;
 }
 
 const singaporeClock = (value: string) =>

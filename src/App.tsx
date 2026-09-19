@@ -22,6 +22,7 @@ import {
   CloudSun,
   DoorOpen,
   Footprints,
+  Gift,
   Heart,
   HelpCircle,
   House,
@@ -83,6 +84,18 @@ import {
   type TimelineId,
 } from "../shared/timelines";
 import { TimelineControls } from "./TimelineControls";
+import Rewards from "./Rewards";
+import TransitArrivals from "./TransitArrivals";
+import {
+  creditJourney,
+  journeyPoints,
+  pointsBalance,
+  pointsJourneyId,
+  readPointsWallet,
+  redeemReward,
+  type PointsEntry,
+  type PointsWallet,
+} from "../shared/rewards";
 import JourneyMap from "./Map";
 import { useJourneySheet } from "./useJourneySheet";
 import GoogleSignIn, { disableGoogleAutoSelect } from "./GoogleSignIn";
@@ -130,7 +143,7 @@ const getSpeechRecognition = () => {
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
 };
 
-type Tab = "today" | "commutes" | "updates";
+type Tab = "today" | "commutes" | "updates" | "rewards";
 type ModalName =
   | "profile"
   | "preferences"
@@ -165,6 +178,7 @@ const PROFILE_KEY = "wlt-profile-v1",
   COMPANION_CONSENT_KEY = "wlt-companion-consent-v1",
   DEVELOPER_KEY = "wlt-developer-mode",
   ONBOARDING_KEY = "wlt-onboarding-v1";
+const POINTS_KEY = "wlt-points-v1:";
 const UNSET_ORIGIN: Place = {
   id: "origin-unset",
   name: "",
@@ -880,6 +894,26 @@ export default function App() {
   const [largeText, setLargeText] = useState(guest.current.largeText);
   const [config, setConfig] = useState<any>(null);
   const [accountUser, setAccountUser] = useState<AccountUser | null>(null);
+  const [wallets, setWallets] = useState<Record<string, PointsWallet>>({});
+  const [demoWallet, setDemoWallet] = useState<PointsWallet>({ entries: [] });
+  const pointsScope = accountUser ? `account:${accountUser.email}` : "guest";
+  const wallet =
+    request.dataMode === "demo"
+      ? demoWallet
+      : (wallets[pointsScope] ??
+        readPointsWallet(readLocal(POINTS_KEY + pointsScope)));
+  const balance = pointsBalance(wallet);
+  const [activeJourney, setActiveJourney] = useState<{
+    route: Journey;
+    entry: PointsEntry;
+    demo: boolean;
+    scope: string;
+    destination: string;
+    departure: string;
+    buses: PlanResponse["conditions"]["buses"];
+  } | null>(null);
+  const [completionPoints, setCompletionPoints] = useState<number | null>(null);
+  const completionRecorded = useRef(false);
   const [accountBusy, setAccountBusy] = useState(false);
   const [accountError, setAccountError] = useState("");
   const [commutes, setCommutes] = useState<SavedCommute[]>(
@@ -942,11 +976,13 @@ export default function App() {
     demoProfiles.find((candidate) => candidate.id === demoPersona) ??
     demoProfiles[0];
 
-  const selected = plan
-    ? ([plan.recommended, ...plan.alternatives, plan.original].find(
-        (j) => j.id === selectedId,
-      ) ?? plan.recommended)
-    : null;
+  const selected =
+    activeJourney?.route ??
+    (plan
+      ? ([plan.recommended, ...plan.alternatives, plan.original].find(
+          (j) => j.id === selectedId,
+        ) ?? plan.recommended)
+      : null);
   const savedRoutine = commutes.some(
     (commute) => commute.id === commuteId(request),
   );
@@ -1088,8 +1124,8 @@ export default function App() {
     setShowOnboarding(false);
     notify(
       preferences
-        ? "Preferences saved. You can change them anytime in Preferences."
-        : "Setup skipped. You can add preferences anytime in Preferences.",
+        ? "Preferences saved. You can change them under Account → Preferences."
+        : "Setup skipped. Add preferences under Account → Preferences anytime.",
     );
   };
   const applyRealState = (state: AccountState) => {
@@ -1265,6 +1301,38 @@ export default function App() {
   };
   const setJourneyProgress = (step: number) => {
     setJourneyStep(step);
+    if (
+      activeJourney &&
+      step >= activeJourney.route.segments.length &&
+      !completionRecorded.current
+    ) {
+      completionRecorded.current = true;
+      const current = activeJourney.demo
+        ? demoWallet
+        : readPointsWallet(
+            readLocal(POINTS_KEY + activeJourney.scope) ??
+              wallets[activeJourney.scope],
+          );
+      const next = creditJourney(current, {
+        ...activeJourney.entry,
+        completedAt: new Date().toISOString(),
+      });
+      const earned = pointsBalance(next) - pointsBalance(current);
+      setCompletionPoints(earned);
+      if (activeJourney.demo) setDemoWallet(next);
+      else {
+        setWallets((previous) => ({
+          ...previous,
+          [activeJourney.scope]: next,
+        }));
+        persist(POINTS_KEY + activeJourney.scope, next);
+      }
+      stopLocationTracking();
+      if (earned > 0)
+        notify(
+          `${earned} ${activeJourney.demo ? "demo " : ""}points earned. Nicely done!`,
+        );
+    }
     if (request.dataMode === "demo" && selected) {
       const fix = demoJourneyFix(selected.segments, step);
       if (fix) setCurrentLocation(fix);
@@ -1273,6 +1341,7 @@ export default function App() {
   const closeJourney = () => {
     stopLocationTracking();
     setStarted(false);
+    setActiveJourney(null);
     setModal(null);
   };
   useEffect(() => {
@@ -1328,12 +1397,13 @@ export default function App() {
         navigator.onLine &&
         document.visibilityState === "visible" &&
         plan &&
+        !started &&
         !loading
       )
         void runPlan(plan.request);
     }, 300000);
     return () => clearInterval(timer);
-  }, [plan, loading, runPlan]);
+  }, [plan, loading, runPlan, started]);
   useEffect(() => {
     if (!plan || plan.request.dataMode === "demo") return;
     const departure = new Date(plan.request.departure);
@@ -1434,6 +1504,9 @@ export default function App() {
     setModal("proactive");
   }, [plan]);
   const runDemoSelection = (persona: Persona, kind: "control" | "eventful") => {
+    setDemoWallet({ entries: [] });
+    setActiveJourney(null);
+    setStarted(false);
     if (request.dataMode === "live") {
       normalState.current = {
         request,
@@ -1468,6 +1541,9 @@ export default function App() {
   };
   const startDemo = () => runDemoSelection(demoPersona, timelineKind);
   const exitDemo = () => {
+    setDemoWallet({ entries: [] });
+    setActiveJourney(null);
+    setStarted(false);
     clearLocation();
     const stored = normalState.current;
     const value = liveRequest(
@@ -1650,6 +1726,11 @@ export default function App() {
       "wlt-large-text",
     ])
       localStorage.removeItem(key);
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(POINTS_KEY)) localStorage.removeItem(key);
+    }
+    setWallets({});
+    setDemoWallet({ entries: [] });
     const clean = initialGuestState();
     guest.current = clean;
     saved.current = null;
@@ -1685,21 +1766,44 @@ export default function App() {
       (notice) => notice.kind === "disruption" || notice.kind === "planned",
     ) ?? [];
   const primaryPage = modal === "preferences" || modal === "profile";
+  const pointsAlreadyCollected =
+    !!plan &&
+    wallet.entries.some((entry) => entry.id === pointsJourneyId(plan));
   return (
     <div className="app-shell">
       <a href="#main" className="skip-link">
         Skip to journey
       </a>
+      <button
+        type="button"
+        className={`points-counter ${tab === "today" && !primaryPage ? "on-map" : ""}`}
+        aria-label={`${request.dataMode === "demo" ? "Demo: " : ""}${balance} points. Open rewards`}
+        onClick={() => {
+          setTab("rewards");
+          setModal(null);
+        }}
+      >
+        <Leaf size={18} aria-hidden="true" />
+        <strong>{balance.toLocaleString()}</strong>
+        <span>{request.dataMode === "demo" ? "demo pts" : "pts"}</span>
+      </button>
       <header className="site-header">
         <nav aria-label="Main navigation">
           <button
             type="button"
-            onClick={() => setModal("preferences")}
-            className={modal === "preferences" ? "nav-item active" : "nav-item"}
-            aria-current={modal === "preferences" ? "page" : undefined}
+            onClick={() => {
+              setTab("rewards");
+              setModal(null);
+            }}
+            className={
+              !primaryPage && tab === "rewards" ? "nav-item active" : "nav-item"
+            }
+            aria-current={
+              !primaryPage && tab === "rewards" ? "page" : undefined
+            }
           >
-            <Settings2 size={17} />
-            Preferences
+            <Gift size={17} />
+            Rewards
           </button>
           {(
             [
@@ -1742,8 +1846,8 @@ export default function App() {
           <button
             type="button"
             onClick={() => setModal("profile")}
-            className={modal === "profile" ? "nav-item active" : "nav-item"}
-            aria-current={modal === "profile" ? "page" : undefined}
+            className={primaryPage ? "nav-item active" : "nav-item"}
+            aria-current={primaryPage ? "page" : undefined}
             aria-label="Account"
           >
             <CircleUserRound size={17} />
@@ -1765,9 +1869,49 @@ export default function App() {
         {tab !== "today" && (
           <section className="greeting">
             <div>
-              <h1>{tab === "commutes" ? "Routes" : "Disruptions"}</h1>
+              <h1>
+                {tab === "rewards"
+                  ? "Rewards"
+                  : tab === "commutes"
+                    ? "Routes"
+                    : "Disruptions"}
+              </h1>
             </div>
           </section>
+        )}
+        {tab === "rewards" && (
+          <Rewards
+            key={request.dataMode === "demo" ? "demo" : pointsScope}
+            wallet={wallet}
+            demo={request.dataMode === "demo"}
+            onRedeem={(rewardId) => {
+              const current =
+                request.dataMode === "demo"
+                  ? demoWallet
+                  : readPointsWallet(readLocal(POINTS_KEY + pointsScope));
+              const next = redeemReward(
+                current,
+                rewardId,
+                crypto.randomUUID(),
+                new Date().toISOString(),
+              );
+              if (next === current) {
+                notify("You need more points for this reward.");
+                return;
+              }
+              if (request.dataMode === "demo") setDemoWallet(next);
+              else {
+                setWallets((previous) => ({
+                  ...previous,
+                  [pointsScope]: next,
+                }));
+                persist(POINTS_KEY + pointsScope, next);
+              }
+              notify(
+                "Demo reward redeemed! Find it in My rewards. No real-world value.",
+              );
+            }}
+          />
         )}
         {tab === "today" && (
           <>
@@ -2151,6 +2295,21 @@ export default function App() {
                                     : `${journey.transfers} transfer${journey.transfers > 1 ? "s" : ""}`}
                                 </span>
                               </div>
+                              {!journey.blocked && (
+                                <span className="route-points">
+                                  <Leaf size={14} aria-hidden="true" />
+                                  {pointsAlreadyCollected
+                                    ? "Points already collected for this trip"
+                                    : `${journeyPoints(journey, plan.original).total} ${request.dataMode === "demo" ? "demo " : ""}points on completion`}
+                                  {!pointsAlreadyCollected &&
+                                    journeyPoints(journey, plan.original)
+                                      .quieterRoute > 0 && (
+                                      <small>
+                                        Includes +20 for a quieter route
+                                      </small>
+                                    )}
+                                </span>
+                              )}
                               {journey.blocked && (
                                 <span className="route-warning">
                                   <TriangleAlert size={13} /> Affected by
@@ -2262,6 +2421,23 @@ export default function App() {
                             className="primary-button"
                             disabled={selected.blocked}
                             onClick={() => {
+                              if (!plan || selected.blocked) return;
+                              completionRecorded.current = false;
+                              setCompletionPoints(null);
+                              setActiveJourney({
+                                route: selected,
+                                entry: {
+                                  ...journeyPoints(selected, plan.original),
+                                  id: pointsJourneyId(plan),
+                                  title: selected.title,
+                                  completedAt: "",
+                                },
+                                demo: request.dataMode === "demo",
+                                scope: pointsScope,
+                                destination: plan.request.destination.name,
+                                departure: plan.request.departure,
+                                buses: plan.conditions.buses,
+                              });
                               setStarted(true);
                               setJourneyProgress(0);
                               if (request.dataMode === "demo")
@@ -2882,6 +3058,17 @@ export default function App() {
                 {accountError}
               </p>
             )}
+            <button
+              className="account-preferences-link"
+              onClick={() => setModal("preferences")}
+            >
+              <Settings2 size={23} />
+              <span>
+                <strong>Preferences</strong>
+                <small>Travel choices, accessibility &amp; privacy</small>
+              </span>
+              <ChevronRight size={20} />
+            </button>
             <div className="developer-options">
               <h3>Developer options</h3>
               <label className="toggle-row">
@@ -2925,6 +3112,9 @@ export default function App() {
       {modal === "preferences" && (
         <main className="nav-page" aria-labelledby="preferences-page-title">
           <header className="nav-page-header">
+            <button className="text-button" onClick={() => setModal("profile")}>
+              <ArrowLeft size={16} /> Account
+            </button>
             <h1 id="preferences-page-title">Preferences</h1>
           </header>
           <div className="modal-body nav-page-body">
@@ -3049,9 +3239,10 @@ export default function App() {
             <button
               className="primary-button full"
               onClick={() => {
-                void runPlan(request);
-                void saveCommute();
-                setModal(null);
+                void storeRealState(buildAccountState());
+                if (isPlannable(request)) void runPlan(request);
+                notify("Preferences saved.");
+                setModal("profile");
               }}
             >
               Apply my preferences <ArrowRight size={17} />
@@ -3346,6 +3537,15 @@ export default function App() {
                   {Math.ceil(selected.segments[journeyStep].minutes)} min ·{" "}
                   {Math.round(selected.segments[journeyStep].distance)} m
                 </div>
+                {activeJourney && (
+                  <TransitArrivals
+                    segments={activeJourney.route.segments}
+                    step={journeyStep}
+                    demo={activeJourney.demo}
+                    departure={activeJourney.departure}
+                    demoBuses={activeJourney.buses}
+                  />
+                )}
                 <div className="journey-location" aria-live="polite">
                   <span>
                     <LocateFixed size={16} />
@@ -3419,9 +3619,32 @@ export default function App() {
                   <br />A little more day.
                 </h2>
                 <p>
-                  You’ve reached {request.destination.name}. Your routine is
-                  ready for next time.
+                  You’ve reached{" "}
+                  {activeJourney?.destination ?? request.destination.name}. Your
+                  routine is ready for next time.
                 </p>
+                <div className="journey-points-earned" role="status">
+                  <Leaf size={25} aria-hidden="true" />
+                  <strong>
+                    {completionPoints
+                      ? `+${completionPoints} ${request.dataMode === "demo" ? "demo " : ""}points earned`
+                      : "Journey complete"}
+                  </strong>
+                  <p>
+                    {completionPoints
+                      ? "Your good choices are adding up."
+                      : "No new points for this journey. Points are awarded once per planned trip."}
+                  </p>
+                </div>
+                <button
+                  className="secondary-button full"
+                  onClick={() => {
+                    closeJourney();
+                    setTab("rewards");
+                  }}
+                >
+                  View rewards <Gift size={17} />
+                </button>
                 <button
                   className="primary-button full"
                   onClick={() => {

@@ -16,6 +16,16 @@ The app opens as a standard guest using live-mode source labels. No account or A
 4. Open the companion, consent to sending route context, then type or tap the microphone to dictate a question. Voice input stays as a reviewable draft until you send it; browser speech recognition may use the browser vendor's online service. Review preference changes before applying them, or tap the speaker to hear a reply.
 5. **Data & sources → Live feeds** switches to LTA and NEA conditions while routing stays local on bundled OSM and DataMall snapshots. Each feed reports its own freshness or failure; live failures never silently inject demo data.
 
+## Arrivals during a journey
+
+Once a route is started, **One step at a time** shows up to three upcoming services at the current or next boarding stop. Bus times use fresh monitored LTA arrivals for the selected stop and service. Train times are **scheduled departures from the bundled GTFS timetable, not live train tracking**. The panel refreshes every 30 seconds while visible and closes with the journey; stale, unavailable and offline results remain labelled. Developer demos use simulated bus data and a labelled demo clock.
+
+## Points and demo rewards
+
+**Rewards** in the bottom navigation shows your points, earning history and a demo catalogue. **Account → Preferences** contains travel, readability and companion settings. Route cards preview 1 point per 100 metres walked/cycled (10/km, rounded down), plus 20 points when the selected alternative has a lower known crowd level than the original. Confirm the final journey step to collect; selecting, starting or abandoning a route awards nothing. The same planned departure and endpoints can be credited only once. Blocked routes earn nothing and unknown crowds do not qualify for the quieter-route bonus.
+
+Coffee (50 points), smoothie (100) and cycle (200) rewards are fictional examples with no real vouchers, merchant partnerships or cash value. Redemption deducts points and appears under My rewards. Wallets persist on this device separately for guests and each signed-in account; they do not merge or sync with Google/Firestore. Developer-demo wallets are temporary and discarded on exit. Completion is self-reported using planned distances/crowd levels, not verified travel or measured emissions. Clearing saved data also clears local wallets.
+
 ## Run from a clean machine
 
 Requires Node.js **22.12+** and npm. The station index, routing graph and offline OSM basemap are committed. When online, the app loads official OneMap Default tiles for detailed map display; search and routing never depend on OneMap or another public provider.
@@ -28,7 +38,7 @@ npm run build
 npm start
 ```
 
-Open http://localhost:8080. For development, `npm run dev` serves the UI at http://localhost:5173 and the API at port 8080. On a phone, use the deployed HTTPS URL: service workers and background push require a secure origin, unlike an ordinary LAN HTTP address.
+Open http://localhost:8080. For development, `npm run dev` serves the UI at http://localhost:5173 (or Vite's next available loopback port) and the API at port 8080. The API accepts those variable loopback UI ports only while it is itself reached through loopback; public deployments remain restricted to their configured or same origin. On a phone, use the deployed HTTPS URL: service workers and background push require a secure origin, unlike an ordinary LAN HTTP address.
 
 Optional: copy `.env.example` to `.env` and fill credentials. Never commit `.env`. Google account sync additionally requires a Google Identity Services web client ID, a server-only session secret and Firestore; live conditions use an LTA credential. The deployed app’s AI/speech use an attached Google service account—no downloadable service-account key is needed. Map display, place search and route computation require no provider credentials.
 

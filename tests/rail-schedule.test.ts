@@ -11,6 +11,8 @@ import {
   loadRailScheduleSnapshot,
   parseGtfsTime,
   selectCatchableTrain,
+  nextTrainDepartures,
+  segmentEndpointCodes,
   type GtfsScheduleFiles,
 } from "../server/rail-schedule";
 
@@ -31,6 +33,53 @@ const snapshot = () =>
   buildRailScheduleSnapshot(fixtureFiles(), "2026-09-19T00:00:00.000Z");
 
 describe("GTFS-backed rail timing", () => {
+  it("returns up to three upcoming departures for the selected line and direction within 90 minutes", () => {
+    const rows = nextTrainDepartures(snapshot(), {
+      line: "EWL",
+      fromCodes: ["EW2"],
+      toCodes: ["EW14"],
+      readyAt: "2026-09-21T07:00:00+08:00",
+    });
+    expect(rows.map((row) => row.tripId)).toEqual([
+      "EWL-missed",
+      "EWL-catchable",
+    ]);
+    expect(
+      rows.every((row) => row.fromCode === "EW2" && row.toCode === "EW14"),
+    ).toBe(true);
+    expect(
+      nextTrainDepartures(snapshot(), {
+        line: "EWL",
+        fromCodes: ["EW14"],
+        toCodes: ["EW2"],
+        readyAt: "2026-09-21T07:00:00+08:00",
+      }),
+    ).toEqual([]);
+    expect(
+      nextTrainDepartures(undefined, {
+        line: "EWL",
+        fromCodes: ["EW2"],
+        toCodes: ["EW14"],
+        readyAt: "2026-09-21T07:00:00+08:00",
+      }),
+    ).toEqual([]);
+    expect(
+      nextTrainDepartures(snapshot(), {
+        line: "EWL",
+        fromCodes: ["EW2"],
+        toCodes: ["EW14"],
+        readyAt: "2027-09-21T07:00:00+08:00",
+      }),
+    ).toEqual([]);
+    expect(
+      segmentEndpointCodes({
+        line: "EWL",
+        stops: ["DT32;EW2", "EW14;NS26", "Tampines", "Raffles Place"],
+        from: "Tampines",
+        to: "Raffles Place",
+      }),
+    ).toEqual({ from: ["EW2"], to: ["EW14"] });
+  });
   it("parses service-day times beyond midnight without treating them as wall-clock times", () => {
     expect(parseGtfsTime("25:03:30")).toBe(90_210);
     expect(() => parseGtfsTime("not-a-time")).toThrow(/GTFS time/i);
