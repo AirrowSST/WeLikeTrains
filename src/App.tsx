@@ -1592,6 +1592,7 @@ export default function App() {
   const [trackingLocation, setTrackingLocation] = useState(false);
   const [leaveNow, setLeaveNow] = useState(!saved.current);
   const [demoPersona, setDemoPersona] = useState<Persona>("rachel");
+  const [demoScenario, setDemoScenario] = useState<Scenario>("normal");
   const [timelineKind, setTimelineKind] = useState<"control" | "eventful">(
     "control",
   );
@@ -2231,7 +2232,11 @@ export default function App() {
     });
     setModal("proactive");
   }, [plan]);
-  const runDemoSelection = (persona: Persona, kind: "control" | "eventful") => {
+  const runDemoSelection = (
+    persona: Persona,
+    kind: "control" | "eventful",
+    scenario: Scenario = demoScenario,
+  ) => {
     setDemoWallet({ entries: [] });
     setActiveJourney(null);
     setStarted(false);
@@ -2248,7 +2253,7 @@ export default function App() {
     stopLocationTracking();
     const timeline = { id: `${persona}-${kind}` as TimelineId, minute: 0 };
     const base = {
-      ...makeRequest(persona, "demo", "normal"),
+      ...makeRequest(persona, "demo", scenario),
       timeline,
       departure: timelineTime(timeline),
       arriveBy: `2026-09-21T${profiles.find((p) => p.id === persona)!.arriveBy}:00+08:00`,
@@ -2267,7 +2272,7 @@ export default function App() {
     setModal(null);
     void runPlan(value);
   };
-  const startDemo = () => runDemoSelection(demoPersona, timelineKind);
+  const startDemo = () => runDemoSelection(demoPersona, timelineKind, demoScenario);
   const exitDemo = () => {
     setDemoWallet({ entries: [] });
     setActiveJourney(null);
@@ -2812,12 +2817,16 @@ export default function App() {
                   Back to navigation
                 </button>
                 <div className="route-results-map">
-                  <JourneyMap
+              <JourneyMap
                     request={request}
                     plan={resultPlan}
                     selected={selected}
                     location={currentLocation}
                     focusSelectedRoute
+                    showComparison={
+                      request.dataMode === "demo" &&
+                      request.scenario === "disruption"
+                    }
                     onViewAlerts={() => setModal("alerts")}
                     hasAlerts={disruptionAlerts.length > 0}
                   />
@@ -2826,7 +2835,20 @@ export default function App() {
                   type="button"
                   className="route-map-slider"
                   onPointerDown={startRouteMapResize}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowDown") {
+                      event.preventDefault();
+                      setRouteMapShare((value) => Math.min(68, value + 6));
+                    }
+                    if (event.key === "ArrowUp") {
+                      event.preventDefault();
+                      setRouteMapShare((value) => Math.max(24, value - 6));
+                    }
+                  }}
                   aria-label="Drag down to enlarge the map, or up to show more trips"
+                  aria-valuemin={24}
+                  aria-valuemax={68}
+                  aria-valuenow={routeMapShare}
                   aria-valuetext={`${routeMapShare}% of the screen for the map`}
                 >
                   <span aria-hidden="true" />

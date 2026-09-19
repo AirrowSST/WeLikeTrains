@@ -285,6 +285,7 @@ export default function JourneyMap({
   navigationMode = false,
   focusSegmentId,
   focusSelectedRoute = false,
+  showComparison = false,
 }: {
   plan: PlanResponse | null;
   selected: Journey | null;
@@ -296,6 +297,8 @@ export default function JourneyMap({
   focusSegmentId?: string;
   /** Results view recentres on the selected option rather than comparing it. */
   focusSelectedRoute?: boolean;
+  /** Allows demo route results to show the original disrupted path beside the revised path. */
+  showComparison?: boolean;
 }) {
   const routeOnly = focusSelectedRoute || navigationMode;
   const element = useRef<HTMLDivElement>(null);
@@ -689,7 +692,25 @@ export default function JourneyMap({
       })
       .then((stops) => {
         if (!alive) return;
-        transitStops = stops;
+        const merged = new Map<string, TransitStop>();
+        stops.forEach((stop) => {
+          if (stop.mode !== "rail") {
+            merged.set(stop.id, stop);
+            return;
+          }
+          const key = `${stop.mode}:${stop.lat.toFixed(4)}:${stop.lon.toFixed(4)}`;
+          const existing = merged.get(key);
+          if (!existing) {
+            merged.set(key, { ...stop, id: key, codes: [...stop.codes] });
+            return;
+          }
+          merged.set(key, {
+            ...existing,
+            name: existing.name || stop.name,
+            codes: Array.from(new Set([...existing.codes, ...stop.codes])),
+          });
+        });
+        transitStops = Array.from(merged.values());
         updateTransitStops();
       })
       .catch((error) => {
@@ -747,7 +768,9 @@ export default function JourneyMap({
     activeSegmentId.current = segmentToRestore;
     const journey = selected ?? plan.recommended;
     const comparing =
-      !navigationMode && !focusSelectedRoute && journey.id !== plan.original.id;
+      !navigationMode &&
+      (showComparison || !focusSelectedRoute) &&
+      journey.id !== plan.original.id;
     if (comparing) {
       plan.original.segments.forEach((segment) => {
         L.polyline(segment.geometry, {
@@ -1233,7 +1256,7 @@ export default function JourneyMap({
   const journey = selected ?? plan?.recommended;
   const comparing =
     !navigationMode &&
-    !focusSelectedRoute &&
+    (showComparison || !focusSelectedRoute) &&
     !!plan &&
     !!journey &&
     journey.id !== plan.original.id;
