@@ -714,6 +714,14 @@ function RailDiagramStation({
   );
 }
 
+function TransitDiagramArrow() {
+  return (
+    <span className="transit-diagram-arrow" aria-hidden="true">
+      <ArrowRight size={22} strokeWidth={2.8} />
+    </span>
+  );
+}
+
 function TransitInstructionDiagram({ segment }: { segment: Segment }) {
   if (segment.mode === "rail") {
     const { fromCode, toCode } = railEndpointCodes(segment);
@@ -724,7 +732,7 @@ function TransitInstructionDiagram({ segment }: { segment: Segment }) {
           line={segment.line}
           fallback={segment.from}
         />
-        <span className="transit-diagram-arrow" />
+        <TransitDiagramArrow />
         <RailDiagramStation
           codes={toCode}
           line={segment.line}
@@ -737,9 +745,10 @@ function TransitInstructionDiagram({ segment }: { segment: Segment }) {
     const services = segment.line.replace(/\s*(?:\/|,|\|)\s*/g, " \\ ");
     return (
       <span className="transit-instruction-diagram bus" aria-hidden="true">
-        <b className="transit-diagram-bus">{services}</b>
-        <span className="transit-diagram-arrow" />
+        <span className="transit-diagram-origin">{segment.from}</span>
+        <TransitDiagramArrow />
         <span className="transit-diagram-destination">{segment.to}</span>
+        <b className="transit-diagram-bus">{services}</b>
       </span>
     );
   }

@@ -230,8 +230,19 @@ function routeTransitLabel(
 ) {
   const root = document.createElement("span");
   root.className = `route-transit-label ${mode}`;
-  root.textContent = label;
-  root.style.setProperty("--route-transit-colour", colour);
+  if (mode === "rail") {
+    label.split("/").forEach((code) => {
+      const block = document.createElement("b");
+      const stationColour = stationColor(code);
+      block.textContent = code;
+      block.style.backgroundColor = stationColour;
+      block.style.color = stationTextColor(stationColour);
+      root.append(block);
+    });
+  } else {
+    root.textContent = label;
+    root.style.setProperty("--route-transit-colour", colour);
+  }
   return root;
 }
 

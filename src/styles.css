@@ -7772,13 +7772,13 @@ html.journey-sheet-active body {
 .active-route-summary {
   position: absolute;
   z-index: 800;
-  top: calc(40px + env(safe-area-inset-top));
+  top: env(safe-area-inset-top);
   right: 0;
   left: 0;
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.25fr) minmax(76px, 0.7fr);
   gap: 8px;
-  padding: 8px 15px 10px;
+  padding: 7px 15px 8px;
   border-bottom: 1px solid #dbe5dc;
   background: #fffffff2;
   box-shadow: 0 3px 10px #173b2b14;
@@ -7811,10 +7811,10 @@ html.journey-sheet-active body {
   font-variant-numeric: tabular-nums;
 }
 .journey-navigation-stage .map-controls {
-  top: calc(126px + env(safe-area-inset-top));
+  top: calc(68px + env(safe-area-inset-top));
 }
 .journey-navigation-stage .shelter-map-legend {
-  top: calc(126px + env(safe-area-inset-top));
+  top: calc(68px + env(safe-area-inset-top));
 }
 .route-transit-label-anchor {
   background: transparent;
@@ -7839,8 +7839,20 @@ html.journey-sheet-active body {
   background: #b9e5c7;
 }
 .route-transit-label.rail {
-  background: var(--route-transit-colour);
-  color: #fff;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+}
+.route-transit-label.rail b {
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.route-transit-label.rail b + b {
+  border-left: 1px solid #ffffff88;
 }
 .active-instruction-list {
   display: grid;
@@ -7905,21 +7917,28 @@ html.journey-sheet-active body {
 .transit-diagram-arrow {
   position: relative;
   min-width: 30px;
-  height: 1px;
   flex: 1 1 62px;
-  background: #5d655f;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
-.transit-diagram-arrow::after {
+.transit-diagram-arrow::before {
   position: absolute;
   top: 50%;
-  right: -1px;
-  width: 0;
-  height: 0;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
-  border-left: 9px solid #5d655f;
+  right: 9px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: #5d655f;
   content: "";
   transform: translateY(-50%);
+}
+.transit-diagram-arrow svg {
+  position: relative;
+  z-index: 1;
+  color: #435149;
+  stroke: currentColor;
 }
 .transit-diagram-bus {
   min-width: 62px;
@@ -7938,6 +7957,19 @@ html.journey-sheet-active body {
   line-height: 1;
   white-space: nowrap;
 }
+.transit-instruction-diagram.bus {
+  position: relative;
+  min-height: 59px;
+  align-items: flex-end;
+  padding-top: 22px;
+}
+.transit-instruction-diagram.bus .transit-diagram-bus {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.transit-diagram-origin,
 .transit-diagram-destination {
   max-width: 42%;
   flex: 0 1 auto;
@@ -7945,6 +7977,12 @@ html.journey-sheet-active body {
   font-size: 11px;
   font-weight: 760;
   line-height: 1.2;
+}
+.transit-diagram-origin {
+  text-align: left;
+}
+.transit-diagram-destination {
+  text-align: right;
 }
 .active-instruction.bus {
   border-left-color: #8cc8a3;
