@@ -29,7 +29,7 @@ Source: the supplied “Problem Statement 2 — Smart Commuter Companion”. Use
 | No secrets / lawful sources / privacy | Ignored env, Secret Manager, official APIs, OSM licence, explicit AI/push consent | No scraping; review each provider’s current terms |
 | AI team proposition | Vertex-grounded suggestions and preference interview; Cloud TTS; tested fallback | Risk is heuristic, not a trained disruption predictor |
 | Reproducible evidence | Vitest, Playwright, local/hosted evaluation scripts and recorded outputs | No unsupported accuracy claim |
-| App, short write-up, demo | App and technical setup README implemented | User explicitly deferred submission write-up/recording pending human polishing; submission instructions supplied for future context |
+| App, short write-up, demo | App, clean-clone README and root `WRITEUP.md` implemented | External recording URL and unchecked physical-phone acceptance items remain before submission |
 | GCP hosting and keys | Cloud Run, Vertex AI, TTS, Firestore, Scheduler, Secret Manager | External official transport APIs and OS push remain external dependencies |
 
 Not implemented as current product claims: historical disruption-model training, passenger-volume ML, every suggested DataMall endpoint, background GPS, automatic location-based step completion, or a native application. Official covered-linkway/exit layers are now imported locally (see ROUTING-DATA-STATUS.md); they do not verify continuous step-free access. Browser voice recognition is user-initiated and consented. Foreground location is explicit and demo positions are visibly simulated; unsupported live location never falls back silently. These limitations are not silently simulated.

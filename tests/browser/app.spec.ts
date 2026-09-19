@@ -90,6 +90,7 @@ test("Wayce place search supplies Google coordinates to the local planner", asyn
   );
   await useDeterministicPlans(page);
   await page.goto("/");
+  await page.getByRole("button", { name: "Back to navigation" }).click();
 
   const destination = page.locator("#place-B");
   await expect(destination).toBeVisible();
@@ -129,7 +130,6 @@ test("Wayce place search supplies Google coordinates to the local planner", asyn
     region: "sg",
     hasSessionToken: true,
   });
-
   const selectedPlan = page.waitForRequest((request) => {
     if (!request.url().endsWith("/api/plan")) return false;
     return (
@@ -282,19 +282,30 @@ async function useDeterministicPlans(
   return () => latestTemplate;
 }
 function startJourneyButton(page: Page) {
-  return page.getByRole("button", { name: /^Start / }).first();
+  return page
+    .locator(".route-results-start, .route-start-action .primary-button")
+    .first();
 }
 async function selectFirstRoute(page: Page) {
-  const route = page.locator(".route-select").first();
+  const focusedRoute = page.locator(".trip-select").first();
+  const route = (await focusedRoute.count())
+    ? focusedRoute
+    : page.locator(".route-select").first();
   await expect(route).toBeEnabled();
   await route.click();
   return startJourneyButton(page);
+}
+async function expectRouteResults(page: Page) {
+  const results = page.getByRole("region", { name: "Route results" });
+  await expect(results).toBeVisible();
+  return results;
 }
 
 test("shows planning failures beside the route action", async ({ page }) => {
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
+  await page.getByRole("button", { name: "Back to navigation" }).click();
   await expect(
     page.getByRole("button", { name: "Find my best route" }),
   ).toBeEnabled();
@@ -317,16 +328,14 @@ test("shows planning failures beside the route action", async ({ page }) => {
   );
 });
 
-test("collapses the journey sheet to reveal the map after a route search", async ({
+test("replaces the journey sheet with the route results map after a search", async ({
   page,
 }) => {
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
+  await page.getByRole("button", { name: "Back to navigation" }).click();
 
-  const handle = page.getByRole("button", { name: /Resize journey panel/ });
-  const sheet = page.locator(".journey-sheet");
-  const stage = page.locator(".journey-layout");
   await expect(page.locator(".companion-button")).toHaveCSS(
     "animation-name",
     "waycey-float",
@@ -337,24 +346,17 @@ test("collapses the journey sheet to reveal the map after a route search", async
     "none",
   );
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await expect(handle).toHaveAttribute("data-sheet-snap", "middle");
-  const stageHeight = (await stage.boundingBox())!.height;
-  const sheetHeightBeforeSearch = (await sheet.boundingBox())!.height;
-  const visibleMapBeforeSearch = stageHeight - sheetHeightBeforeSearch;
+  await expect(
+    page.getByRole("button", { name: /Resize journey panel/ }),
+  ).toHaveAttribute("data-sheet-snap", "expanded");
 
   await page.getByRole("button", { name: "Find my best route" }).click();
 
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
-  await expect(handle).toHaveAttribute("data-sheet-snap", "collapsed");
-  await expect
-    .poll(async () => (await sheet.boundingBox())!.height)
-    .toBeLessThanOrEqual(73);
-  const visibleMapAfterSearch =
-    (await stage.boundingBox())!.height - (await sheet.boundingBox())!.height;
-  expect(visibleMapAfterSearch).toBeGreaterThan(visibleMapBeforeSearch);
+  await expect(
+    page.getByRole("region", { name: "Route results" }),
+  ).toBeVisible();
+  await expect(page.locator(".route-results-map")).toBeVisible();
+  await expect(page.locator(".journey-sheet")).toHaveCount(0);
 });
 
 test("keeps the route action compact in a very short visual viewport", async ({
@@ -376,32 +378,28 @@ test("shows a route-specific start action only after explicit selection", async 
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 320, height: 750 });
   await page.goto("/");
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expect(
+    page.getByRole("region", { name: "Route results" }),
+  ).toBeVisible();
   await expect(startJourneyButton(page)).toHaveCount(0);
 
-  const routes = page.locator(".route-card");
+  const routes = page.locator(".trip-card");
   const first = routes.first();
-  const firstChoice = first.locator(".route-select");
-  const firstLabel = await firstChoice.getAttribute("aria-label");
-  const firstTitle = firstLabel!
-    .replace(/^View /, "")
-    .replace(/, \d+ minutes$/, "");
+  const firstChoice = first.locator(".trip-select");
   await firstChoice.click();
 
   await expect(first).toHaveClass(/selected/);
-  await expect(
-    first.getByRole("button", { name: `Start ${firstTitle}` }),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Start / })).toHaveCount(1);
+  await expect(startJourneyButton(page)).toBeVisible();
+  await expect(page.locator(".route-results-start")).toHaveCount(1);
+  await expect(first.locator(".trip-metrics")).toContainText(/crowd/i);
+  await expect(first.locator(".trip-metrics")).toContainText(/walking/i);
 
   if ((await routes.count()) > 1) {
     const second = routes.nth(1);
-    await second.locator(".route-select").click();
-    await expect(first.getByRole("button", { name: /^Start / })).toHaveCount(0);
-    await expect(second.getByRole("button", { name: /^Start / })).toBeVisible();
+    await second.locator(".trip-select").click();
+    await expect(first).not.toHaveClass(/selected/);
+    await expect(second).toHaveClass(/selected/);
+    await expect(startJourneyButton(page)).toBeVisible();
   }
   expect(
     await page.evaluate(
@@ -410,7 +408,7 @@ test("shows a route-specific start action only after explicit selection", async 
   ).toBe(true);
 });
 
-test("keeps recommendation copy above the route options", async ({
+test("keeps the route summary and map above the focused trip list", async ({
   page,
 }, testInfo) => {
   await useDeterministicPlans(page);
@@ -420,35 +418,25 @@ test("keeps recommendation copy above the route options", async ({
   const demos = page.getByRole("dialog", { name: "Developer demos" });
   await demos.getByRole("button", { name: /Arjun/ }).click();
   await demos.getByRole("button", { name: "Start demo" }).click();
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
-
-  const recommendation = page.locator(".recommendation");
-  const recommendationCopy = recommendation.locator("p");
-  const routeOptions = page.locator(".route-options");
-  await recommendation.scrollIntoViewIfNeeded();
-  await expect(recommendation).toContainText("Your route is the best fit");
-  const [recommendationBox, copyBox, routeOptionsBox] = await Promise.all([
-    recommendation.boundingBox(),
-    recommendationCopy.boundingBox(),
-    routeOptions.boundingBox(),
+  const results = page.getByRole("region", { name: "Route results" });
+  await expect(results).toBeVisible();
+  const summary = page.locator(".route-results-summary");
+  const map = page.locator(".route-results-map");
+  const trips = page.locator(".trip-list");
+  const [summaryBox, mapBox, tripsBox] = await Promise.all([
+    summary.boundingBox(),
+    map.boundingBox(),
+    trips.boundingBox(),
   ]);
-  expect(recommendationBox).not.toBeNull();
-  expect(copyBox).not.toBeNull();
-  expect(routeOptionsBox).not.toBeNull();
-  expect(copyBox!.y + copyBox!.height).toBeLessThanOrEqual(
-    recommendationBox!.y + recommendationBox!.height + 1,
+  expect(summaryBox).not.toBeNull();
+  expect(mapBox).not.toBeNull();
+  expect(tripsBox).not.toBeNull();
+  expect(mapBox!.y).toBeGreaterThanOrEqual(
+    summaryBox!.y + summaryBox!.height,
   );
-  expect(routeOptionsBox!.y).toBeGreaterThanOrEqual(
-    recommendationBox!.y + recommendationBox!.height,
-  );
-  expect(routeOptionsBox!.y).toBeGreaterThanOrEqual(
-    copyBox!.y + copyBox!.height,
-  );
+  expect(tripsBox!.y).toBeGreaterThanOrEqual(mapBox!.y + mapBox!.height);
   await page.screenshot({
-    path: `test-results/${testInfo.project.name}-recommendation-layout.png`,
+    path: `test-results/${testInfo.project.name}-route-results-layout.png`,
   });
 });
 
@@ -461,10 +449,8 @@ test("formats the simulated leave time as a readable card", async ({
   await openDeveloperDemos(page);
   await page.getByRole("button", { name: "Start demo" }).click();
   await expect(page.getByLabel("Timeline minute")).toHaveValue("0");
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expectRouteResults(page);
+  await page.getByRole("button", { name: "Back to navigation" }).click();
 
   const card = page.locator(".demo-time-card");
   await expect(card).toBeVisible();
@@ -513,10 +499,7 @@ test("makes the active journey map the hero with guidance docked below", async (
     await page.setViewportSize({ width: 320, height: 750 });
   }
   await page.goto("/");
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expectRouteResults(page);
 
   const start = await selectFirstRoute(page);
   await start.click();
@@ -577,10 +560,7 @@ test("drags and keyboard-resizes the active journey guidance sheet", async ({
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expectRouteResults(page);
   const start = await selectFirstRoute(page);
   await start.click();
 
@@ -638,12 +618,13 @@ test("drags and keyboard-resizes the active journey guidance sheet", async ({
 async function startTimelineAt(page: Page, minute: number) {
   await page.getByLabel("Demo timeline preset").selectOption("eventful");
   await page.getByRole("button", { name: "Start demo" }).click();
+  await expectRouteResults(page);
+  await page.locator(".route-results-timeline").evaluate((details) => {
+    (details as HTMLDetailsElement).open = true;
+  });
   await page.getByLabel("Jump to timeline event").selectOption(String(minute));
   await expect(page.getByLabel("Timeline minute")).toHaveValue(String(minute));
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expectRouteResults(page);
 }
 async function openDeveloperDemos(page: Page) {
   await page
@@ -664,13 +645,17 @@ test("plays profile timelines, jumps through recovery and restores the guest", a
   await openDeveloperDemos(page);
   await expect(page.getByLabel("Demo timeline preset")).toHaveValue("control");
   await expect(page.getByLabel("Demo weather")).toHaveCount(0);
+  await page.getByLabel("Demo timeline preset").selectOption("eventful");
   await page.getByRole("button", { name: "Start demo" }).click();
+  await expectRouteResults(page);
+  await page.locator(".route-results-timeline").evaluate((details) => {
+    (details as HTMLDetailsElement).open = true;
+  });
   await expect(page.getByLabel("Timeline minute")).toHaveValue("0");
-  await page.getByLabel("Demo timeline").selectOption("eventful");
   await expect(page.locator(".timeline-controls")).toContainText(
     "disruption and heavy rain begin",
   );
-  await expect(page.locator(".recommendation")).toContainText(
+  await expect(page.locator(".route-results-advice")).toContainText(
     "Bring an umbrella",
   );
   await expect(await selectFirstRoute(page)).toBeEnabled();
@@ -678,10 +663,7 @@ test("plays profile timelines, jumps through recovery and restores the guest", a
   await expect(page.locator(".timeline-controls")).toContainText(
     "Service and lifts restored",
   );
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expectRouteResults(page);
   await expect(await selectFirstRoute(page)).toBeEnabled();
   await page.getByRole("button", { name: "Restart timeline" }).click();
   await expect(page.getByLabel("Timeline minute")).toHaveValue("0");
@@ -693,11 +675,15 @@ test("plays profile timelines, jumps through recovery and restores the guest", a
   await page.waitForTimeout(1400);
   await expect(page.getByLabel("Timeline minute")).toHaveValue(paused);
   for (const profile of ["arjun", "lim"]) {
+    await page.getByRole("button", { name: "Back to navigation" }).click();
     await page.getByLabel("Demo profile").selectOption(profile);
     await expect(page.getByLabel("Timeline minute")).toHaveValue("0");
-    await page.getByLabel("Demo timeline").selectOption("control");
+    await expectRouteResults(page);
+    await page.locator(".route-results-timeline").evaluate((details) => {
+      (details as HTMLDetailsElement).open = true;
+    });
     await expect(page.locator(".timeline-controls")).toContainText(
-      "normal service throughout",
+      "disruption and heavy rain begin",
     );
   }
   expect(
@@ -705,6 +691,7 @@ test("plays profile timelines, jumps through recovery and restores the guest", a
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  await page.getByRole("button", { name: "Back to navigation" }).click();
   await page.getByRole("button", { name: "Exit demo" }).click();
   await expect(page.getByLabel("Timeline minute")).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem("wlt-guest-v2"))).toBe(
@@ -824,13 +811,11 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
       };
     }),
   ).toEqual({ family: "Satoshi, sans-serif", loaded: true });
+  await expectRouteResults(page);
   await expect(await selectFirstRoute(page)).toBeEnabled();
-  const startButtonBox = await startJourneyButton(page).boundingBox();
-  const directionsBox = await page
-    .getByRole("heading", { name: "Directions" })
-    .boundingBox();
-  expect(startButtonBox!.y).toBeLessThan(directionsBox!.y);
-  await expect(page.locator(".demo-toolbar")).toContainText("Live LTA + NEA");
+  await expect(page.locator(".route-results-advice")).toBeVisible();
+  await expect(page.locator(".trip-metrics").first()).toContainText(/crowd/i);
+  await expect(page.locator(".trip-metrics").first()).toContainText(/walking/i);
   await expect(
     page.getByRole("link", { name: "OpenStreetMap contributors" }),
   ).toBeVisible();
@@ -841,9 +826,6 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   ).toBe(true);
   const shell = await page.locator(".app-shell").boundingBox();
   expect(shell!.width).toBeLessThanOrEqual(480);
-  const recommendation = await page.locator(".recommendation").boundingBox();
-  const planner = await page.locator(".planner-card").boundingBox();
-  expect(planner!.y).toBeLessThan(recommendation!.y);
   const navigation = await page.getByRole("navigation").boundingBox();
   expect(navigation!.y).toBeGreaterThan(page.viewportSize()!.height - 100);
   const journeyNavItem = page
@@ -891,6 +873,8 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   expect(notificationsBox!.width).toBe(notificationsBox!.height);
   expect(locationBox!.width).toBe(locationBox!.height);
   expect(fullRouteBox!.width).toBe(fullRouteBox!.height);
+  await page.getByRole("button", { name: "Back to navigation" }).click();
+  await expect(page.locator(".demo-toolbar")).toContainText("Live LTA + NEA");
   const preferencesButton = page.getByRole("button", {
     name: "Journey preferences",
     exact: true,
@@ -948,6 +932,8 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
     .getByRole("navigation")
     .getByRole("button", { name: "Journey", exact: true })
     .click();
+  await page.getByRole("button", { name: "Find my best route" }).click();
+  await expectRouteResults(page);
   await expect(page.locator(".journey-map")).toHaveAttribute(
     "data-ready",
     "true",
@@ -992,10 +978,10 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   await startTimelineAt(page, 0);
   await expect(page.locator(".rain-zone").first()).toBeVisible();
   await expect(page.locator(".map-mode-key")).toContainText("Rain area");
+  await page.getByRole("button", { name: "Back to navigation" }).click();
   await page.getByRole("button", { name: "Exit demo" }).click();
+  await expectRouteResults(page);
   await expect(page.locator(".map-mode-key")).not.toContainText("Rain area");
-  await page.getByRole("button", { name: "Save route", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("saved");
   await (await selectFirstRoute(page)).click();
   await expect(page.getByRole("dialog")).toContainText("STEP 1");
   await page.getByRole("button", { name: "I’m here" }).click();
@@ -1035,13 +1021,7 @@ test("opens transit details when a selected journey path is chosen", async ({
 }) => {
   await useDeterministicPlans(page, true);
   await page.goto("/");
-  const planButton = page.getByRole("button", { name: "Find my best route" });
-  await expect(planButton).toBeEnabled();
-  await planButton.click();
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expectRouteResults(page);
 
   const trainPath = page.locator(".route-segment-hit.rail").first();
   await expect(trainPath).toHaveAttribute("role", "button");
@@ -1075,8 +1055,10 @@ test("opens schematic bus details from a served-stop marker on a narrow phone", 
   await page.getByRole("button", { name: /Mdm Lim/ }).click();
   await page.getByRole("button", { name: "Start demo" }).click();
   await page
-    .getByRole("button", { name: /^View Bus / })
+    .locator(".trip-card")
+    .filter({ hasText: "Bus 31" })
     .first()
+    .locator(".trip-select")
     .click();
   await expect(page.locator(".bus-route-schematic")).toBeAttached();
   await expect(page.locator(".bus-route-label.board")).toContainText(
@@ -1144,10 +1126,7 @@ test("opens local MRT and bus-stop details from map icons", async ({
     }),
   );
   await page.goto("/");
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expectRouteResults(page);
   await expect(page.locator(".journey-map")).toHaveAttribute(
     "data-ready",
     "true",
@@ -1421,14 +1400,14 @@ test("compares original, affected and revised routes with complete crowd labels"
   await expect(page.locator(".map-legend")).toContainText("Affected original");
   await expect(page.locator(".map-legend")).toContainText("Revised route");
 
-  const routeCards = page.locator(".route-card");
+  const routeCards = page.locator(".trip-card");
   await expect(routeCards.first().locator(".crowd-badge")).toContainText(
     /crowd/i,
   );
   await expect(page.locator(".crowd-badge")).toHaveCount(
     await routeCards.count(),
   );
-  await expect(page.locator(".recommendation p")).toHaveText(
+  await expect(page.locator(".route-results-advice p")).toHaveText(
     currentPlan()!.advice,
   );
 });
@@ -1440,27 +1419,19 @@ test("keeps the rainy journey usable while confirming weather and rail warnings"
   await openDeveloperDemos(page);
   await startTimelineAt(page, 0);
 
-  await expect(page.locator(".recommendation")).toContainText("Routes · Use");
-  await expect(page.locator(".recommendation")).toContainText(
+  await expect(page.locator(".route-results-advice")).toContainText(
     "Bring an umbrella",
   );
-  await expect(page.locator(".recommendation")).toContainText("slippery");
-  await expect(page.locator(".recommendation")).toContainText(
+  await expect(page.locator(".route-results-advice")).toContainText("slippery");
+  await expect(page.locator(".route-results-advice")).toContainText(
     "visibility may be reduced",
   );
-  await expect(page.locator(".route-card").first()).not.toContainText(
+  await expect(page.locator(".trip-card").first()).not.toContainText(
     "WAIT FOR SAFER CONDITIONS",
   );
-  await expect(page.locator(".route-card").first()).toContainText(
-    "WEATHER WARNING",
-  );
-  await expect(page.locator(".route-card").first()).toContainText(
-    "Severe weather affects exposed sections",
-  );
-  await page.getByRole("button", { name: /^View EWL, \d+ minutes$/ }).click();
-  const startWithWarning = page.getByRole("button", {
-    name: "Start EWL despite current weather warning",
-  });
+  const ewlTrip = page.locator(".trip-card").filter({ hasText: "EWL" }).first();
+  await ewlTrip.locator(".trip-select").click();
+  const startWithWarning = page.locator(".route-results-start");
   await expect(startWithWarning).toBeVisible();
   await startWithWarning.click();
 
@@ -1505,10 +1476,8 @@ test("highlights every station across the affected NEL sector", async ({
     .click();
   await startTimelineAt(page, 0);
 
-  const nelRoute = page.getByRole("button", {
-    name: /^View NEL.*\d+ minutes$/,
-  });
-  await nelRoute.click();
+  const nelTrip = page.locator(".trip-card").filter({ hasText: "NEL" }).first();
+  await nelTrip.locator(".trip-select").click();
 
   for (const code of ["NE12", "NE13", "NE14", "NE15", "NE16", "NE17"]) {
     await expect(
@@ -1526,11 +1495,7 @@ test("highlights every station across the affected NEL sector", async ({
     path: `test-results/${testInfo.project.name}-nel-sector-map.png`,
   });
 
-  await page
-    .getByRole("button", {
-      name: /^Start NEL.*despite current weather warning$/,
-    })
-    .click();
+  await page.locator(".route-results-start").click();
   const warning = page.getByRole("dialog", { name: "Review route warnings" });
   await expect(warning).toContainText(
     "Affected stations: NE12, NE13, NE14, NE15, NE16, NE17",
@@ -1545,10 +1510,12 @@ test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
   await page.goto("/");
   await expect(startJourneyButton(page)).toHaveCount(0);
   await expect(await selectFirstRoute(page)).toBeEnabled();
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expectRouteResults(page);
+  const routeResults = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  expect(routeResults.violations).toEqual([]);
+  await page.getByRole("button", { name: "Back to navigation" }).click();
   await expect(
     page.getByRole("button", { name: "Find my best route" }),
   ).toBeEnabled();
@@ -2142,10 +2109,7 @@ test("shows labelled simulated location and follows manual demo progress", async
     "Simulated current location",
   );
   await expect(page.locator(".current-location-marker.demo")).toBeVisible();
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expectRouteResults(page);
   await (await selectFirstRoute(page)).click();
   await expect(page.getByRole("dialog")).toContainText(
     "Simulated position follows each confirmed step",
@@ -2159,7 +2123,6 @@ test("keeps faux demo accounts isolated and restores the guest space", async ({
   await useDeterministicPlans(page);
   await page.goto("/");
   await expect(await selectFirstRoute(page)).toBeEnabled();
-  await page.getByRole("button", { name: "Save route", exact: true }).click();
   await openDeveloperDemos(page);
   await page.getByRole("button", { name: /Mdm Lim/ }).click();
   await page.getByLabel("Demo timeline preset").selectOption("eventful");
@@ -2374,10 +2337,7 @@ test("starts with automatic location, a Where to prompt, and leave now", async (
   expect(plannedRequest.arriveBy).toBeUndefined();
   await expect(locationMarker).toBeVisible();
   await expect(page.getByText(/Device location · ±/)).toBeVisible();
-  await expect(page.locator(".route-options")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expectRouteResults(page);
   await (await selectFirstRoute(page)).click();
   await page.getByRole("button", { name: "Start live location" }).click();
   await expect(page.getByRole("dialog")).toContainText("Live location on");

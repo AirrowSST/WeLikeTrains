@@ -4,6 +4,14 @@ This repository is intended for repeated human/AI collaboration. Treat this file
 
 ## User decisions — retain these
 
+- User requested a separate crowd-flow dashboard draft on 2026-09-19 to map
+  DataMall rail/platform and sampled bus crowdedness and illustrate how the
+  existing quieter-route reward could redirect eligible journeys. Keep observed
+  feed data distinct from user-entered uptake assumptions: DataMall does not
+  supply complete passenger-flow counts or a measured reward-response curve.
+  The initial draft is local-only and is not deployment authority or approval
+  for a real incentive trial.
+
 - LTA crowd feeds must be quota-safe: do not fan out `PCDRealTime`/`PCDForecast` across every line on each plan. Determine relevant lines from computed route candidates, share current/forecast caches with station overlays, pace official DataMall request starts, retain visibly stale/unavailable states and identify quota faults without treating them as low crowding.
 
 - User requested both current and forecast station crowdedness as icons on 2026-09-19. Show one/two/three filled person figures for low/moderate/high, retain short accessible text labels, and show forecast time windows separately from current readings. Unknown/stale/offline data must not appear as low crowding.
@@ -34,10 +42,10 @@ This repository is intended for repeated human/AI collaboration. Treat this file
 - User decided on 2026-09-19 that all GitHub Actions workflows are removed. Verification and production deployment are manual only. Deploy from this authenticated device only after an explicit request in chat, using `scripts/deploy-code.ps1`; never infer deployment authority from a push, commit or completed test run. The device-local Codex skill `$weliketrains-deploy` records this workflow and its authorization boundary, but the repository script and docs remain the portable sources of truth.
 - User decided on 2026-09-19 that competition work should be committed and pushed directly to `main`; do not require pull requests, branch protection, or a local pre-push test gate unless the user asks. Preserve unrelated or in-progress working-tree changes, and remember that pushing to `main` is not deployment authorization.
 - **Hackathon pace is an explicit priority.** Tests remain available as optional manual checks but neither pushes nor the deployment script runs them automatically. The Cloud Build container path creates only the required client and server bundles; it does not run the whole-project TypeScript check or test suites. Do not claim tests were run when they were not.
-- User explicitly said on 2026-09-18: **do not do the submission write-up now; we are not about to submit; human polishing is pending**. Do not infer submission authority from the reference documents. Existing demo/checklist and requirements documents are engineering notes, not a final submission.
+- User deferred submission work on 2026-09-18, then explicitly requested a precise clean-clone README, testing and submission-readiness preparation on 2026-09-19. Preparing repository deliverables is now authorised; deployment, uploading a recording and the final submission still require explicit authority. Do not claim unchecked human phone/walk tests.
 - Problem brief: `C:\Users\Yaw Tia\Downloads\PS2_README (1).md`.
-- Organiser submission context, supplied for future agents: `C:\Users\Yaw Tia\Downloads\README.md`. Read it when relevant, but do not prepare/write/submit deliverables unless the user later asks.
-- Future submission context only: organiser expects runnable source/README, a root `WRITEUP.md`, and a linked phone-sized demo recording (not a committed large video). Setup must work from a fresh clone; credentials must stay out of all history; any claimed results must be reproducible without a judge paying. Logistics/deadline/access are still marked TBC in the supplied document.
+- Organiser submission context: `C:\Users\Yaw Tia\Downloads\README.md`. The user has now asked for repository deliverables, but this does not authorise deployment or submission.
+- Organiser expects runnable source/README, a root `WRITEUP.md`, and a linked phone-sized demo recording (not a committed large video). Setup must work from a fresh clone; credentials must stay out of all history; any claimed results must be reproducible without a judge paying. Logistics/deadline/access are still marked TBC in the supplied document.
 
 ## Working safely
 

@@ -1,6 +1,6 @@
 # End-to-end demonstration and phone acceptance
 
-Engineering QA notes only. The user has deferred the submission write-up and recording pending human polishing. Do not treat this checklist as a completed or approved submission.
+This is the human acceptance and recording checklist for submission preparation. A root write-up now exists, but unchecked items below and the external recording link must not be claimed complete until a person performs them.
 
 ## Rachel: about five minutes
 
@@ -40,4 +40,4 @@ Never claim the final two checks were performed merely because automated tests p
 
 ## Submission packaging
 
-The organiser's instructions are at `C:\Users\Yaw Tia\Downloads\README.md` for future context. They call for a root `WRITEUP.md` and linked recording, but the user explicitly asked not to prepare them yet. No submission has been made.
+The organiser requires a root `WRITEUP.md`, a reproducible README and a linked phone-sized recording. The write-up and setup guide are now present. Add the externally hosted recording URL to the root README only after completing the relevant phone checks. No submission has been made.

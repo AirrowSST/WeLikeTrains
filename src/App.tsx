@@ -2800,10 +2800,44 @@ export default function App() {
                   <div>
                     <span>Arrive</span>
                     <strong>
-                      {sgTime(selected?.arrival ?? resultPlan.recommended.arrival)}
+                      {sgTime(
+                        selectedJourney?.arrival ?? resultPlan.recommended.arrival,
+                      )}
                     </strong>
                   </div>
                 </header>
+                <div
+                  className={`route-results-advice ${resultPlan.recommended.blocked ? "caution" : ""}`}
+                  aria-live="polite"
+                >
+                  {resultPlan.recommended.blocked ? (
+                    <TriangleAlert size={16} aria-hidden="true" />
+                  ) : (
+                    <Sparkles size={16} aria-hidden="true" />
+                  )}
+                  <p>{resultPlan.advice}</p>
+                </div>
+                {request.timeline && (
+                  <details className="route-results-timeline">
+                    <summary>
+                      Simulation controls · {sgTime(timelineTime(request.timeline))}
+                    </summary>
+                    <TimelineControls
+                      key={`results-${request.timeline.id}`}
+                      selection={request.timeline}
+                      busy={loading || modal !== null}
+                      onChange={(timeline) => {
+                        const value = {
+                          ...request,
+                          timeline,
+                          departure: timelineTime(timeline),
+                        };
+                        setRequest(value);
+                        void runPlan(value);
+                      }}
+                    />
+                  </details>
+                )}
                 <button
                   type="button"
                   className="route-results-back"
@@ -2820,7 +2854,7 @@ export default function App() {
                   <JourneyMap
                     request={request}
                     plan={resultPlan}
-                    selected={selected}
+                    selected={selectedJourney ?? null}
                     location={currentLocation}
                     focusSelectedRoute
                     showComparison={
@@ -2859,7 +2893,7 @@ export default function App() {
                       (segment) =>
                         segment.mode !== "walk" || Math.ceil(segment.minutes) >= 5,
                     );
-                    const isSelected = selected?.id === journey.id;
+                    const isSelected = selectedJourney?.id === journey.id;
                     return (
                       <article
                         className={`trip-card ${isSelected ? "selected" : ""} ${journey.blocked ? "blocked" : ""}`}
@@ -2979,6 +3013,17 @@ export default function App() {
                               );
                             })}
                           </span>
+                          <span className="trip-metrics">
+                            <CrowdBadge crowd={journey.crowd} />
+                            <span>
+                              {Math.ceil(journey.walkMinutes)} min walking
+                            </span>
+                            <span>
+                              {journey.transfers === 0
+                                ? "No transfers"
+                                : `${journey.transfers} transfer${journey.transfers > 1 ? "s" : ""}`}
+                            </span>
+                          </span>
                           {journey.blocked && (
                             <span className="trip-status">
                               <TriangleAlert size={14} /> Route affected
@@ -2989,16 +3034,16 @@ export default function App() {
                     );
                   })}
                 </div>
-                {selected &&
-                  (!selected.blocked ||
-                    canStartWithWeatherWarning(selected, resultPlan)) && (
+                {selectedJourney &&
+                  (!selectedJourney.blocked ||
+                    canStartWithWeatherWarning(selectedJourney, resultPlan)) && (
                     <button
                       type="button"
                       className="route-results-start"
                       onClick={() =>
-                        canStartWithWeatherWarning(selected, resultPlan)
+                        canStartWithWeatherWarning(selectedJourney, resultPlan)
                           ? setModal("route-warning")
-                          : beginJourney(selected)
+                          : beginJourney(selectedJourney)
                       }
                     >
                       <Navigation size={17} aria-hidden="true" />
@@ -3973,7 +4018,7 @@ export default function App() {
             Data & sources <ArrowRight size={14} />
           </button>
         </div>
-        {developerMode && request.dataMode === "demo" && (
+        {developerMode && request.dataMode === "demo" && !showRouteResults && (
           <section className="demo-test-panel" aria-label="Demo test controls">
             <h2 className="sr-only">Demo test controls</h2>
             <label className="demo-template-option">

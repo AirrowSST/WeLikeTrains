@@ -4,6 +4,29 @@ Primary journey: Rachel, Tampines to Raffles Place, 07:40 departure / 08:45 dead
 
 ## Scope
 
+- Submission packaging (2026-09-19): the root README now leads with a no-key
+  clean-clone path, exact prerequisites, optional-provider configuration and a
+  deterministic Rachel judge flow. A root `WRITEUP.md` records the primary
+  persona, architecture, decisions, data/privacy boundaries, reproducible
+  evidence and limitations. The required external phone-demo link and unchecked
+  human phone/walk checks remain explicit blockers; no deployment or submission
+  is implied.
+
+- Crowd-flow dashboard draft (2026-09-19): a separate local-only Crowd Flow Lab
+  at `/crowd-dashboard.html` maps one selected DataMall rail crowd line at a
+  time, or a selected bus service with manually requested occupancy samples.
+  Current/forecast rail layers share the existing paced cache; bus route-wide
+  sampling is capped at five selected stops and keeps unsampled/stale/unavailable
+  observations unknown. The scenario panel reuses the actual +20 quieter-route
+  completion bonus and visualises a user-entered eligible-trip count and assumed
+  uptake. It is explicitly illustrative rather than a passenger forecast, and
+  does not infer demand counts or a reward-response curve from DataMall. The
+  prototype page is not linked or included in the production client build, and
+  its supporting rail endpoint returns 404 in production pending an access and
+  quota model. TypeScript, the production build, 34 targeted unit tests, and
+  mocked desktop/mobile/browser interactions for rail preview and five-stop bus
+  sampling pass. No deployment performed.
+
 - Journey-search polish (2026-09-19): after a successful route search, the home journey sheet now animates to its collapsed snap so the route map takes visual priority; failed searches leave the planner open with its existing error. The Waycey launcher gently floats vertically, while the reduced-motion rule suppresses the animation for commuters who request less motion. The production build passes; targeted browser checks pass for successful search/map focus at phone and wide-screen phone-shell widths, reduced motion, and the unchanged phone-width failure state. No deployment performed.
 
 - Shelter-aware walking (2026-09-19): each routed walking leg now preserves contiguous covered, exposed and unknown-access geometry plus metre totals and a coverage ratio. **Prefer mapped shelter** keeps the existing weighted detour behavior; **Require mapped shelter** accepts only covered OSM/LTA edges with at most 15 m of coordinate-connector uncertainty and returns an explicit no-route explanation otherwise. Limited/invalid walking weather temporarily enables preference—not requirement—and applies delays/ranking penalties in proportion to exposed plus unknown distance. Directions and map popups show the breakdown, while the normal and active-journey maps render covered solid green, exposed dashed red-orange and unknown dotted brown with an accessible legend. Existing saved `sheltered: true` values migrate implicitly to Prefer. Verification: TypeScript and production build passed; all 120 unit tests passed; the targeted mobile planning/preferences/map flow passed. No deployment performed.
@@ -29,7 +52,7 @@ Primary journey: Rachel, Tampines to Raffles Place, 07:40 departure / 08:45 dead
 
 ## Constraints discovered
 
-The remote was initially empty. The organiser's referenced PS2/data and PS2/references remain absent. Submission instructions were subsequently supplied at `C:\Users\Yaw Tia\Downloads\README.md` for future context only; the user explicitly deferred write-up/submission pending human polishing. Google Cloud CLI, authenticated access, Secret Manager integrations and Cloud Run deployment are now configured. OSM data is fetched during explicit maintenance and bundled; OneMap is the only runtime public map-tile dependency and the app does not query Overpass at runtime.
+The remote was initially empty. The organiser's referenced PS2/data and PS2/references remain absent. Submission instructions were subsequently supplied at `C:\Users\Yaw Tia\Downloads\README.md`; the user later requested README, write-up and readiness preparation. Google Cloud CLI, authenticated access, Secret Manager integrations and Cloud Run deployment are configured, but deployment and submission still require separate explicit authority. OSM data is fetched during explicit maintenance and bundled; OneMap is the only runtime public map-tile dependency and the app does not query Overpass at runtime.
 
 ## Engineering verification — 2026-09-19
 
@@ -122,7 +145,7 @@ The remote was initially empty. The organiser's referenced PS2/data and PS2/refe
 - Companion requests opened before a fresh guest chooses a destination now omit the unfinished placeholder route instead of failing server validation. Rejected companion calls show the service error and only claim that route steps remain available when a computed plan exists; focused 320px and normal-phone browser regressions cover both paths.
 - Companion chat now treats a planner result with no usable bundled-map route as empty optional context. The local or cloud companion can continue with general journey planning and preference help without route tools, while unrelated planner failures still surface as service errors and route-specific claims remain unavailable until a mapped plan exists.
 - Companion voice input uses the browser Speech Recognition API after a microphone-button gesture, supports the standard and WebKit-prefixed implementations, and keeps the transcript as an editable draft until the user explicitly sends it. The interface discloses that the browser may use its vendor's online recognition service; microphone audio is not sent to Wayce's API.
-- Physical-phone, spoken-audio listening, lock-screen push delivery and walked-route verification remain human QA tasks. Accessibility route certification, trained disruption probabilities and final submission materials are not claimed.
+- Physical-phone, spoken-audio listening, lock-screen push delivery and walked-route verification remain human QA tasks. Accessibility route certification and trained disruption probabilities are not claimed. Submission documentation is drafted; the recording link and human acceptance sign-off remain outstanding.
 - Google’s real sign-in popup was exercised locally with an authorised Web OAuth client and a consenting test account. Preference and saved-commute writes reached Firestore, and logout followed by re-login restored the account state while keeping the guest space separate. Cross-device and deployed-production account sync remain unverified.
 
 ## Deployment status — 2026-09-19

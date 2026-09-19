@@ -18,6 +18,8 @@ import {
 } from "./transit-details";
 import { chat, searchPlaces, speech } from "./providers";
 import { requestOriginAllowed } from "./origin-policy";
+import { railCrowdDashboard } from "./crowd-dashboard";
+import { dashboardCrowdLines } from "../shared/crowd-dashboard";
 import { places, profiles, scenarios } from "../shared/catalog";
 import {
   accountStateSchema,
@@ -219,6 +221,19 @@ app.get("/api/transit-stops", (_req, res) => {
   res.set("Cache-Control", "public, max-age=86400");
   res.json(listTransitStops());
 });
+app.get("/api/crowd-dashboard/rail", async (req, res) => {
+  // This endpoint supports the separate local prototype only. Keeping it out
+  // of production prevents an unlinked public surface from consuming the LTA
+  // crowd quota across every line before the dashboard has an access model.
+  if (process.env.NODE_ENV === "production") {
+    res.status(404).json({ error: "Crowd dashboard prototype is local only" });
+    return;
+  }
+  const { line } = z
+    .object({ line: z.enum(dashboardCrowdLines) })
+    .parse(req.query);
+  res.json(await railCrowdDashboard(line));
+});
 app.get("/api/bus-service", (req, res) => {
   const query = z
     .object({
@@ -250,7 +265,9 @@ app.get("/api/station-board", async (req, res) => {
     stop,
     query.demo && query.at ? Date.parse(query.at) : Date.now(),
   );
-  [board.crowds, board.forecasts] = query.demo ? [[], []] : await Promise.all([stationCrowds(stop), stationCrowds(stop, true)]);
+  [board.crowds, board.forecasts] = query.demo
+    ? [[], []]
+    : await Promise.all([stationCrowds(stop), stationCrowds(stop, true)]);
   res.json(board);
 });
 app.get("/api/weather", async (req, res) => {

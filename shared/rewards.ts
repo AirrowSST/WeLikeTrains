@@ -21,6 +21,7 @@ export interface RewardRedemption {
   cost: number;
   redeemedAt: string;
 }
+export const QUIETER_ROUTE_BONUS = 20;
 export const demoRewards = [
   {
     id: "coffee",
@@ -66,7 +67,7 @@ export function journeyPoints(
     journey.crowd !== "unknown" &&
     original.crowd !== "unknown" &&
     crowdRank[journey.crowd] < crowdRank[original.crowd]
-      ? 20
+      ? QUIETER_ROUTE_BONUS
       : 0;
   const activeTravel = Math.floor(metres / 100);
   return { activeTravel, quieterRoute, total: activeTravel + quieterRoute };
