@@ -841,15 +841,17 @@ export default function JourneyMap({
       if (segment.mode !== "rail" || next?.mode !== "rail") return;
       const terminal = segment.hops?.at(-1);
       const following = next.hops?.[0];
+      // `hop.codes` includes codes from both ends of the hop. At a transfer it
+      // would therefore pull in the next station as well. Only the previous
+      // leg's end and following leg's start identify the interchange itself.
+      const endpointCodes = [
+        ...(terminal?.toCodes ?? []),
+        ...(following?.fromCodes ?? []),
+      ].filter((code) => routeStationCodePattern.test(code));
       const codes = Array.from(
-        new Set(
-          [
-            ...(terminal?.toCodes ?? []),
-            ...(terminal?.codes ?? []),
-            ...(following?.fromCodes ?? []),
-            ...(following?.codes ?? []),
-          ].filter((code) => routeStationCodePattern.test(code)),
-        ),
+        new Map(
+          endpointCodes.map((code) => [stationColor(code), code]),
+        ).values(),
       );
       if (codes.length < 2) return;
       const coord = segment.geometry.at(-1) ?? next.geometry[0];
