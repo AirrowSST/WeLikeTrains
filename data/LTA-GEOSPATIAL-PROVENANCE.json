@@ -1,5 +1,5 @@
 {
-  "accessedAt": "2026-09-19T00:09:58.888Z",
+  "accessedAt": "2026-09-19T03:18:48.580Z",
   "sources": [
     {
       "layer": "TrainStationExit",
@@ -23,6 +23,6 @@
   "coordinates": "WGS84 longitude, latitude",
   "licence": "https://datamall.lta.gov.sg/content/datamall/en/SingaporeOpenDataLicence.html",
   "attribution": "Contains information from LTA DataMall under the Singapore Open Data Licence v1.0",
-  "sha256": "8342b02149de67332b5d25de600728dcf7bd9457a1e9b8997dd904f53390d9a7",
+  "sha256": "461aa7ee47be2d3345b7cf45f5921f2a272f7a574b185de77174b8f0901d9310",
   "refresh": "npm run data:geospatial"
 }

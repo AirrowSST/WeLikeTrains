@@ -6,7 +6,7 @@ Road works are out of scope by user decision. Removed RoadWorks polling, its fee
 
 ## Remaining P1/P2
 
-- P1 search: Google Places UI Kit now supplies optional island-wide online address/place coordinates in normal mode, with indexed station, bus-stop and landmark search retained offline. The current GCP project does not yet have Places UI Kit enabled; the guarded setup script enables it only during an explicitly authorised infrastructure deployment. A referrer-restricted live-key browser exercise and public policy/terms review remain necessary. Search coverage does not imply routing-graph coverage.
+- P1 search: Wayce now renders a standardised input and dropdown backed by Google Place Autocomplete Data API, with visible Google Maps attribution and indexed station, bus-stop and landmark search retained offline. Maps JavaScript API is enabled in the current project, but Places API (New) is not yet enabled and the existing browser key restriction must be changed from Places UI Kit to Maps JavaScript API plus Places API (New). The guarded setup script enables the services only during an explicitly authorised infrastructure deployment. A live-key Data API exercise remains necessary after configuration. Search coverage does not imply routing-graph coverage.
 - P1 routing coverage: broader walking coverage and measured first/last access legs remain follow-up work. Schematic bus geometry stays labelled.
 - P1 accessibility: continuous step-free access and indoor paths remain unverified.
 - P2 rail realtime: a functioning official payload remains unverified; scheduled departures stay labelled.

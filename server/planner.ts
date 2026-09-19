@@ -10,7 +10,16 @@ import type {
   Segment,
 } from "../shared/types";
 import { sgTime } from "../shared/catalog";
-import { busOperating, frequencyWait, referenceWait } from "./bus-routing";
+import {
+  shelterExposureRatio,
+  shelterMode as effectiveShelterMode,
+} from "../shared/shelter";
+import {
+  busOperating,
+  frequencyWait,
+  referenceWait,
+  referenceWaitRange,
+} from "./bus-routing";
 import { getGeospatial, stationExits } from "./geospatial";
 import { trafficAllowance } from "./traffic-timing";
 import { estimateRisk } from "../shared/risk";
@@ -112,8 +121,84 @@ const LIVE_BUS_WARNING =
   "Bus boarding uses the first catchable monitored DataMall arrival. Bus in-vehicle time remains an estimate.";
 const BUS_FALLBACK_WARNING =
   "A bus leg has no fresh catchable monitored arrival, so its boarding wait uses the labelled local estimate.";
+const RAIN_WALKING_WARNING =
+  "Bring an umbrella and take extra care while walking: exposed paths may be slippery and visibility may be reduced.";
 const busTimingSource =
   / · (?:LTA DataMall BusArrival \((?:simulated|live)\)|estimated boarding-wait fallback)/g;
+
+const transitMode = (segment: Segment | undefined) =>
+  segment?.mode === "bus" || segment?.mode === "rail";
+
+export function journeyDurationRange(
+  segments: Segment[],
+  duration: number,
+  options: {
+    departure: string;
+    stepFree: boolean;
+    baseLower?: number;
+    baseUpper?: number;
+  },
+): [number, number] {
+  let lowerDelta = -(options.baseLower ?? 3);
+  let upperDelta = options.baseUpper ?? 8;
+  let clock = Date.parse(options.departure);
+
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index];
+    const previous = segments[index - 1];
+    const next = segments[index + 1];
+
+    if (segment.mode === "rail") {
+      const directTransfer = previous?.mode === "rail";
+      const centralAllowance = options.stepFree
+        ? directTransfer
+          ? 5
+          : 4
+        : directTransfer
+          ? 3
+          : 2;
+      const upperAllowance = options.stepFree
+        ? directTransfer
+          ? 8
+          : 7
+        : directTransfer
+          ? 5
+          : 4;
+      upperDelta += upperAllowance - centralAllowance;
+    }
+
+    if (segment.mode === "bus" && segment.waitMinutes !== undefined) {
+      const wait = Math.max(0, segment.waitMinutes);
+      if (/LTA DataMall BusArrival \((?:simulated|live)\)/.test(segment.source)) {
+        upperDelta += 2;
+      } else {
+        const publishedRange = referenceWaitRange(segment, clock);
+        const upperWait = publishedRange?.[1] ?? Math.max(wait, wait * 2);
+        lowerDelta -= wait;
+        upperDelta += Math.max(0, upperWait - wait);
+      }
+    }
+
+    if (
+      segment.mode === "walk" &&
+      transitMode(previous) &&
+      transitMode(next)
+    ) {
+      const walk = Math.max(1, segment.minutes - (segment.delay ?? 0));
+      const lowerWalk = walk * 0.8 + 1;
+      const upperWalk = walk * 1.2 + 3;
+      lowerDelta += Math.min(0, lowerWalk - walk);
+      upperDelta += Math.max(0, upperWalk - walk);
+    }
+
+    clock += segment.minutes * 60_000;
+  }
+
+  return [
+    Math.max(1, Math.floor(duration + lowerDelta)),
+    Math.max(1, Math.ceil(duration + upperDelta)),
+  ];
+}
 
 function retimeBusSegment(
   segment: Segment,
@@ -202,7 +287,10 @@ export function applyBusArrivalTiming(
     segments,
     duration,
     baselineDuration: duration,
-    range: [Math.max(1, duration - 3), duration + 8],
+    range: journeyDurationRange(segments, duration, {
+      departure,
+      stepFree: false,
+    }),
     score: duration,
     warnings: [...new Set(warnings)],
     source: liveSegments
@@ -424,19 +512,16 @@ export function applyConditions(
     }
     if (
       s.mode === "walk" &&
-      !s.sheltered &&
+      shelterExposureRatio(s) > 0 &&
       conditions.weather.walkStatus !== "valid"
     ) {
       segment.issues.push(conditions.weather.rain ? "rain" : "heat");
       segment.delay += Math.ceil(
-        s.minutes * (conditions.weather.walkStatus === "invalid" ? 0.5 : 0.2),
+        s.minutes *
+          shelterExposureRatio(s) *
+          (conditions.weather.walkStatus === "invalid" ? 0.5 : 0.2),
       );
-      if (conditions.weather.walkStatus === "invalid") {
-        blocked = true;
-        warnings.push(
-          "An exposed walking section is unsafe in the current weather. Use a mapped sheltered alternative or wait for conditions to improve.",
-        );
-      }
+      if (conditions.weather.rain) warnings.push(RAIN_WALKING_WARNING);
     }
     if (conditions.weather.rain) {
       if (s.mode === "bus") segment.delay += Math.ceil(s.minutes * 0.15);
@@ -461,8 +546,8 @@ export function applyConditions(
     .filter((s) => s.mode === "walk")
     .reduce((sum, s) => sum + s.minutes, 0);
   const exposed = segments
-    .filter((s) => s.mode === "walk" && !s.sheltered)
-    .reduce((sum, s) => sum + s.minutes, 0);
+    .filter((s) => s.mode === "walk")
+    .reduce((sum, s) => sum + s.minutes * shelterExposureRatio(s), 0);
   const score =
     duration +
     (request.preferences.avoidCrowds
@@ -495,7 +580,11 @@ export function applyConditions(
     ...journey,
     segments,
     duration,
-    range: [Math.max(1, duration - 3), duration + uncertainty],
+    range: journeyDurationRange(segments, duration, {
+      departure: request.departure,
+      stepFree: request.preferences.stepFree,
+      baseUpper: uncertainty,
+    }),
     arrival: new Date(
       Date.parse(request.departure) + duration * 60000,
     ).toISOString(),
@@ -592,7 +681,10 @@ function applyRailSchedule(
     segments: timing.segments,
     duration,
     baselineDuration: duration,
-    range: [Math.max(1, duration - 3), duration + 8] as [number, number],
+    range: journeyDurationRange(timing.segments, duration, {
+      departure: request.departure,
+      stepFree: request.preferences.stepFree,
+    }),
     score: duration,
     warnings,
     source: timing.scheduledSegments
@@ -973,19 +1065,18 @@ export function localJourneys(
   );
 }
 export class NoUsableRouteError extends Error {
-  constructor() {
-    super(
-      "No usable route found in the bundled map extract. Try a mapped station or supported Singapore place, or increase the walking limit.",
-    );
+  constructor(
+    message = "No usable route found in the bundled map extract. Try a mapped station or supported Singapore place, or increase the walking limit.",
+  ) {
+    super(message);
     this.name = "NoUsableRouteError";
   }
 }
 
 export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
   const conditions = await getConditions(request);
-  // Weather may make a user's ordinary preference a safety requirement for
-  // this plan. The saved preference remains unchanged; this only affects the
-  // route calculation for the current journey.
+  // Limited weather temporarily prefers shelter for this plan. It never turns
+  // that preference into a strict requirement or changes the saved setting.
   const routingRequest: PlanRequest = {
     ...request,
     preferences: {
@@ -993,6 +1084,9 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
       sheltered:
         request.preferences.sheltered ||
         conditions.weather.walkStatus !== "valid",
+      shelterMode: request.preferences.sheltered
+        ? request.preferences.shelterMode
+        : "prefer",
       cycling:
         request.preferences.cycling &&
         conditions.weather.cycleStatus === "valid",
@@ -1049,7 +1143,13 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
       railSchedule,
     );
   }
-  if (!base.length) throw new NoUsableRouteError();
+  if (!base.length) {
+    if (effectiveShelterMode(routingRequest.preferences) === "require")
+      throw new NoUsableRouteError(
+        "No route with complete mapped shelter is available. Choose Prefer mapped shelter to see the least-exposed options, or change the endpoints.",
+      );
+    throw new NoUsableRouteError();
+  }
   if (request.dataMode === "live") {
     const crowdLines = crowdFeedLinesForSegments(
       base.flatMap((journey) => journey.segments),
@@ -1125,23 +1225,24 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
     .sort((a, b) => a.score - b.score);
   const recommended = ranked.find((j) => !j.blocked) ?? ranked[0];
   const travelDecision = recommended.blocked ? "wait" : "travel";
-  const weatherBlocksEveryRoute =
-    travelDecision === "wait" &&
-    conditions.weather.walkStatus === "invalid" &&
-    ranked.every((journey) => journey.blocked);
+  const hasExposedRainWalk =
+    conditions.weather.rain &&
+    recommended.segments.some(
+      (segment) =>
+        segment.mode === "walk" && shelterExposureRatio(segment) > 0,
+    );
   const risk = estimateRisk(conditions, original);
   const date = Date.parse(request.departure);
   const deadline = request.arriveBy ? Date.parse(request.arriveBy) : null;
   const safeArrival = date + recommended.range[1] * 60000;
   let advice =
     travelDecision === "wait"
-      ? weatherBlocksEveryRoute
-        ? "Wait for the heavy weather to pass, then re-plan. Every mapped option currently includes an exposed section, so Wayce is not recommending a journey yet."
-        : "Wait and re-plan before leaving. No verified usable route is available under the current conditions."
+      ? "Wait and re-plan before leaving. No verified usable route is available under the current conditions."
       : recommended.id !== original.id
         ? `Take ${recommended.title}. ${original.blocked ? "Avoid the affected route." : `Save about ${Math.max(0, original.duration - recommended.duration)} min compared with your usual route.`}`
         : `Take ${recommended.title}. ${recommended.reasons[0] ?? "Your route is the best fit for the available conditions."}`;
   if (travelDecision === "travel") {
+    if (hasExposedRainWalk) advice += ` ${RAIN_WALKING_WARNING}`;
     if (deadline && safeArrival > deadline)
       advice += ` Leave about ${Math.ceil((safeArrival - deadline) / 60000)} min earlier to keep an arrival buffer.`;
     else advice += ` Arrive around ${sgTime(recommended.arrival)}.`;

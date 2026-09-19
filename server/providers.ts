@@ -98,7 +98,22 @@ export function extractPreferences(text: string): Partial<Preferences> {
   }
   if (/(?:don't|do not) (?:mind|avoid) crowds|crowds are (?:fine|okay)/.test(t))
     update.avoidCrowds = false;
-  if (/shelter|stay dry|avoid rain|covered/.test(t)) update.sheltered = true;
+  if (
+    /(?:don't|do not) (?:need|require|want) (?:a )?(?:sheltered|covered|shelter)|shelter (?:isn't|is not) (?:needed|required)/.test(
+      t,
+    )
+  ) {
+    update.sheltered = false;
+    update.shelterMode = "prefer";
+  } else if (/shelter|stay dry|avoid rain|covered/.test(t)) {
+    update.sheltered = true;
+    update.shelterMode =
+      /\b(?:need|require|must|only)\b.*\b(?:shelter|covered)|\bfully sheltered\b/.test(
+        t,
+      )
+        ? "require"
+        : "prefer";
+  }
   if (/(?:i |can |like |prefer |love )(?:to )?cycl|my bike|bicycle/.test(t))
     update.cycling = true;
   if (/(?:no|don't|cannot|can't|avoid) cycl|no bike/.test(t))
@@ -166,6 +181,7 @@ const preferenceProposalSchema = z
   .object({
     stepFree: z.boolean().optional(),
     sheltered: z.boolean().optional(),
+    shelterMode: z.enum(["prefer", "require"]).optional(),
     avoidCrowds: z.boolean().optional(),
     cycling: z.boolean().optional(),
     walkingSpeed: z.number().min(25).max(120).optional(),
@@ -173,7 +189,11 @@ const preferenceProposalSchema = z
     alertThreshold: z.number().int().min(3).max(60).optional(),
   })
   .strict()
-  .refine((value) => Object.keys(value).length > 0);
+  .refine((value) => Object.keys(value).length > 0)
+  .refine(
+    (value) => value.shelterMode === undefined || value.sheltered === true,
+    "shelterMode requires sheltered=true",
+  );
 
 function chatToolDeclarations(plan?: PlanResponse) {
   const declarations: Record<string, unknown>[] = [
@@ -192,6 +212,12 @@ function chatToolDeclarations(plan?: PlanResponse) {
           sheltered: {
             type: "boolean",
             description: "Prefer sheltered walking.",
+          },
+          shelterMode: {
+            type: "string",
+            enum: ["prefer", "require"],
+            description:
+              "Use require only when the user explicitly needs mapped shelter; otherwise use prefer. Set sheltered=true with this field.",
           },
           avoidCrowds: {
             type: "boolean",

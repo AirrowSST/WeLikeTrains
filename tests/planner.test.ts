@@ -3,6 +3,7 @@ import { places, profiles } from "../shared/catalog";
 import {
   applyBusArrivalTiming,
   applyConditions,
+  journeyDurationRange,
   planJourney,
   segmentAffected,
 } from "../server/planner";
@@ -107,6 +108,16 @@ describe("real OSM journeys", () => {
     expect(p.recommended.segments.every((s) => s.geometry.length >= 2)).toBe(
       true,
     );
+    const walking = p.recommended.segments.filter((s) => s.mode === "walk");
+    expect(walking.length).toBeGreaterThan(0);
+    for (const walk of walking) {
+      expect(walk.shelterSections?.length).toBeGreaterThan(0);
+      expect(
+        (walk.coveredDistance ?? 0) +
+          (walk.exposedDistance ?? 0) +
+          (walk.unknownDistance ?? 0),
+      ).toBeCloseTo(walk.distance, 5);
+    }
     expect(p.conditions.mode).toBe("demo");
   });
   it("reroutes EWL disruption and retains the affected original for comparison", async () => {
@@ -128,15 +139,19 @@ describe("real OSM journeys", () => {
     expect(p.recommended.blocked).toBe(false);
     expect(p.recommended.segments.every((s) => !s.affected)).toBe(true);
   });
-  it("lets rain change timing without pretending it changes the rail timetable", async () => {
+  it("keeps Rachel's rainy journey usable with umbrella and walking precautions", async () => {
     const dry = await planJourney(request());
     const rain = await planJourney(request("rachel", "rain"));
     expect(rain.recommended.duration).toBeGreaterThan(dry.recommended.duration);
     expect(rain.conditions.weather.rain).toBe(true);
-    expect(rain.recommended.blocked).toBe(true);
-    expect(rain.travelDecision).toBe("wait");
-    expect(rain.advice).toContain("Wait for the heavy weather to pass");
-    expect(rain.advice).not.toContain("Arrive around");
+    expect(rain.recommended.blocked).toBe(false);
+    expect(rain.travelDecision).toBe("travel");
+    expect(rain.advice).toContain("Bring an umbrella");
+    expect(rain.advice).toContain("slippery");
+    expect(rain.advice).toContain("visibility may be reduced");
+    expect(rain.recommended.warnings).toContain(
+      "Bring an umbrella and take extra care while walking: exposed paths may be slippery and visibility may be reduced.",
+    );
     expect(rain.risk.disclaimer).toContain("not a disruption probability");
   });
   it("provides Arjun a followable multimodal route to one-north", async () => {
@@ -242,6 +257,140 @@ describe("real OSM journeys", () => {
 });
 
 describe("condition timing", () => {
+  it("adds transfer and boarding uncertainty to the journey range", () => {
+    const departure = request().departure;
+    const liveBus = segment("live-bus", "bus", 13, {
+      waitMinutes: 3,
+      source: "test · LTA DataMall BusArrival (live)",
+    });
+    expect(
+      journeyDurationRange([liveBus], 13, {
+        departure,
+        stepFree: false,
+        baseLower: 0,
+        baseUpper: 0,
+      }),
+    ).toEqual([13, 15]);
+
+    const frequencyBus = segment("frequency-bus", "bus", 15, {
+      waitMinutes: 5,
+      source: "test · estimated boarding-wait fallback",
+      busReference: {
+        key: "12|SBST|1",
+        boarding: {
+          serviceNo: "12",
+          operator: "SBST",
+          direction: 1,
+          stopSequence: 1,
+          stopCode: "75009",
+          distanceKm: 0,
+        },
+        service: {
+          serviceNo: "12",
+          operator: "SBST",
+          direction: 1,
+          category: "TRUNK",
+          amPeakFrequency: "8-12",
+        },
+      },
+    });
+    expect(
+      journeyDurationRange([frequencyBus], 15, {
+        departure,
+        stepFree: false,
+        baseLower: 0,
+        baseUpper: 0,
+      }),
+    ).toEqual([10, 22]);
+
+    const railTransfer = [
+      segment("first-rail", "rail", 20),
+      segment("second-rail", "rail", 10),
+    ];
+    expect(
+      journeyDurationRange(railTransfer, 30, {
+        departure,
+        stepFree: false,
+        baseLower: 0,
+        baseUpper: 0,
+      }),
+    ).toEqual([30, 34]);
+    expect(
+      journeyDurationRange(railTransfer, 30, {
+        departure,
+        stepFree: true,
+        baseLower: 0,
+        baseUpper: 0,
+      }),
+    ).toEqual([30, 36]);
+
+    const walkingTransfer = [
+      segment("first-bus", "bus", 10),
+      segment("transfer-walk", "walk", 10),
+      segment("rail", "rail", 10),
+    ];
+    expect(
+      journeyDurationRange(walkingTransfer, 30, {
+        departure,
+        stepFree: false,
+        baseLower: 0,
+        baseUpper: 0,
+      }),
+    ).toEqual([29, 37]);
+  });
+
+  it("applies weather delay only to exposed and unknown walking distance", () => {
+    const mixedWalk = segment("mixed-walk", "walk", 10, {
+      distance: 1000,
+      sheltered: false,
+      coveredDistance: 700,
+      exposedDistance: 200,
+      unknownDistance: 100,
+      shelterCoverage: 0.7,
+      shelterSections: [
+        {
+          status: "covered",
+          distance: 700,
+          geometry: [
+            [1.3, 103.8],
+            [1.305, 103.805],
+          ],
+        },
+        {
+          status: "exposed",
+          distance: 200,
+          geometry: [
+            [1.305, 103.805],
+            [1.308, 103.808],
+          ],
+        },
+        {
+          status: "unknown",
+          distance: 100,
+          geometry: [
+            [1.308, 103.808],
+            [1.31, 103.81],
+          ],
+        },
+      ],
+    });
+    const result = applyConditions(
+      journey([mixedWalk]),
+      conditions({
+        weather: {
+          forecast: "Showers",
+          rain: true,
+          walkStatus: "limited",
+          cycleStatus: "limited",
+        },
+      }),
+      request(),
+    );
+
+    expect(result.segments[0].delay).toBe(1);
+    expect(result.segments[0].issues).toContain("rain");
+  });
+
   it("advances live bus transfers chronologically and ignores stale arrivals", () => {
     const timedJourney = journey([
       segment("access", "walk", 8),

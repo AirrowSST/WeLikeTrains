@@ -133,10 +133,10 @@ export function joinOfficialBusRoutes(
   };
 }
 
-export function frequencyWait(
+function frequencyValues(
   service: BusServiceRecord | undefined,
   readyAt: number,
-): number | undefined {
+): number[] | undefined {
   if (!service) return undefined;
   const local = new Date(readyAt + 8 * 3600_000);
   const minute = local.getUTCHours() * 60 + local.getUTCMinutes();
@@ -151,8 +151,25 @@ export function frequencyWait(
   if (!raw || !/^\d+(?:-\d+)?$/.test(raw.trim())) return undefined;
   const values = raw.split("-").map(Number);
   if (values.some((n) => n <= 0 || n > 120)) return undefined;
+  return values;
+}
+
+export function frequencyWait(
+  service: BusServiceRecord | undefined,
+  readyAt: number,
+): number | undefined {
+  const values = frequencyValues(service, readyAt);
+  if (!values) return undefined;
   // Expected random-arrival wait, not a promised departure time.
   return Math.ceil(values.reduce((a, b) => a + b, 0) / values.length / 2);
+}
+
+export function frequencyWaitRange(
+  service: BusServiceRecord | undefined,
+  readyAt: number,
+): [number, number] | undefined {
+  const values = frequencyValues(service, readyAt);
+  return values ? [0, Math.max(...values)] : undefined;
 }
 
 const clockMinutes = (value?: string) => {
@@ -197,4 +214,8 @@ export function busOperating(
 
 export function referenceWait(segment: Segment, readyAt: number) {
   return frequencyWait(segment.busReference?.service, readyAt);
+}
+
+export function referenceWaitRange(segment: Segment, readyAt: number) {
+  return frequencyWaitRange(segment.busReference?.service, readyAt);
 }

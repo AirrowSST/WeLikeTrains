@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { googleSelectionToPlace } from "../src/google-places";
+import {
+  googleDetailsToPlace,
+  googleSelectionToPlace,
+} from "../src/google-places";
 
 describe("Google Places UI selection", () => {
   it("turns a Singapore selection into the existing local routing contract", () => {
@@ -14,7 +17,7 @@ describe("Google Places UI selection", () => {
     ).toEqual({
       id: "google:ChIJ-test",
       name: "National Gallery Singapore",
-      subtitle: "Google Places · online result",
+      subtitle: "Google Maps · online result",
       lat: 1.29027,
       lon: 103.851959,
     });
@@ -28,5 +31,39 @@ describe("Google Places UI selection", () => {
       ),
     ).toBeNull();
     expect(googleSelectionToPlace({ id: "missing" }, "Unknown")).toBeNull();
+  });
+
+  it("retains coordinates exposed through Google Place accessors", () => {
+    class WidgetPlace {
+      get id() {
+        return "ChIJ-widget";
+      }
+
+      get displayName() {
+        return "Raffles Place MRT Station";
+      }
+
+      get formattedAddress() {
+        return "Raffles Place, Singapore";
+      }
+
+      get location() {
+        return { lat: () => 1.2842263, lng: () => 103.8497683 };
+      }
+    }
+
+    expect(
+      googleDetailsToPlace(
+        new WidgetPlace(),
+        "fallback-id",
+        "Raffles Place",
+      ),
+    ).toEqual({
+      id: "google:ChIJ-widget",
+      name: "Raffles Place MRT Station",
+      subtitle: "Raffles Place, Singapore · Google Maps",
+      lat: 1.2842263,
+      lon: 103.8497683,
+    });
   });
 });

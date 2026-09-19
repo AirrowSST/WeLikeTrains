@@ -81,6 +81,10 @@ import {
 import { meetsDelayAlertThreshold } from "../shared/alerts";
 import { crowdDescription } from "../shared/crowding";
 import {
+  shelterMode as effectiveShelterMode,
+  shelterSummary,
+} from "../shared/shelter";
+import {
   timelineDefinition,
   timelineTime,
   type TimelineId,
@@ -102,12 +106,9 @@ import JourneyMap from "./Map";
 import { useJourneySheet } from "./useJourneySheet";
 import GoogleSignIn, { disableGoogleAutoSelect } from "./GoogleSignIn";
 import {
-  googleSelectionToPlace,
-  loadGooglePlacesUi,
-  type BasicPlaceAutocompleteElement,
-  type GooglePlaceSelection,
-  type PlaceDetailsCompactElement,
-  type PlaceDetailsPlaceRequestElement,
+  createGooglePlaceSearchSession,
+  type GooglePlaceSearchSession,
+  type GooglePlaceSuggestion,
 } from "./google-places";
 import {
   demoJourneyFix,
@@ -845,169 +846,155 @@ function GooglePlacesInput({
   value: Place;
   placeholder?: string;
   onChange: (place: Place) => void;
-  onUnavailable: (message: string) => void;
+  onUnavailable: (message: string, typedQuery: string) => void;
 }) {
-  const host = useRef<HTMLDivElement>(null);
-  const detailsHost = useRef<HTMLDivElement>(null);
-  const control = useRef<BasicPlaceAutocompleteElement | null>(null);
-  const latestTypedLabel = useRef(value.name);
-  const pendingSelection = useRef<{ id: string; label: string } | null>(null);
+  const [query, setQuery] = useState(value.name);
+  const [editing, setEditing] = useState(false);
+  const [suggestions, setSuggestions] = useState<GooglePlaceSuggestion[]>([]);
+  const [busy, setBusy] = useState(false);
+  const session = useRef<Promise<GooglePlaceSearchSession> | null>(null);
   const onChangeRef = useRef(onChange);
   const onUnavailableRef = useRef(onUnavailable);
-  const [ready, setReady] = useState(false);
   onChangeRef.current = onChange;
   onUnavailableRef.current = onUnavailable;
 
-  useEffect(() => {
-    let cancelled = false;
-    let inputListener: ((event: Event) => void) | undefined;
-    let selectListener: ((event: Event) => void) | undefined;
-    let errorListener: (() => void) | undefined;
-    let detailsLoadListener: (() => void) | undefined;
-    let details: PlaceDetailsCompactElement | undefined;
-    loadGooglePlacesUi(apiKey)
-      .then(({ BasicPlaceAutocompleteElement }) => {
-        if (cancelled || !host.current || !detailsHost.current) return;
-        const picker = new BasicPlaceAutocompleteElement();
-        picker.id = controlId;
-        picker.placeholder = value.name || placeholder || "Search all Singapore";
-        picker.includedRegionCodes = ["sg"];
-        picker.requestedLanguage = "en";
-        picker.requestedRegion = "sg";
-        inputListener = (event) => {
-          const input = event
-            .composedPath()
-            .find(
-              (candidate): candidate is HTMLInputElement =>
-                candidate instanceof HTMLInputElement,
-            );
-          const typed = (input?.value || picker.value || "").trim();
-          if (typed) latestTypedLabel.current = typed;
-        };
-        details = document.createElement(
-          "gmp-place-details-compact",
-        ) as PlaceDetailsCompactElement;
-        details.className = "google-place-details";
-        details.setAttribute("orientation", "horizontal");
-        details.setAttribute("truncation-preferred", "");
-        details.hidden = true;
-        const detailsRequest = document.createElement(
-          "gmp-place-details-place-request",
-        ) as PlaceDetailsPlaceRequestElement;
-        details.append(
-          detailsRequest,
-          document.createElement("gmp-place-standard-content"),
-        );
-        detailsLoadListener = () => {
-          const pending = pendingSelection.current;
-          if (!pending || !details?.place) return;
-          const place = googleSelectionToPlace(
-            { ...details.place, id: details.place.id || pending.id },
-            pending.label,
-          );
-          if (!place) {
-            onUnavailableRef.current(
-              "That result has no routable Singapore coordinate. Try another place.",
-            );
-            return;
-          }
-          pendingSelection.current = null;
-          picker.placeholder = place.name;
-          onChangeRef.current(place);
-        };
-        selectListener = (event) => {
-          const selected =
-            (
-              event as Event & {
-                place?: GooglePlaceSelection;
-                detail?: { place?: GooglePlaceSelection };
-              }
-            ).place ??
-            (
-              event as Event & {
-                detail?: { place?: GooglePlaceSelection };
-              }
-            ).detail?.place;
-          if (!selected?.id) {
-            onUnavailableRef.current(
-              "Choose a Google result located within Singapore.",
-            );
-            return;
-          }
-          pendingSelection.current = {
-            id: selected.id,
-            label:
-              selected.displayName ||
-              picker.value?.trim() ||
-              latestTypedLabel.current ||
-              "Selected Google place",
-          };
-          details!.hidden = false;
-          detailsRequest.place = selected.id;
-        };
-        picker.addEventListener("input", inputListener);
-        picker.addEventListener("gmp-select", selectListener);
-        errorListener = () =>
-          onUnavailableRef.current(
-            "Online address search is unavailable. Using the offline index.",
-          );
-        picker.addEventListener("gmp-error", errorListener);
-        details.addEventListener("gmp-load", detailsLoadListener);
-        details.addEventListener("gmp-error", errorListener);
-        host.current.replaceChildren(picker);
-        detailsHost.current.replaceChildren(details);
-        control.current = picker;
-        setReady(true);
-      })
-      .catch(() => {
-        if (!cancelled)
-          onUnavailableRef.current(
-            "Online address search is unavailable. Using the offline index.",
-          );
-      });
-    return () => {
-      cancelled = true;
-      if (control.current && inputListener)
-        control.current.removeEventListener("input", inputListener);
-      if (control.current && selectListener)
-        control.current.removeEventListener("gmp-select", selectListener);
-      if (control.current && errorListener)
-        control.current.removeEventListener("gmp-error", errorListener);
-      if (details && detailsLoadListener)
-        details.removeEventListener("gmp-load", detailsLoadListener);
-      if (details && errorListener)
-        details.removeEventListener("gmp-error", errorListener);
-      control.current?.remove();
-      details?.remove();
-      control.current = null;
-    };
-  }, [apiKey, controlId, placeholder]);
+  useEffect(() => setQuery(value.name), [value]);
 
   useEffect(() => {
-    latestTypedLabel.current = value.name;
-    if (control.current)
-      control.current.placeholder =
-        value.name || placeholder || "Search all Singapore";
-  }, [placeholder, value]);
+    if (!editing) return;
+    const normalized = query.trim();
+    if (normalized.length < 2) {
+      setSuggestions([]);
+      setBusy(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setBusy(true);
+      const activeSession =
+        session.current ?? createGooglePlaceSearchSession(apiKey);
+      session.current = activeSession;
+      activeSession
+        .then((search) => search.suggest(normalized))
+        .then((next) => {
+          if (!cancelled) setSuggestions(next.slice(0, 6));
+        })
+        .catch(() => {
+          if (!cancelled)
+            onUnavailableRef.current(
+              "Online address search is unavailable. Using the offline index.",
+              query,
+            );
+        })
+        .finally(() => {
+          if (!cancelled) setBusy(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [apiKey, editing, query]);
+
+  const chooseSuggestion = async (suggestion: GooglePlaceSuggestion) => {
+    setBusy(true);
+    try {
+      const activeSession =
+        session.current ?? createGooglePlaceSearchSession(apiKey);
+      session.current = activeSession;
+      const place = await (await activeSession).resolve(suggestion);
+      if (!place) {
+        onUnavailableRef.current(
+          "That result has no routable Singapore coordinate. Try another place.",
+          query,
+        );
+        return;
+      }
+      setQuery(place.name);
+      setEditing(false);
+      setSuggestions([]);
+      session.current = null;
+      onChangeRef.current(place);
+    } catch {
+      onUnavailableRef.current(
+        "Online address search is unavailable. Using the offline index.",
+        query,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="google-place-shell">
-      <div
-        className="google-place-control"
-        ref={host}
-        aria-busy={!ready}
-        aria-label={
-          !ready ? "Loading online Singapore address search" : undefined
+      <input
+        id={controlId}
+        autoComplete="off"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={editing}
+        aria-controls={`google-places-${controlId}`}
+        value={query}
+        placeholder={placeholder}
+        onFocus={() => {
+          session.current = null;
+          setSuggestions([]);
+          setEditing(true);
+        }}
+        onChange={(event) => setQuery(event.target.value)}
+        onBlur={() =>
+          setTimeout(() => {
+            setEditing(false);
+            setQuery(value.name);
+          }, 150)
         }
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setEditing(false);
+            setQuery(value.name);
+          }
+          if (event.key === "Enter" && editing && suggestions[0]) {
+            event.preventDefault();
+            void chooseSuggestion(suggestions[0]);
+          }
+        }}
       />
-      {!ready && (
-        <span className="google-place-loading">Loading address search…</span>
+      {editing && (
+        <ul
+          className="place-results google-place-results"
+          id={`google-places-${controlId}`}
+          role="listbox"
+        >
+          {busy && <li className="searching">Finding places…</li>}
+          {suggestions.map((suggestion) => (
+            <li key={suggestion.id} role="option" aria-selected="false">
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void chooseSuggestion(suggestion)}
+              >
+                <span>
+                  {suggestion.name}
+                  {suggestion.subtitle && <small>{suggestion.subtitle}</small>}
+                </span>
+              </button>
+            </li>
+          ))}
+          {!busy && query.trim().length >= 2 && !suggestions.length && (
+            <li className="searching">
+              No Singapore match. Try a street, building, station, or landmark.
+            </li>
+          )}
+          {!!suggestions.length && (
+            <li className="google-maps-attribution">
+              Results from <span translate="no">Google Maps</span>
+            </li>
+          )}
+        </ul>
       )}
-      <div className="google-place-details-host" ref={detailsHost} />
     </div>
   );
 }
-
 function PlacePicker({
   label,
   value,
@@ -1080,7 +1067,9 @@ function PlacePicker({
               setSearchNote("");
               onChange(place);
             }}
-            onUnavailable={(message) => {
+            onUnavailable={(message, typedQuery) => {
+              setQuery(typedQuery);
+              setEditing(true);
               setSearchNote(message);
               setGoogleUnavailable(true);
             }}
@@ -1295,7 +1284,10 @@ export default function App() {
     (commute) => commute.id === commuteId(request),
   );
   const preferenceSummary = [
-    request.preferences.sheltered && "Sheltered walks",
+    request.preferences.sheltered &&
+      (effectiveShelterMode(request.preferences) === "require"
+        ? "Mapped shelter required"
+        : "Sheltered walks preferred"),
     request.preferences.stepFree && "Avoid stairs",
     request.preferences.avoidCrowds && "Quieter rides",
     request.preferences.cycling && "Cycling",
@@ -2931,6 +2923,12 @@ export default function App() {
                                       `From ${s.from}${s.affected ? " · Service affected" : ""}`
                                     )}
                                   </p>
+                                  {s.mode === "walk" && (
+                                    <p className="segment-shelter-summary">
+                                      <Umbrella size={13} aria-hidden="true" />
+                                      {shelterSummary(s)}
+                                    </p>
+                                  )}
                                   {expanded === selected.id && (
                                     <p className="step-detail">
                                       {s.instructions}
@@ -3041,7 +3039,11 @@ export default function App() {
                         {commute.request.preferences.stepFree
                           ? "Step-free preference"
                           : commute.request.preferences.sheltered
-                            ? "Sheltered walks"
+                            ? effectiveShelterMode(
+                                commute.request.preferences,
+                              ) === "require"
+                              ? "Mapped shelter required"
+                              : "Sheltered walks preferred"
                             : "Standard walking"}
                       </span>
                       <span>
@@ -3636,12 +3638,6 @@ export default function App() {
                   icon: Accessibility,
                 },
                 {
-                  key: "sheltered",
-                  title: "Stay out of the rain",
-                  description: "Prefer mapped covered walking paths",
-                  icon: Umbrella,
-                },
-                {
                   key: "avoidCrowds",
                   title: "A little more breathing room",
                   description: "Give quieter routes more weight",
@@ -3676,6 +3672,34 @@ export default function App() {
                 />
               </label>
             ))}
+            <label className="preference-select-row">
+              <Umbrella size={21} />
+              <span>
+                <strong>Sheltered walking</strong>
+                <small>
+                  Prefer shelter, or require complete mapped coverage with
+                  only a short coordinate tolerance.
+                </small>
+              </span>
+              <select
+                aria-label="Sheltered walking preference"
+                value={effectiveShelterMode(request.preferences)}
+                onChange={(event) => {
+                  const mode = event.target.value as
+                    | "none"
+                    | "prefer"
+                    | "require";
+                  updatePreferences({
+                    sheltered: mode !== "none",
+                    shelterMode: mode === "require" ? "require" : "prefer",
+                  });
+                }}
+              >
+                <option value="none">No preference</option>
+                <option value="prefer">Prefer mapped shelter</option>
+                <option value="require">Require mapped shelter</option>
+              </select>
+            </label>
             <label className="toggle-row">
               <span className="text-size-icon">Aa</span>
               <span>
@@ -3911,12 +3935,12 @@ export default function App() {
                 OpenStreetMap contributors
               </a>
               , ODbL. The bundled extract powers offline map/search fallback and
-              routing. When configured in normal mode, Google Places UI Kit
-              provides online Singapore address search; typed searches are sent
-              to Google and the selected coordinate is routed on Wayce's local
-              graph. Google does not calculate the journey. Local timings are
-              estimates; coverage, station access and shelter are not fully
-              verified.
+              routing. When configured in normal mode, Wayce's address-search
+              interface requests Singapore suggestions from Google Maps; typed
+              searches are sent to Google and the selected coordinate is routed
+              on Wayce's local graph. Google does not calculate the journey.
+              Local timings are estimates; coverage, station access and shelter
+              are not fully verified.
             </p>
             <h3>Official transport data</h3>
             <p>

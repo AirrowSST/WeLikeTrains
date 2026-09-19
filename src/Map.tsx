@@ -17,6 +17,7 @@ import {
 } from "../shared/transit-details";
 import { lineColors } from "../shared/catalog";
 import { crowdDescription } from "../shared/crowding";
+import { shelterSummary } from "../shared/shelter";
 import type { LocationFix } from "./location";
 
 let basemapPromise: Promise<any> | undefined;
@@ -198,7 +199,7 @@ function routeSegmentPopup(segment: Segment) {
     addDetail("Crowding", crowdDescription(segment));
   } else {
     addDetail("Distance", `${Math.round(segment.distance)} m`);
-    if (segment.sheltered) addDetail("Shelter", "Mapped sheltered path");
+    if (segment.mode === "walk") addDetail("Shelter", shelterSummary(segment));
   }
 
   const instructions = document.createElement("p");
@@ -863,6 +864,39 @@ export default function JourneyMap({
         lineCap: "round",
         interactive: false,
       }).addTo(group);
+      if (s.mode === "walk") {
+        const sections = s.shelterSections?.length
+          ? s.shelterSections
+          : [
+              {
+                status: "unknown" as const,
+                distance: s.distance,
+                geometry: s.geometry,
+              },
+            ];
+        const shelterStyles = {
+          covered: { color: "#18775c", dashArray: undefined },
+          exposed: { color: "#c33f2b", dashArray: "10 6" },
+          unknown: { color: "#8a6f3f", dashArray: "2 7" },
+        } as const;
+        sections.forEach((section) => {
+          const style = shelterStyles[section.status];
+          L.polyline(section.geometry, {
+            color: style.color,
+            weight: focused ? routeWeight + 5 : routeWeight + 2,
+            opacity: navigationMode && focusSegmentId && !focused ? 0.42 : 1,
+            dashArray: style.dashArray,
+            lineCap: "round",
+            className: `walk-shelter-section ${section.status}`,
+            interactive: false,
+          })
+            .bindTooltip(
+              `${Math.round(section.distance)} m ${section.status === "covered" ? "mapped covered" : section.status}`,
+              { sticky: true },
+            )
+            .addTo(group);
+        });
+      }
       const hitClassName = `route-segment-hit ${s.mode}`;
       const hitPath = L.polyline(s.geometry, {
         color: colour,
@@ -977,6 +1011,31 @@ export default function JourneyMap({
           }),
         }).addTo(group);
     });
+    const longestExposedSection = journey.segments
+      .filter((segment) => segment.mode === "walk")
+      .flatMap((segment) => segment.shelterSections ?? [])
+      .filter((section) => section.status === "exposed")
+      .sort((a, b) => b.distance - a.distance)[0];
+    const exposedMidpoint =
+      longestExposedSection?.geometry[
+        Math.floor(longestExposedSection.geometry.length / 2)
+      ];
+    if (exposedMidpoint) {
+      const label = document.createElement("span");
+      label.className = "walk-shelter-label exposed";
+      label.textContent = `Exposed · ${Math.round(longestExposedSection.distance)} m`;
+      L.marker(exposedMidpoint, {
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 1250,
+        icon: L.divIcon({
+          className: "walk-shelter-anchor",
+          html: label,
+          iconSize: [92, 24],
+          iconAnchor: [46, 30],
+        }),
+      }).addTo(group);
+    }
     if (segmentToRestore && !restoredActiveSegment) {
       activeSegmentId.current = null;
       activeSegmentPath.current = null;
@@ -1080,6 +1139,15 @@ export default function JourneyMap({
   const journey = selected ?? plan?.recommended;
   const comparing =
     !navigationMode && !!plan && !!journey && journey.id !== plan.original.id;
+  const shelterStatuses = new Set(
+    journey?.segments
+      .filter((segment) => segment.mode === "walk")
+      .flatMap((segment) =>
+        segment.shelterSections?.length
+          ? segment.shelterSections.map((section) => section.status)
+          : ["unknown" as const],
+      ) ?? [],
+  );
   const showFullRoute = () => {
     const points = [
       ...(journey?.segments.flatMap((segment) => segment.geometry) ?? []),
@@ -1138,7 +1206,7 @@ export default function JourneyMap({
               Clear bus stops
             </button>
           </div>
-        <small>Stops served · road geometry unavailable</small>
+          <small>Stops served · road geometry unavailable</small>
           {busMap?.directions.length ? (
             <label>
               Direction
@@ -1166,7 +1234,7 @@ export default function JourneyMap({
         ref={element}
         className="journey-map"
         role="region"
-        aria-label={`${mapDetail === "detailed" ? "OneMap" : "Bundled OpenStreetMap"} showing ${navigationMode ? "your active navigation route" : comparing ? "the original route, its affected portion and the revised route" : "your selected route and walking legs"}${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
+        aria-label={`${mapDetail === "detailed" ? "OneMap" : "Bundled OpenStreetMap"} showing ${navigationMode ? "your active navigation route" : comparing ? "the original route, its affected portion and the revised route" : "your selected route and walking legs"}${shelterStatuses.size ? ", with covered, exposed and unknown shelter sections distinguished" : ""}${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
       />
       <div className="map-controls">
         {!navigationMode && (
@@ -1207,6 +1275,28 @@ export default function JourneyMap({
           <span>
             <i className="legend-line" /> Revised route
           </span>
+        </div>
+      )}
+      {shelterStatuses.size > 0 && (
+        <div
+          className={`shelter-map-legend${comparing ? " with-comparison" : ""}`}
+          aria-label="Walking shelter map legend"
+        >
+          {shelterStatuses.has("covered") && (
+            <span>
+              <i className="shelter-legend-line covered" /> Covered
+            </span>
+          )}
+          {shelterStatuses.has("exposed") && (
+            <span>
+              <i className="shelter-legend-line exposed" /> Exposed
+            </span>
+          )}
+          {shelterStatuses.has("unknown") && (
+            <span>
+              <i className="shelter-legend-line unknown" /> Unknown
+            </span>
+          )}
         </div>
       )}
       <span className="map-extract">

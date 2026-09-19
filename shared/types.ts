@@ -2,6 +2,8 @@ export type Coord = [number, number]; // latitude, longitude; OSM WGS84
 export type Crowd = "low" | "moderate" | "high" | "unknown";
 export type Mode = "walk" | "rail" | "bus" | "cycle";
 export type SurfaceStatus = "valid" | "limited" | "invalid";
+export type ShelterMode = "prefer" | "require";
+export type ShelterStatus = "covered" | "exposed" | "unknown";
 export type SegmentIssue =
   | "shelter"
   | "rain"
@@ -36,6 +38,8 @@ export interface TransitStop {
 export interface Preferences {
   stepFree: boolean;
   sheltered: boolean;
+  /** Existing saved values without this field mean "prefer". */
+  shelterMode?: ShelterMode;
   avoidCrowds: boolean;
   cycling: boolean;
   walkingSpeed: number;
@@ -109,6 +113,15 @@ export interface Segment {
   affected: boolean;
   delay: number;
   sheltered: boolean;
+  coveredDistance?: number;
+  exposedDistance?: number;
+  unknownDistance?: number;
+  shelterCoverage?: number;
+  shelterSections?: {
+    status: ShelterStatus;
+    distance: number;
+    geometry: Coord[];
+  }[];
   accessibility: "verified" | "unknown";
   instructions: string;
   source: string;

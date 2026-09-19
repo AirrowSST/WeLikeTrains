@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-18T21:13:22.805Z",
+  "generatedAt": "2026-09-19T03:21:19.796Z",
   "mode": "no-cost local fallback + deterministic routing",
   "limitations": "Synthetic labelled fixtures, not historical ground truth. Structural checks are not an accuracy or safety claim. Review recorded cloud answers manually; no real-phone validation is implied.",
   "failures": 0,
@@ -7,11 +7,11 @@
     {
       "persona": "rachel",
       "scenario": "normal",
-      "elapsedMs": 6252,
+      "elapsedMs": 12511,
       "recommended": "EWL",
       "travelDecision": "travel",
-      "duration": 55,
-      "originalDuration": 55,
+      "duration": 52,
+      "originalDuration": 52,
       "crowd": "moderate",
       "provider": "local",
       "checks": {
@@ -28,11 +28,11 @@
     {
       "persona": "rachel",
       "scenario": "disruption",
-      "elapsedMs": 161,
+      "elapsedMs": 1454,
       "recommended": "DTL",
       "travelDecision": "travel",
-      "duration": 61,
-      "originalDuration": 75,
+      "duration": 58,
+      "originalDuration": 72,
       "crowd": "low",
       "provider": "local",
       "checks": {
@@ -49,11 +49,11 @@
     {
       "persona": "rachel",
       "scenario": "closure",
-      "elapsedMs": 104,
+      "elapsedMs": 1357,
       "recommended": "DTL",
       "travelDecision": "travel",
-      "duration": 61,
-      "originalDuration": 95,
+      "duration": 58,
+      "originalDuration": 92,
       "crowd": "low",
       "provider": "local",
       "checks": {
@@ -70,11 +70,11 @@
     {
       "persona": "rachel",
       "scenario": "rain",
-      "elapsedMs": 105,
+      "elapsedMs": 910,
       "recommended": "EWL",
-      "travelDecision": "wait",
-      "duration": 63,
-      "originalDuration": 63,
+      "travelDecision": "travel",
+      "duration": 59,
+      "originalDuration": 59,
       "crowd": "moderate",
       "provider": "local",
       "checks": {
@@ -91,11 +91,11 @@
     {
       "persona": "rachel",
       "scenario": "crowded",
-      "elapsedMs": 91,
+      "elapsedMs": 761,
       "recommended": "EWL",
       "travelDecision": "travel",
-      "duration": 58,
-      "originalDuration": 58,
+      "duration": 55,
+      "originalDuration": 55,
       "crowd": "high",
       "provider": "local",
       "checks": {
@@ -112,30 +112,9 @@
     {
       "persona": "arjun",
       "scenario": "normal",
-      "elapsedMs": 764,
+      "elapsedMs": 4713,
       "recommended": "NEL → CCL",
       "travelDecision": "travel",
-      "duration": 60,
-      "originalDuration": 60,
-      "crowd": "moderate",
-      "provider": "local",
-      "checks": {
-        "demoLabel": true,
-        "firstAndLastAccessLeg": true,
-        "geometry": true,
-        "safeTravelDecision": true,
-        "uncertaintyShown": true,
-        "riskNotProbability": true,
-        "groundedRouteId": true,
-        "boundedResponse": true
-      }
-    },
-    {
-      "persona": "arjun",
-      "scenario": "rain",
-      "elapsedMs": 101,
-      "recommended": "NEL → CCL",
-      "travelDecision": "wait",
       "duration": 65,
       "originalDuration": 65,
       "crowd": "moderate",
@@ -152,13 +131,34 @@
       }
     },
     {
+      "persona": "arjun",
+      "scenario": "rain",
+      "elapsedMs": 1310,
+      "recommended": "NEL → CCL",
+      "travelDecision": "travel",
+      "duration": 71,
+      "originalDuration": 71,
+      "crowd": "moderate",
+      "provider": "local",
+      "checks": {
+        "demoLabel": true,
+        "firstAndLastAccessLeg": true,
+        "geometry": true,
+        "safeTravelDecision": true,
+        "uncertaintyShown": true,
+        "riskNotProbability": true,
+        "groundedRouteId": true,
+        "boundedResponse": true
+      }
+    },
+    {
       "persona": "lim",
       "scenario": "normal",
-      "elapsedMs": 4458,
+      "elapsedMs": 3918,
       "recommended": "EWL",
       "travelDecision": "travel",
-      "duration": 56,
-      "originalDuration": 56,
+      "duration": 54,
+      "originalDuration": 54,
       "crowd": "moderate",
       "provider": "local",
       "checks": {
@@ -175,11 +175,11 @@
     {
       "persona": "lim",
       "scenario": "maintenance",
-      "elapsedMs": 1096,
-      "recommended": "EWL → CCL → Bus 196 → Bus 190",
+      "elapsedMs": 2284,
+      "recommended": "EWL → Bus 12",
       "travelDecision": "travel",
-      "duration": 85,
-      "originalDuration": 56,
+      "duration": 71,
+      "originalDuration": 54,
       "crowd": "moderate",
       "provider": "local",
       "checks": {

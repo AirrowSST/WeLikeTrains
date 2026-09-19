@@ -7,6 +7,7 @@ import {
 export const preferencesSchema = z.object({
   stepFree: z.boolean(),
   sheltered: z.boolean(),
+  shelterMode: z.enum(["prefer", "require"]).optional(),
   avoidCrowds: z.boolean(),
   cycling: z.boolean(),
   walkingSpeed: z.number().min(25).max(120),

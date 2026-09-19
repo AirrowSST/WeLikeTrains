@@ -128,8 +128,12 @@ describe("official data contracts", () => {
     const urls = fetcher.mock.calls.map((args) => String(args[0]));
     expect(urls.some((url) => url.includes("TrainServiceAlerts"))).toBe(true);
     expect(urls.some((url) => /RoadWorks/i.test(url))).toBe(false);
-    expect(result.feeds.some((feed) => /road works/i.test(feed.name))).toBe(false);
-    expect(result.notices.some((notice) => /RoadWorks/i.test(notice.source))).toBe(false);
+    expect(result.feeds.some((feed) => /road works/i.test(feed.name))).toBe(
+      false,
+    );
+    expect(
+      result.notices.some((notice) => /RoadWorks/i.test(notice.source)),
+    ).toBe(false);
   });
   it("keeps per-segment mitigations, direction and the separate advisory stream", () => {
     const data = {
@@ -375,6 +379,15 @@ describe("official data contracts", () => {
       walkingSpeed: 40,
       avoidCrowds: true,
       sheltered: true,
+      shelterMode: "require",
+    });
+    expect(extractPreferences("I prefer sheltered walks")).toMatchObject({
+      sheltered: true,
+      shelterMode: "prefer",
+    });
+    expect(extractPreferences("I don't need a sheltered route")).toMatchObject({
+      sheltered: false,
+      shelterMode: "prefer",
     });
     expect(extractPreferences("No cycling please")).toMatchObject({
       cycling: false,

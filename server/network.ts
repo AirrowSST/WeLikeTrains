@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { Coord, Preferences, Segment, TransitStop } from "../shared/types";
+import { shelterMode, shelterSummary } from "../shared/shelter";
 import { canonicalLine } from "../shared/catalog";
 import { listDataMallBusStops } from "./bus-network";
 import { joinOfficialBusRoutes, type BusReference } from "./bus-routing";
@@ -304,6 +305,7 @@ function buildNetwork() {
       components.push(component);
   }
   const componentByNode = new Map<number, number>();
+  const coveredComponentByNode = new Map<number, number>();
   const grid = new Map<string, number[]>();
   for (const [componentId, component] of components.entries()) {
     for (const id of component) {
@@ -314,6 +316,26 @@ function buildNetwork() {
       grid.get(key)!.push(id);
     }
   }
+  const coveredSeen = new Set<number>();
+  let coveredComponentId = 0;
+  for (const start of walk.keys()) {
+    if (
+      coveredSeen.has(start) ||
+      !walk.get(start)?.some((edge) => edge.covered)
+    )
+      continue;
+    const component = [start];
+    coveredSeen.add(start);
+    for (let i = 0; i < component.length; i++)
+      for (const edge of walk.get(component[i]) ?? []) {
+        if (!edge.covered || coveredSeen.has(edge.to)) continue;
+        coveredSeen.add(edge.to);
+        component.push(edge.to);
+      }
+    for (const id of component)
+      coveredComponentByNode.set(id, coveredComponentId);
+    coveredComponentId++;
+  }
   return {
     coords,
     walk,
@@ -322,6 +344,7 @@ function buildNetwork() {
     connectors,
     grid,
     componentByNode,
+    coveredComponentByNode,
     timestamp: raw.timestamp,
     busCoverage,
   };
@@ -367,20 +390,29 @@ export function listTransitStops(): TransitStop[] {
   );
   return mapTransitStops;
 }
-const walkingCache = new Map<string, ReturnType<typeof calculateWalkingPath>>();
+type WalkingPath = {
+  geometry: Coord[];
+  distance: number;
+  sheltered: boolean;
+  coveredDistance: number;
+  exposedDistance: number;
+  unknownDistance: number;
+  shelterCoverage: number;
+  shelterSections: NonNullable<Segment["shelterSections"]>;
+  verified: boolean;
+  instructions: string;
+};
+
+const REQUIRED_SHELTER_UNKNOWN_TOLERANCE_METRES = 15;
+const walkingCache = new Map<string, WalkingPath | null>();
 export function walkingPath(
   from: Coord,
   to: Coord,
   preferences: Preferences,
   cycle = false,
-): {
-  geometry: Coord[];
-  distance: number;
-  sheltered: boolean;
-  verified: boolean;
-  instructions: string;
-} | null {
-  const key = `${from.join(",")}:${to.join(",")}:${preferences.stepFree}:${preferences.sheltered}:${cycle}`;
+): WalkingPath | null {
+  const requestedShelter = cycle ? "none" : shelterMode(preferences);
+  const key = `${from.join(",")}:${to.join(",")}:${preferences.stepFree}:${requestedShelter}:${cycle}`;
   if (walkingCache.has(key)) return walkingCache.get(key)!;
   const result = calculateWalkingPath(from, to, preferences, cycle);
   if (walkingCache.size > 4000) walkingCache.clear();
@@ -392,23 +424,24 @@ function calculateWalkingPath(
   to: Coord,
   preferences: Preferences,
   cycle = false,
-): {
-  geometry: Coord[];
-  distance: number;
-  sheltered: boolean;
-  verified: boolean;
-  instructions: string;
-} | null {
+): WalkingPath | null {
+  const requestedShelter = cycle ? "none" : shelterMode(preferences);
   if (distance(from, to) < 1)
     return {
       geometry: [from, to],
       distance: 0,
       sheltered: false,
+      coveredDistance: 0,
+      exposedDistance: 0,
+      unknownDistance: 0,
+      shelterCoverage: 1,
+      shelterSections: [],
       verified: true,
       instructions:
         "Already at this location; no walking connection is needed.",
     };
-  const { coords, walk, grid, componentByNode } = getNetwork();
+  const { coords, walk, grid, componentByNode, coveredComponentByNode } =
+    getNetwork();
   const nearestByComponent = (c: Coord) => {
     const nearest = new Map<number, { id: number; distance: number }>();
     const gx = Math.floor(c[0] * 500),
@@ -417,7 +450,10 @@ function calculateWalkingPath(
       for (let y = -2; y <= 2; y++)
         for (const n of grid.get(`${gx + x},${gy + y}`) ?? []) {
           const d = distance(c, coords.get(n)!);
-          const component = componentByNode.get(n);
+          const component =
+            requestedShelter === "require"
+              ? coveredComponentByNode.get(n)
+              : componentByNode.get(n);
           if (
             component === undefined ||
             (cycle && !walk.get(n)?.some((e) => e.cycle)) ||
@@ -445,6 +481,11 @@ function calculateWalkingPath(
   }
   if (!a || !b) return null;
   if (a.distance > 400 || b.distance > 400) return null;
+  if (
+    requestedShelter === "require" &&
+    a.distance + b.distance > REQUIRED_SHELTER_UNKNOWN_TOLERANCE_METRES
+  )
+    return null;
   const heap = new Heap<number>();
   heap.push(0, a.id);
   const costs = new Map([[a.id, 0]]);
@@ -462,14 +503,16 @@ function calculateWalkingPath(
       if (
         closed.has(e.to) ||
         (preferences.stepFree && e.steps) ||
-        (cycle && !e.cycle)
+        (cycle && !e.cycle) ||
+        (requestedShelter === "require" && !e.covered)
       )
         continue;
       // Weather and accessibility routing depend on this being a meaningful
       // preference: a mapped covered route can be longer, but should win over
       // a short exposed cut-through when shelter is requested.
       const next =
-        current + e.distance * (preferences.sheltered && !e.covered ? 1.55 : 1);
+        current +
+        e.distance * (requestedShelter === "prefer" && !e.covered ? 1.55 : 1);
       if (next < (costs.get(e.to) ?? Infinity)) {
         costs.set(e.to, next);
         prev.set(e.to, { node: id, edge: e });
@@ -490,6 +533,43 @@ function calculateWalkingPath(
   }
   const metres =
     edges.reduce((s, e) => s + e.distance, 0) + a.distance + b.distance;
+  const coveredDistance = edges
+    .filter((edge) => edge.covered)
+    .reduce((sum, edge) => sum + edge.distance, 0);
+  const exposedDistance = edges
+    .filter((edge) => !edge.covered)
+    .reduce((sum, edge) => sum + edge.distance, 0);
+  const unknownDistance = a.distance + b.distance;
+  if (
+    requestedShelter === "require" &&
+    (exposedDistance > 0 ||
+      unknownDistance > REQUIRED_SHELTER_UNKNOWN_TOLERANCE_METRES)
+  )
+    return null;
+  const shelterSections: NonNullable<Segment["shelterSections"]> = [];
+  const addShelterSection = (
+    status: NonNullable<Segment["shelterSections"]>[number]["status"],
+    geometry: Coord[],
+    sectionDistance: number,
+  ) => {
+    if (sectionDistance < 0.5 || geometry.length < 2) return;
+    const previous = shelterSections.at(-1);
+    if (previous?.status === status) {
+      previous.geometry.push(...geometry.slice(1));
+      previous.distance += sectionDistance;
+      return;
+    }
+    shelterSections.push({ status, geometry, distance: sectionDistance });
+  };
+  addShelterSection("unknown", [from, coords.get(a.id)!], a.distance);
+  edges.forEach((edge, index) =>
+    addShelterSection(
+      edge.covered ? "covered" : "exposed",
+      [coords.get(ids[index])!, coords.get(ids[index + 1])!],
+      edge.distance,
+    ),
+  );
+  addShelterSection("unknown", [coords.get(b.id)!, to], b.distance);
   const names = [
     ...new Set(
       edges
@@ -497,13 +577,22 @@ function calculateWalkingPath(
         .filter((n) => !["Local path", "Footpath"].includes(n)),
     ),
   ];
-  return {
+  const result: WalkingPath = {
     geometry: [from, ...ids.map((n) => coords.get(n)!), to],
     distance: metres,
-    sheltered: edges.length > 0 && edges.every((e) => e.covered),
+    sheltered:
+      coveredDistance > 0 && exposedDistance < 0.5 && unknownDistance < 0.5,
+    coveredDistance,
+    exposedDistance,
+    unknownDistance,
+    shelterCoverage: metres > 0 ? coveredDistance / metres : 1,
+    shelterSections,
     verified: false,
     instructions: `${cycle ? "Cycle" : "Walk"} ${Math.round(metres)} m${names.length ? " via " + names.slice(0, 3).join(", ") : " along the mapped footpaths"}. ${a.distance > 50 || b.distance > 50 ? "Station/building access connection is approximate. " : ""}${preferences.stepFree ? "Mapped stairs are excluded; lifts, kerbs and station access still need confirmation." : ""}`,
   };
+  if (!cycle)
+    result.instructions += ` Shelter: ${shelterSummary({ ...result, mode: "walk" })}.`;
+  return result;
 }
 export function walkSegment(
   from: Coord,
@@ -514,7 +603,7 @@ export function walkSegment(
   cycle = false,
 ): Segment | null {
   let path = walkingPath(from, to, preferences, cycle);
-  if (!path && !cycle) {
+  if (!path && !cycle && shelterMode(preferences) !== "require") {
     const connectorDistance = distance(from, to);
     // OSM occasionally maps a destination entrance and its adjacent stop as
     // separate, unjoined features. Permit only a short first/last connector
@@ -524,6 +613,17 @@ export function walkSegment(
         geometry: [from, to],
         distance: connectorDistance,
         sheltered: false,
+        coveredDistance: 0,
+        exposedDistance: 0,
+        unknownDistance: connectorDistance,
+        shelterCoverage: 0,
+        shelterSections: [
+          {
+            status: "unknown",
+            geometry: [from, to],
+            distance: connectorDistance,
+          },
+        ],
         verified: false,
         instructions: `Walk about ${Math.round(connectorDistance)} m from ${fromName} to ${toName}. This short access connection is approximate; confirm the entrance and crossing on arrival.`,
       };
@@ -548,6 +648,15 @@ export function walkSegment(
     affected: false,
     delay: 0,
     sheltered: path.sheltered,
+    ...(cycle
+      ? {}
+      : {
+          coveredDistance: path.coveredDistance,
+          exposedDistance: path.exposedDistance,
+          unknownDistance: path.unknownDistance,
+          shelterCoverage: path.shelterCoverage,
+          shelterSections: path.shelterSections,
+        }),
     accessibility: "unknown",
     instructions: path.instructions,
     source:

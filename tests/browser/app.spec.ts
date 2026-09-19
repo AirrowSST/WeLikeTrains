@@ -8,71 +8,74 @@ test.afterEach(async ({ page }) => {
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("Google Places UI selection supplies coordinates to the local planner", async ({
+test("Wayce place search supplies Google coordinates to the local planner", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.addInitScript(() => {
-    class MockBasicPlaceAutocompleteElement extends HTMLElement {
-      placeholder = "";
-      includedRegionCodes: string[] = [];
-      requestedLanguage = "";
-      requestedRegion = "";
-      constructor() {
-        super();
-        const input = document.createElement("input");
-        this.attachShadow({ mode: "open" }).append(input);
-      }
-    }
-    class MockPlaceDetailsCompactElement extends HTMLElement {
-      place?: {
-        id: string;
-        location: { lat: number; lng: number };
-      };
-    }
-    class MockPlaceDetailsRequestElement extends HTMLElement {
-      set place(id: string) {
-        queueMicrotask(() => {
-          const details = this.parentElement as
-            | MockPlaceDetailsCompactElement
-            | null;
-          if (!details) return;
-          details.place = {
-            id,
-            location: { lat: 1.29027, lng: 103.851959 },
-          };
-          details.dispatchEvent(new Event("gmp-load"));
-        });
-      }
-    }
-    if (!customElements.get("gmp-basic-place-autocomplete"))
-      customElements.define(
-        "gmp-basic-place-autocomplete",
-        MockBasicPlaceAutocompleteElement,
-      );
-    if (!customElements.get("gmp-place-details-compact"))
-      customElements.define(
-        "gmp-place-details-compact",
-        MockPlaceDetailsCompactElement,
-      );
-    if (!customElements.get("gmp-place-details-place-request"))
-      customElements.define(
-        "gmp-place-details-place-request",
-        MockPlaceDetailsRequestElement,
-      );
-    if (!customElements.get("gmp-place-standard-content"))
-      customElements.define(
-        "gmp-place-standard-content",
-        class extends HTMLElement {},
-      );
+    class MockAutocompleteSessionToken {}
     const browserWindow = window as unknown as {
       google?: {
         maps: { importLibrary: () => Promise<Record<string, unknown>> };
       };
+      googleAutocompleteRequest?: Record<string, unknown>;
     };
     browserWindow.google = {
       maps: {
         importLibrary: async () => ({
-          BasicPlaceAutocompleteElement: MockBasicPlaceAutocompleteElement,
+          AutocompleteSessionToken: MockAutocompleteSessionToken,
+          AutocompleteSuggestion: {
+            fetchAutocompleteSuggestions: async (request: {
+              input: string;
+              includedRegionCodes: string[];
+              locationRestriction: Record<string, number>;
+              region: string;
+              sessionToken: unknown;
+            }) => {
+              browserWindow.googleAutocompleteRequest = {
+                input: request.input,
+                includedRegionCodes: request.includedRegionCodes,
+                locationRestriction: request.locationRestriction,
+                region: request.region,
+                hasSessionToken:
+                  request.sessionToken instanceof MockAutocompleteSessionToken,
+              };
+              const selectedPlace: {
+                id: string;
+                displayName?: string;
+                formattedAddress?: string;
+                location?: { lat: number; lng: number };
+                fetchFields: () => Promise<void>;
+              } = {
+                id: "ChIJ-gallery-test",
+                fetchFields: async () => {
+                  selectedPlace.displayName = "National Gallery Singapore";
+                  selectedPlace.formattedAddress =
+                    "1 St Andrew's Road, Singapore";
+                  selectedPlace.location = {
+                    lat: 1.29027,
+                    lng: 103.851959,
+                  };
+                },
+              };
+              return {
+                suggestions: [
+                  {
+                    placePrediction: {
+                      placeId: selectedPlace.id,
+                      mainText: { text: "National Gallery Singapore" },
+                      secondaryText: {
+                        text: "1 St Andrew's Road, Singapore",
+                      },
+                      text: {
+                        text: "National Gallery Singapore, Singapore",
+                      },
+                      toPlace: () => selectedPlace,
+                    },
+                  },
+                ],
+              };
+            },
+          },
         }),
       },
     };
@@ -87,26 +90,51 @@ test("Google Places UI selection supplies coordinates to the local planner", asy
   );
   await useDeterministicPlans(page);
   await page.goto("/");
+
   const destination = page.locator("#place-B");
-  await expect(destination).toHaveCount(1);
-  await destination.evaluate((element) => {
-    const picker = element as HTMLElement;
-    const input = picker.shadowRoot!.querySelector("input")!;
-    input.value = "National Gallery Singapore";
-    input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
-    const selected = new Event("gmp-select");
-    Object.defineProperty(selected, "place", {
-      value: { id: "ChIJ-gallery-test" },
-    });
-    picker.dispatchEvent(selected);
+  await expect(destination).toBeVisible();
+  await expect(
+    page.locator("gmp-basic-place-autocomplete, gmp-place-details-compact"),
+  ).toHaveCount(0);
+  await destination.fill("National Gallery");
+  await expect(
+    page.getByRole("option").getByRole("button", {
+      name: /National Gallery Singapore/,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("Results from Google Maps")).toBeVisible();
+  await page.screenshot({
+    path: `test-results/${testInfo.project.name}-google-place-search.png`,
   });
+  await page
+    .getByRole("option")
+    .getByRole("button", { name: /National Gallery Singapore/ })
+    .click();
+
   await expect(page.locator(".place-field").nth(1)).toContainText(
-    "Google Places · online result",
+    "1 St Andrew's Road, Singapore · Google Maps",
   );
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            googleAutocompleteRequest: Record<string, unknown>;
+          }
+        ).googleAutocompleteRequest,
+    ),
+  ).toMatchObject({
+    input: "National Gallery",
+    includedRegionCodes: ["sg"],
+    region: "sg",
+    hasSessionToken: true,
+  });
 
   const selectedPlan = page.waitForRequest((request) => {
     if (!request.url().endsWith("/api/plan")) return false;
-    return request.postDataJSON()?.destination?.id === "google:ChIJ-gallery-test";
+    return (
+      request.postDataJSON()?.destination?.id === "google:ChIJ-gallery-test"
+    );
   });
   await page.getByRole("button", { name: "Find my best route" }).click();
   const body = (await selectedPlan).postDataJSON();
@@ -117,7 +145,6 @@ test("Google Places UI selection supplies coordinates to the local planner", asy
     lon: 103.851959,
   });
 });
-
 const transparentPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
@@ -551,8 +578,9 @@ test("plays profile timelines, jumps through recovery and restores the guest", a
     "disruption and heavy rain begin",
   );
   await expect(page.locator(".recommendation")).toContainText(
-    "Wait for the heavy weather",
+    "Bring an umbrella",
   );
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   await page.getByLabel("Jump to timeline event").selectOption("40");
   await expect(page.locator(".timeline-controls")).toContainText(
     "Service and lifts restored",
@@ -807,6 +835,11 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
     0,
   );
   await expect(preferencesPage).not.toHaveCSS("border-radius", "17px");
+  const shelterPreference = page.getByLabel("Sheltered walking preference");
+  await expect(shelterPreference).toHaveValue("prefer");
+  await shelterPreference.selectOption("require");
+  await expect(shelterPreference).toHaveValue("require");
+  await shelterPreference.selectOption("prefer");
   const preferencesBounds = await preferencesPage.boundingBox();
   const shellBounds = await page.locator(".app-shell").boundingBox();
   expect(preferencesBounds!.x).toBeCloseTo(shellBounds!.x, 0);
@@ -842,6 +875,15 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   ).toBe(true);
   await expect(page.locator(".route-mode-marker.walk").first()).toBeVisible();
   await expect(page.locator(".route-mode-marker.rail").first()).toBeVisible();
+  await expect
+    .poll(() => page.locator(".walk-shelter-section.exposed").count())
+    .toBeGreaterThan(0);
+  await expect
+    .poll(() => page.locator(".walk-shelter-section.unknown").count())
+    .toBeGreaterThan(0);
+  await expect(page.locator(".walk-shelter-label.exposed")).toBeVisible();
+  await expect(page.locator(".shelter-map-legend")).toContainText("Exposed");
+  await expect(page.locator(".shelter-map-legend")).toContainText("Unknown");
   await expect(page.locator(".map-mode-key")).toContainText("Walk");
   await expect(page.locator(".map-mode-key")).toContainText("Train");
   await page.screenshot({
@@ -958,7 +1000,9 @@ test("opens bus details from the path on a narrow phone", async ({ page }) => {
   await expect(details).toContainText("Crowding");
   await expect(details).toContainText("Bus occupancy:");
   await expect(details).toContainText("Served stops highlighted");
-  await expect(page.locator(".timeline")).toContainText("Served stops highlighted");
+  await expect(page.locator(".timeline")).toContainText(
+    "Served stops highlighted",
+  );
   await expect(
     page.locator(".timeline .segment-crowding").first(),
   ).toContainText("Bus occupancy:");
@@ -1286,7 +1330,7 @@ test("compares original, affected and revised routes with complete crowd labels"
     currentPlan()!.advice,
   );
 });
-test("tells the commuter to wait when heavy weather blocks every route", async ({
+test("keeps Rachel's rainy journey usable with visible walking precautions", async ({
   page,
 }) => {
   await useDeterministicPlans(page, true);
@@ -1294,17 +1338,19 @@ test("tells the commuter to wait when heavy weather blocks every route", async (
   await openDeveloperDemos(page);
   await startTimelineAt(page, 0);
 
+  await expect(page.locator(".recommendation")).toContainText("Routes · Use");
   await expect(page.locator(".recommendation")).toContainText(
-    "Route unavailable",
+    "Bring an umbrella",
   );
+  await expect(page.locator(".recommendation")).toContainText("slippery");
   await expect(page.locator(".recommendation")).toContainText(
-    "Wait for the heavy weather to pass",
+    "visibility may be reduced",
   );
-  await expect(page.locator(".route-card").first()).toContainText(
+  await expect(page.locator(".route-card").first()).not.toContainText(
     "WAIT FOR SAFER CONDITIONS",
   );
   await page.locator(".route-select").first().click();
-  await expect(startJourneyButton(page)).toHaveCount(0);
+  await expect(startJourneyButton(page)).toBeVisible();
 });
 test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
   await useDeterministicPlans(page);
@@ -2108,9 +2154,7 @@ test("starts with automatic location, a Where to prompt, and leave now", async (
   await expect(page.locator(".weather-status time")).toHaveText(
     /\d{1,2}:\d{2}\s*(am|pm)/i,
   );
-  await page
-    .getByRole("button", { name: /Open weather details/ })
-    .click();
+  await page.getByRole("button", { name: /Open weather details/ }).click();
   const weatherDialog = page.getByRole("dialog", {
     name: "Weather right now",
   });
@@ -2196,12 +2240,8 @@ test("fits a narrow phone without horizontal overflow", async ({ page }) => {
     ),
   ).toBe(true);
   const topStatus = (await page.locator(".top-status").boundingBox())!;
-  const weatherStatus = (await page
-    .locator(".weather-status")
-    .boundingBox())!;
-  const pointsCounter = (await page
-    .locator(".points-counter")
-    .boundingBox())!;
+  const weatherStatus = (await page.locator(".weather-status").boundingBox())!;
+  const pointsCounter = (await page.locator(".points-counter").boundingBox())!;
   const alertControl = (await page
     .locator(".map-controls .icon-button")
     .first()
