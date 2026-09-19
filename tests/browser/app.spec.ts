@@ -255,7 +255,13 @@ async function useDeterministicPlans(
   return () => latestTemplate;
 }
 function startJourneyButton(page: Page) {
-  return page.getByRole("button", { name: "Start", exact: true });
+  return page.getByRole("button", { name: /^Start / }).first();
+}
+async function selectFirstRoute(page: Page) {
+  const route = page.locator(".route-select").first();
+  await expect(route).toBeEnabled();
+  await route.click();
+  return startJourneyButton(page);
 }
 
 test("shows planning failures beside the route action", async ({ page }) => {
@@ -297,6 +303,176 @@ test("keeps the route action compact in a very short visual viewport", async ({
   expect(action.height).toBeLessThanOrEqual(42);
 });
 
+test("shows a route-specific start action only after explicit selection", async ({
+  page,
+}) => {
+  await useDeterministicPlans(page);
+  await page.setViewportSize({ width: 320, height: 750 });
+  await page.goto("/");
+  await expect(page.locator(".route-options")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(startJourneyButton(page)).toHaveCount(0);
+
+  const routes = page.locator(".route-card");
+  const first = routes.first();
+  const firstChoice = first.locator(".route-select");
+  const firstLabel = await firstChoice.getAttribute("aria-label");
+  const firstTitle = firstLabel!
+    .replace(/^View /, "")
+    .replace(/, \d+ minutes$/, "");
+  await firstChoice.click();
+
+  await expect(first).toHaveClass(/selected/);
+  await expect(
+    first.getByRole("button", { name: `Start ${firstTitle}` }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Start / })).toHaveCount(1);
+
+  if ((await routes.count()) > 1) {
+    const second = routes.nth(1);
+    await second.locator(".route-select").click();
+    await expect(first.getByRole("button", { name: /^Start / })).toHaveCount(0);
+    await expect(second.getByRole("button", { name: /^Start / })).toBeVisible();
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("makes the active journey map the hero with guidance docked below", async ({
+  page,
+}, testInfo) => {
+  await useDeterministicPlans(page);
+  if (testInfo.project.name === "mobile-chromium") {
+    await page.setViewportSize({ width: 320, height: 750 });
+  }
+  await page.goto("/");
+  await expect(page.locator(".route-options")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+
+  const start = await selectFirstRoute(page);
+  await start.click();
+
+  const dialog = page.locator(".journey-navigation-modal");
+  const map = dialog.getByRole("region", {
+    name: /showing your active navigation route/,
+  });
+  const guidance = dialog.getByRole("region", {
+    name: "One step at a time guidance",
+  });
+  await expect(dialog).toBeVisible();
+  await expect(map).toBeVisible();
+  await expect(map).toHaveAttribute("data-ready", "true");
+  await expect(guidance).toBeVisible();
+  await expect(guidance).toContainText("STEP 1 OF");
+  await expect(
+    guidance.getByRole("button", { name: "I’m here" }),
+  ).toBeVisible();
+
+  const activeLeg = dialog.locator(".navigation-active");
+  await expect(activeLeg).toHaveCount(1);
+  const [dialogBox, mapBox, guidanceBox, activeLegBox] = await Promise.all([
+    dialog.boundingBox(),
+    map.boundingBox(),
+    guidance.boundingBox(),
+    activeLeg.boundingBox(),
+  ]);
+  expect(dialogBox).not.toBeNull();
+  expect(mapBox).not.toBeNull();
+  expect(guidanceBox).not.toBeNull();
+  expect(activeLegBox).not.toBeNull();
+  expect(dialogBox!.width).toBeLessThanOrEqual(480);
+  expect(mapBox!.width).toBeGreaterThanOrEqual(dialogBox!.width - 2);
+  expect(mapBox!.height).toBeGreaterThanOrEqual(dialogBox!.height - 2);
+  expect(guidanceBox!.height).toBeLessThan(dialogBox!.height * 0.55);
+  expect(
+    Math.abs(
+      guidanceBox!.y + guidanceBox!.height - (dialogBox!.y + dialogBox!.height),
+    ),
+  ).toBeLessThanOrEqual(2);
+  expect(activeLegBox!.y).toBeLessThan(guidanceBox!.y);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+
+  await page.screenshot({
+    path: `test-results/${test.info().project.name}-active-navigation.png`,
+  });
+});
+
+test("drags and keyboard-resizes the active journey guidance sheet", async ({
+  page,
+  context,
+}) => {
+  await useDeterministicPlans(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".route-options")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const start = await selectFirstRoute(page);
+  await start.click();
+
+  const stage = page.locator(".journey-navigation-stage");
+  const sheet = page.locator(".active-journey-sheet");
+  const map = stage.locator(".map-wrap");
+  const handle = page.getByRole("button", {
+    name: /Resize One step at a time panel/,
+  });
+  await expect(handle).toHaveAttribute("data-sheet-snap", "middle");
+  const initialSheetHeight = (await sheet.boundingBox())!.height;
+  const initialMapHeight = (await map.boundingBox())!.height;
+  const handleBox = (await handle.boundingBox())!;
+  const touchX = handleBox.x + handleBox.width / 2;
+  const touchY = handleBox.y + handleBox.height / 2;
+
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x: touchX, y: touchY, id: 1 }],
+  });
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [{ x: touchX, y: touchY - 96, id: 1 }],
+  });
+  await expect(stage).toHaveClass(/sheet-dragging/);
+  await expect
+    .poll(async () => (await sheet.boundingBox())!.height)
+    .toBeCloseTo(initialSheetHeight + 96, 0);
+  expect((await map.boundingBox())!.height).toBeCloseTo(initialMapHeight, 0);
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+
+  await expect(handle).toHaveAttribute("data-sheet-snap", "expanded");
+  await expect
+    .poll(async () => (await sheet.boundingBox())!.height)
+    .toBeCloseTo(initialMapHeight, 0);
+  await handle.press("ArrowDown");
+  await expect(handle).toHaveAttribute("data-sheet-snap", "middle");
+  await expect
+    .poll(async () => (await sheet.boundingBox())!.height)
+    .toBeCloseTo(initialSheetHeight, 0);
+  await handle.press("End");
+  await expect(handle).toHaveAttribute("data-sheet-snap", "collapsed");
+  await expect
+    .poll(async () => (await sheet.boundingBox())!.height)
+    .toBeLessThanOrEqual(73);
+  await handle.press("Home");
+  await expect(handle).toHaveAttribute("data-sheet-snap", "expanded");
+  await expect(page.getByRole("button", { name: "I’m here" })).toBeVisible();
+});
+
 async function startTimelineAt(page: Page, minute: number) {
   await page.getByLabel("Demo timeline preset").selectOption("eventful");
   await page.getByRole("button", { name: "Start demo" }).click();
@@ -321,7 +497,7 @@ test("plays profile timelines, jumps through recovery and restores the guest", a
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 320, height: 750 });
   await page.goto("/");
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   const guest = await page.evaluate(() => localStorage.getItem("wlt-guest-v2"));
   await openDeveloperDemos(page);
   await expect(page.getByLabel("Demo timeline preset")).toHaveValue("control");
@@ -339,7 +515,7 @@ test("plays profile timelines, jumps through recovery and restores the guest", a
   await expect(page.locator(".timeline-controls")).toContainText(
     "Service and lifts restored",
   );
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   await page.getByRole("button", { name: "Restart timeline" }).click();
   await expect(page.getByLabel("Timeline minute")).toHaveValue("0");
   await page.getByLabel("Timeline speed").selectOption("60");
@@ -481,7 +657,7 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
       };
     }),
   ).toEqual({ family: "Satoshi, sans-serif", loaded: true });
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   const startButtonBox = await startJourneyButton(page).boundingBox();
   const directionsBox = await page
     .getByRole("heading", { name: "Directions" })
@@ -639,7 +815,7 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   await expect(page.locator(".map-mode-key")).not.toContainText("Rain area");
   await page.getByRole("button", { name: "Save route", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("saved");
-  await startJourneyButton(page).click();
+  await (await selectFirstRoute(page)).click();
   await expect(page.getByRole("dialog")).toContainText("STEP 1");
   await page.getByRole("button", { name: "I’m here" }).click();
   await expect(page.getByRole("dialog")).toContainText("STEP 2");
@@ -1013,12 +1189,14 @@ test("tells the commuter to wait when heavy weather blocks every route", async (
   await expect(page.locator(".route-card").first()).toContainText(
     "WAIT FOR SAFER CONDITIONS",
   );
-  await expect(startJourneyButton(page)).toBeDisabled();
+  await page.locator(".route-select").first().click();
+  await expect(startJourneyButton(page)).toHaveCount(0);
 });
 test("mobile interface passes automated WCAG A/AA checks", async ({ page }) => {
   await useDeterministicPlans(page);
   await page.goto("/");
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(startJourneyButton(page)).toHaveCount(0);
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   await expect(page.locator(".route-options")).toHaveAttribute(
     "aria-busy",
     "false",
@@ -1072,9 +1250,11 @@ test("bell shows only service-disruption alerts", async ({ page }) => {
   await page.goto("/");
   await openDeveloperDemos(page);
   await startTimelineAt(page, 0);
-  await expect(startJourneyButton(page)).toBeEnabled();
-
-  await page.getByRole("button", { name: "View disruption alerts" }).click();
+  const alertsButton = page.getByRole("button", {
+    name: "View disruption alerts",
+  });
+  await expect(alertsButton).toBeEnabled();
+  await alertsButton.click();
   const dialog = page.getByRole("dialog", { name: "Service disruptions" });
   await expect(dialog).toContainText("SIMULATED service disruption");
   await expect(dialog).toContainText("DISRUPTION");
@@ -1151,7 +1331,7 @@ test("resizes the mobile journey sheet by drag and keyboard", async ({
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
 
   const handle = page.getByRole("button", { name: /Resize journey panel/ });
   await expect(handle).toBeVisible();
@@ -1161,9 +1341,6 @@ test("resizes the mobile journey sheet by drag and keyboard", async ({
   const initialMapHeight = (await map.boundingBox())!.height;
   const initialHeight = (await sheet.boundingBox())!.height;
   const dragSurface = page.locator(".planner-card .sheet-drag-surface");
-  const dragSurfaceBox = await dragSurface.boundingBox();
-  const dragX = dragSurfaceBox!.x + dragSurfaceBox!.width / 3;
-  const dragStartY = dragSurfaceBox!.y + dragSurfaceBox!.height / 2;
 
   const handleBox = await handle.boundingBox();
   const touchX = handleBox!.x + handleBox!.width / 2;
@@ -1192,6 +1369,18 @@ test("resizes the mobile journey sheet by drag and keyboard", async ({
     .poll(async () => (await sheet.boundingBox())!.height)
     .toBeCloseTo(initialHeight, 0);
 
+  await dragSurface.scrollIntoViewIfNeeded();
+  const dragSurfaceBox = await dragSurface.boundingBox();
+  const dragX = dragSurfaceBox!.x + dragSurfaceBox!.width / 3;
+  const dragStartY = dragSurfaceBox!.y + dragSurfaceBox!.height / 2;
+  expect(
+    await page.evaluate(
+      ({ x, y }) =>
+        document.elementFromPoint(x, y)?.closest(".sheet-drag-surface")
+          ?.className,
+      { x: dragX, y: dragStartY },
+    ),
+  ).toContain("sheet-drag-surface");
   await page.mouse.move(dragX, dragStartY);
   await page.mouse.down();
   for (const delta of [-60, -120, -180]) {
@@ -1211,7 +1400,7 @@ test("resizes the mobile journey sheet by drag and keyboard", async ({
   expect((await map.boundingBox())!.height).toBeCloseTo(initialMapHeight, 0);
   await expect
     .poll(async () => (await page.locator(".planner-card").boundingBox())!.y)
-    .toBeLessThan(75);
+    .toBeLessThan(77);
   const showMap = page.getByRole("button", {
     name: "Show map and collapse journey panel",
   });
@@ -1306,7 +1495,7 @@ test("keeps the draggable phone sheet and full-width map on wide screens", async
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.goto("/");
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
 
   const handle = page.getByRole("button", { name: /Resize journey panel/ });
   await expect(handle).toBeVisible();
@@ -1429,7 +1618,7 @@ test("shows the companion service error when a request is rejected", async ({
     });
   });
   await page.goto("/");
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   await page
     .getByRole("button", { name: "A little help for the journey" })
     .click();
@@ -1491,7 +1680,7 @@ test("shows companion data agreement once and lets Preferences revoke it", async
 
   await page.getByRole("button", { name: "Close dialog" }).click();
   await page.reload();
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   await page.getByRole("button", { name: "Open Chatbot" }).click();
   await expect(agreement).toHaveCount(0);
   await page.getByRole("button", { name: "Close dialog" }).click();
@@ -1599,7 +1788,7 @@ test("shows labelled simulated location and follows manual demo progress", async
 }) => {
   await useDeterministicPlans(page);
   await page.goto("/");
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   await openDeveloperDemos(page);
   expect(
     await page.evaluate(
@@ -1615,7 +1804,7 @@ test("shows labelled simulated location and follows manual demo progress", async
     "aria-busy",
     "false",
   );
-  await startJourneyButton(page).click();
+  await (await selectFirstRoute(page)).click();
   await expect(page.getByRole("dialog")).toContainText(
     "Simulated position follows each confirmed step",
   );
@@ -1627,7 +1816,7 @@ test("keeps faux demo accounts isolated and restores the guest space", async ({
 }) => {
   await useDeterministicPlans(page);
   await page.goto("/");
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   await page.getByRole("button", { name: "Save route", exact: true }).click();
   await openDeveloperDemos(page);
   await page.getByRole("button", { name: /Mdm Lim/ }).click();
@@ -1849,7 +2038,7 @@ test("starts with automatic location, a Where to prompt, and leave now", async (
     "aria-busy",
     "false",
   );
-  await startJourneyButton(page).click();
+  await (await selectFirstRoute(page)).click();
   await page.getByRole("button", { name: "Start live location" }).click();
   await expect(page.getByRole("dialog")).toContainText("Live location on");
   await page.getByRole("button", { name: "Close dialog" }).click();
@@ -1880,7 +2069,7 @@ test("fits a narrow phone without horizontal overflow", async ({ page }) => {
   await useDeterministicPlans(page);
   await page.setViewportSize({ width: 320, height: 700 });
   await page.goto("/");
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   await openDeveloperDemos(page);
   await page.getByRole("button", { name: "Start demo" }).click();
   await expect(page.locator(".weather-status time")).toHaveText(/7:40\s*am/i);
@@ -1907,7 +2096,7 @@ test("fits a narrow phone without horizontal overflow", async ({ page }) => {
   expect(weatherStatus.y + weatherStatus.height).toBeLessThanOrEqual(
     pointsCounter.y,
   );
-  const button = await startJourneyButton(page).boundingBox();
+  const button = await (await selectFirstRoute(page)).boundingBox();
   expect(button!.height).toBeGreaterThanOrEqual(44);
 });
 test("supports large text and preserves a previously loaded journey offline", async ({
@@ -1916,7 +2105,7 @@ test("supports large text and preserves a previously loaded journey offline", as
 }) => {
   await useDeterministicPlans(page);
   await page.goto("/");
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   await page
     .getByRole("navigation")
     .getByRole("button", { name: "Account", exact: true })
@@ -1931,7 +2120,7 @@ test("supports large text and preserves a previously loaded journey offline", as
     .getByRole("navigation")
     .getByRole("button", { name: "Journey", exact: true })
     .click();
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
   });
@@ -1954,6 +2143,6 @@ test("supports large text and preserves a previously loaded journey offline", as
     1,
   );
   await expect(page.locator(".local-map-feature")).toHaveCount(0);
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(await selectFirstRoute(page)).toBeEnabled();
   await context.setOffline(false);
 });

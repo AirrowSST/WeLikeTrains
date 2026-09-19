@@ -186,11 +186,15 @@ function routeSegmentPopup(segment: Segment) {
 
 function centerMapOnLocation(map: L.Map, coord: L.LatLngExpression) {
   const mapRect = map.getContainer().getBoundingClientRect();
-  const sheetRect = map
-    .getContainer()
-    .closest(".journey-layout")
-    ?.querySelector<HTMLElement>(".journey-sheet")
-    ?.getBoundingClientRect();
+  const container = map.getContainer();
+  const sheet =
+    container
+      .closest(".journey-navigation-stage")
+      ?.querySelector<HTMLElement>(".active-journey-sheet") ??
+    container
+      .closest(".journey-layout")
+      ?.querySelector<HTMLElement>(".journey-sheet");
+  const sheetRect = sheet?.getBoundingClientRect();
   const coveredHeight = sheetRect
     ? Math.max(
         0,
@@ -216,6 +220,8 @@ export default function JourneyMap({
   onViewAlerts,
   hasAlerts,
   request,
+  navigationMode = false,
+  focusSegmentId,
 }: {
   plan: PlanResponse | null;
   selected: Journey | null;
@@ -223,6 +229,8 @@ export default function JourneyMap({
   onViewAlerts: () => void;
   hasAlerts: boolean;
   request: PlanRequest;
+  navigationMode?: boolean;
+  focusSegmentId?: string;
 }) {
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -282,7 +290,7 @@ export default function JourneyMap({
     // served stops with a deliberately thin dotted schematic connector, not a
     // depiction of the roads travelled.
     L.polyline(
-      direction.stops.map((stop) => [stop.lat, stop.lon]),
+      direction.stops.map((stop) => L.latLng(stop.lat, stop.lon)),
       {
         className: "bus-service-schematic",
         color: "#6852b8",
@@ -608,7 +616,7 @@ export default function JourneyMap({
     segmentPaths.current.clear();
     activeSegmentId.current = segmentToRestore;
     const journey = selected ?? plan.recommended;
-    const comparing = journey.id !== plan.original.id;
+    const comparing = !navigationMode && journey.id !== plan.original.id;
     if (comparing) {
       plan.original.segments.forEach((segment) => {
         L.polyline(segment.geometry, {
@@ -703,6 +711,7 @@ export default function JourneyMap({
     }
     journey.segments.forEach((s) => {
       const schematicBus = s.mode === "bus" && s.geometryKind === "schematic";
+      const focused = navigationMode && s.id === focusSegmentId;
       const issues = s.issues ?? [];
       const severe =
         issues.includes("flood") || issues.includes("road-closure");
@@ -777,18 +786,18 @@ export default function JourneyMap({
       }
       L.polyline(s.geometry, {
         color: "#fff",
-        weight: s.mode === "walk" ? 8 : 11,
+        weight: focused ? 15 : s.mode === "walk" ? 8 : 11,
         opacity: 0.9,
         interactive: false,
       }).addTo(group);
       const routeWeight = s.mode === "walk" ? 4 : s.mode === "rail" ? 7 : 6;
-      const visibleClassName = comparing
-        ? `route-selected route-revised segment-${s.mode}`
-        : `route-selected segment-${s.mode}`;
+      const visibleClassName = `${
+        comparing ? "route-selected route-revised" : "route-selected"
+      } segment-${s.mode}${focused ? " navigation-active" : ""}`;
       const visiblePath = L.polyline(s.geometry, {
         color: colour,
-        weight: routeWeight,
-        opacity: 1,
+        weight: focused ? routeWeight + 3 : routeWeight,
+        opacity: navigationMode && focusSegmentId && !focused ? 0.42 : 1,
         className: visibleClassName,
         dashArray:
           s.geometryKind === "schematic"
@@ -921,10 +930,18 @@ export default function JourneyMap({
       activeSegmentId.current = null;
       activeSegmentPath.current = null;
     }
-    const points = [
-      ...journey.segments.flatMap((s) => s.geometry),
-      ...(comparing ? plan.original.segments.flatMap((s) => s.geometry) : []),
-    ];
+    const focusedSegment = journey.segments.find(
+      (segment) => segment.id === focusSegmentId,
+    );
+    const points =
+      navigationMode && focusedSegment?.geometry.length
+        ? focusedSegment.geometry
+        : [
+            ...journey.segments.flatMap((s) => s.geometry),
+            ...(comparing
+              ? plan.original.segments.flatMap((s) => s.geometry)
+              : []),
+          ];
     if (points.length) {
       const marker = (
         coord: [number, number],
@@ -959,12 +976,12 @@ export default function JourneyMap({
       );
       m.fitBounds(L.latLngBounds(points), {
         paddingTopLeft: [58, 84],
-        paddingBottomRight: [58, 110],
+        paddingBottomRight: [58, navigationMode ? 300 : 110],
         maxZoom: 15,
         animate: false,
       });
     }
-  }, [plan, selected]);
+  }, [focusSegmentId, navigationMode, plan, selected]);
   useEffect(() => {
     const m = map.current;
     const group = position.current;
@@ -1010,7 +1027,8 @@ export default function JourneyMap({
     }
   };
   const journey = selected ?? plan?.recommended;
-  const comparing = !!plan && !!journey && journey.id !== plan.original.id;
+  const comparing =
+    !navigationMode && !!plan && !!journey && journey.id !== plan.original.id;
   const showFullRoute = () => {
     const points = [
       ...(journey?.segments.flatMap((segment) => segment.geometry) ?? []),
@@ -1021,11 +1039,15 @@ export default function JourneyMap({
     if (!points.length || !map.current) return;
 
     const mapRect = map.current.getContainer().getBoundingClientRect();
-    const sheetRect = map.current
-      .getContainer()
-      .closest(".journey-layout")
-      ?.querySelector<HTMLElement>(".journey-sheet")
-      ?.getBoundingClientRect();
+    const container = map.current.getContainer();
+    const sheet =
+      container
+        .closest(".journey-navigation-stage")
+        ?.querySelector<HTMLElement>(".active-journey-sheet") ??
+      container
+        .closest(".journey-layout")
+        ?.querySelector<HTMLElement>(".journey-sheet");
+    const sheetRect = sheet?.getBoundingClientRect();
     const coveredHeight = sheetRect
       ? Math.max(
           0,
@@ -1093,17 +1115,19 @@ export default function JourneyMap({
         ref={element}
         className="journey-map"
         role="region"
-        aria-label={`${mapDetail === "detailed" ? "OneMap" : "Bundled OpenStreetMap"} showing ${comparing ? "the original route, its affected portion and the revised route" : "your selected route and walking legs"}${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
+        aria-label={`${mapDetail === "detailed" ? "OneMap" : "Bundled OpenStreetMap"} showing ${navigationMode ? "your active navigation route" : comparing ? "the original route, its affected portion and the revised route" : "your selected route and walking legs"}${location ? `, plus your ${location.source === "demo" ? "simulated" : "device"} location` : ""}`}
       />
       <div className="map-controls">
-        <button
-          className="icon-button"
-          onClick={onViewAlerts}
-          aria-label="View disruption alerts"
-        >
-          <Bell size={21} />
-          {hasAlerts && <i className="notification-dot" />}
-        </button>
+        {!navigationMode && (
+          <button
+            className="icon-button"
+            onClick={onViewAlerts}
+            aria-label="View disruption alerts"
+          >
+            <Bell size={21} />
+            {hasAlerts && <i className="notification-dot" />}
+          </button>
+        )}
         <button
           className="icon-button"
           onClick={goToLocation}

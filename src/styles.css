@@ -783,6 +783,25 @@ input {
   background: none;
   width: 100%;
 }
+.route-start-action {
+  display: grid;
+  gap: 8px;
+  padding: 0 15px 15px;
+}
+.route-start-action > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #4f6247;
+  font-size: 11px;
+  font-weight: 650;
+}
+.route-start-action .primary-button {
+  width: 100%;
+  min-height: 48px;
+  justify-content: center;
+  text-align: center;
+}
 .route-card-top {
   display: flex;
   justify-content: space-between;
@@ -3175,40 +3194,193 @@ input {
   font-size: 13px;
   color: #8b9d79;
 }
+.modal.journey-navigation-modal {
+  width: min(100%, 480px);
+  max-width: 480px;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: auto;
+  border: 0;
+  border-radius: 0;
+  background: #e8eee8;
+  overflow: hidden;
+}
+.journey-navigation-modal::backdrop {
+  background: #102b26b8;
+  backdrop-filter: blur(5px);
+}
+.journey-navigation-modal .modal-header {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  z-index: 800;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+.journey-navigation-modal .modal-header h2 {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 15px;
+  border: 1px solid #d9e4d5;
+  border-radius: 22px;
+  background: #fffefaf2;
+  box-shadow: 0 5px 18px #173b2b26;
+  backdrop-filter: blur(10px);
+  font-size: 14px;
+  font-weight: 650;
+  pointer-events: auto;
+}
+.journey-navigation-modal .modal-header .icon-button {
+  border: 1px solid #d9e4d5;
+  background: #fffefaf2;
+  box-shadow: 0 5px 18px #173b2b26;
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+.journey-navigation-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.journey-navigation-stage > .map-wrap {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.journey-navigation-stage .map-controls {
+  top: calc(70px + env(safe-area-inset-top));
+  right: 12px;
+}
+.journey-navigation-stage .map-mode-key,
+.journey-navigation-stage .map-legend {
+  display: none;
+}
+.journey-navigation-stage .map-extract {
+  bottom: calc(var(--journey-sheet-height, min(48dvh, 390px)) + 8px);
+  transition: bottom 220ms ease;
+}
+.journey-navigation-stage .leaflet-bottom {
+  bottom: var(--journey-sheet-height, min(48dvh, 390px));
+  transition: bottom 220ms ease;
+}
+.active-journey-sheet {
+  position: absolute;
+  z-index: 650;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--journey-sheet-height, min(48dvh, 390px));
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px 22px 0 0;
+  background: #fffefaf7;
+  box-shadow: 0 -12px 40px #16382d2b;
+  backdrop-filter: blur(14px);
+  overflow: hidden;
+  transition:
+    height 220ms ease,
+    border-radius 220ms ease;
+}
+.sheet-dragging .active-journey-sheet,
+.journey-navigation-stage.sheet-dragging .map-extract,
+.journey-navigation-stage.sheet-dragging .leaflet-bottom {
+  transition: none;
+}
+.active-journey.active-journey-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 48px 16px max(14px, env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+.journey-navigation-stage.sheet-expanded .active-journey-sheet {
+  border-radius: 0;
+}
+.journey-navigation-stage.sheet-expanded
+  .active-journey.active-journey-scroll {
+  padding-top: 76px;
+}
+.journey-navigation-stage.sheet-collapsed .active-journey-scroll {
+  overflow-y: hidden;
+}
 .active-journey {
-  text-align: center;
-  padding: 32px;
+  text-align: left;
+}
+.active-journey > .tag {
+  display: block;
+  margin-bottom: 10px;
+  color: #526c5e;
+  font-size: 9px;
+  letter-spacing: 0.7px;
+}
+.active-step-summary {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
 }
 .active-step-icon {
   display: grid;
   place-items: center;
-  width: 90px;
-  height: 90px;
-  border-radius: 22px;
-  margin: 30px auto;
+  width: 50px;
+  height: 50px;
+  border-radius: 15px;
   background: #e9f1dc;
-  color: #719854;
+  color: #527c43;
 }
 .active-journey .eyebrow {
-  justify-content: center;
+  margin: 0 0 3px;
+  font-size: 9px;
 }
-.active-journey h2 {
-  font-size: 30px;
-  font-weight: 500;
-  margin: 14px 0;
-  line-height: 1.4;
+.active-journey-sheet .active-journey h2 {
+  margin: 0 0 4px;
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 1.2;
 }
-.active-journey > p {
-  font-size: 15px;
+.active-step-summary p {
+  color: #51645a;
+  font-size: 12px;
+  line-height: 1.45;
 }
-.active-step-meta {
+.active-step-details {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 13px;
-  color: #83986e;
-  margin: 20px 0;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+  margin: 11px 0 0 62px;
+}
+.active-journey-sheet .active-step-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #58704f;
+  font-size: 12px;
+}
+.active-step-details .segment-crowding {
+  margin: 0;
+  color: #58704f;
+}
+.active-journey-sheet .active-journey-note {
+  margin: 8px 0 0;
+  color: #6b7d72;
+  font-size: 10px;
+  line-height: 1.4;
 }
 .journey-location {
   display: flex;
@@ -3219,7 +3391,7 @@ input {
   border-radius: 8px;
   background: #f5f8ef;
   padding: 9px 11px;
-  margin: 16px 0 4px;
+  margin: 12px 0 4px;
   text-align: left;
 }
 .journey-location > span {
@@ -3241,7 +3413,7 @@ input {
 .journey-progress {
   display: flex;
   gap: 5px;
-  margin: 25px 0;
+  margin: 12px 0;
 }
 .journey-progress i {
   height: 4px;
@@ -3253,12 +3425,41 @@ input {
   background: #799e58;
 }
 .journey-controls {
+  position: sticky;
+  bottom: 0;
   display: flex;
   justify-content: space-between;
-  gap: 15px;
+  gap: 10px;
+  padding-top: 8px;
+  background: linear-gradient(0deg, #fffefa 72%, transparent);
 }
 .journey-controls > * {
   flex: 1;
+  min-height: 48px;
+}
+.completion-summary {
+  margin-top: 4px;
+}
+.completion-summary h2 {
+  font-size: 18px;
+}
+.active-journey-sheet .journey-points-earned {
+  margin: 12px 0;
+  padding: 12px;
+}
+.active-journey-sheet .journey-points-earned strong {
+  margin: 5px 0;
+  font-size: 18px;
+}
+.completion-controls {
+  position: static;
+}
+@media (min-width: 481px) {
+  .modal.journey-navigation-modal {
+    height: min(900px, calc(100dvh - 32px));
+    max-height: calc(100dvh - 32px);
+    border-radius: 24px;
+  }
 }
 .large-text {
   font-size: 19px;
