@@ -619,6 +619,54 @@ function BusStopLabels({
     </div>
   );
 }
+
+const stationCodePattern = /^(?:EW|NS|NE|CC|DT|TE|BP|PE|PW|SW|SE)\d+$/i;
+
+function stationCodes(codes: string[] | undefined) {
+  return Array.from(
+    new Set((codes ?? []).filter((code) => stationCodePattern.test(code))),
+  ).join("/");
+}
+
+function instructionEta(segments: Segment[], index: number, departure: string) {
+  const elapsedMinutes = segments
+    .slice(0, index + 1)
+    .reduce(
+      (total, segment) =>
+        total + segment.minutes + (segment.waitMinutes ?? 0),
+      0,
+    );
+  return sgTime(new Date(Date.parse(departure) + elapsedMinutes * 60_000));
+}
+
+function activeInstruction(
+  segment: Segment,
+  index: number,
+  segments: Segment[],
+  departure: string,
+) {
+  const eta = instructionEta(segments, index, departure);
+  if (segment.mode === "bus")
+    return `Bus ${segment.line} from ${segment.from} to ${segment.to} · ETA ${eta}`;
+  if (segment.mode === "rail") {
+    const fromCode = stationCodes(segment.hops?.[0]?.codes) || segment.from;
+    const toCode =
+      stationCodes(segment.hops?.at(-1)?.codes) || segment.to;
+    const direction =
+      segment.direction ??
+      segment.instructions.match(/towards ([^.]+)/i)?.[1] ??
+      segment.to;
+    return `MRT: Board at ${segment.from} (${fromCode}) to ${segment.to} (${toCode}) in the direction of ${direction} · ETA ${eta}`;
+  }
+  if (segment.mode === "walk") {
+    const action = /overhead bridge/i.test(segment.instructions)
+      ? "across the overhead bridge"
+      : `from ${segment.from} to ${segment.to}`;
+    return `Walk ${action} · ${Math.round(segment.distance)} m · ${Math.ceil(segment.minutes)} min`;
+  }
+  return `${segment.mode}: ${segment.from} to ${segment.to} · ETA ${eta}`;
+}
+
 function CrowdBadge({ crowd }: { crowd: Journey["crowd"] }) {
   const labels: Record<Journey["crowd"], string> = {
     low: "Low crowd",
@@ -1435,8 +1483,8 @@ export default function App() {
     sheetSelector: ".active-journey-sheet",
     scrollSelector: ".active-journey-scroll",
     lockDocument: false,
-    middleRatio: 0.48,
-    middleMaxHeight: 390,
+    middleRatio: 0.32,
+    middleMaxHeight: 290,
   });
   const [hardPreferences, setHardPreferences] = useState<Partial<Preferences>>(
     guest.current.hardPreferences,
@@ -4620,14 +4668,6 @@ export default function App() {
               sheetSnapNames[activeJourneySheetSnap]
             } ${activeJourneySheetDragging ? "sheet-dragging" : ""}`}
           >
-            <button
-              type="button"
-              className="active-route-back"
-              onClick={closeJourney}
-            >
-              <ArrowLeft size={16} aria-hidden="true" />
-              Back to navigation
-            </button>
             <header className="active-route-summary">
               <div>
                 <span>From</span>
@@ -4652,16 +4692,8 @@ export default function App() {
               hasAlerts={disruptionAlerts.length > 0}
               request={request}
               navigationMode
-              focusSegmentId={activeJourney.route.segments[journeyStep]?.id}
             />
-            <section
-              className={`active-journey-sheet ${
-                journeyStep >= activeJourney.route.segments.length
-                  ? "complete"
-                  : ""
-              }`}
-              aria-label="One step at a time guidance"
-            >
+            <section className="active-journey-sheet" aria-label="Trip instructions">
               <SheetDragHandle
                 controls="active-journey-content"
                 label="One step at a time panel"
@@ -4674,12 +4706,6 @@ export default function App() {
                 id="active-journey-content"
                 className="active-journey active-journey-scroll"
               >
-                <span className="tag">
-                  {request.dataMode === "demo"
-                    ? "DEMO JOURNEY"
-                    : "YOUR JOURNEY"}
-                  {online ? " · SAVED OFFLINE" : " · OFFLINE PLAN"}
-                </span>
                 {plan &&
                   (canStartWithWeatherWarning(activeJourney.route, plan) ||
                     routeTransitNotices(activeJourney.route, plan).length >
@@ -4690,198 +4716,33 @@ export default function App() {
                       compact
                     />
                   )}
-                {journeyStep < activeJourney.route.segments.length ? (
-                  <>
-                    <div className="active-step-summary">
-                      <span className="active-step-icon">
-                        <ModeIcon
-                          mode={activeJourney.route.segments[journeyStep].mode}
-                          size={28}
-                        />
-                      </span>
-                      <div>
-                        <p className="eyebrow">
-                          STEP {journeyStep + 1} OF{" "}
-                          {activeJourney.route.segments.length}
-                        </p>
-                        <h2>
-                          {activeJourney.route.segments[journeyStep].mode ===
-                          "bus"
-                            ? busActionLabel(
-                                activeJourney.route.segments[journeyStep],
-                                precedingTransitSegment(
-                                  activeJourney.route.segments,
-                                  journeyStep,
-                                ),
-                              )
-                            : activeJourney.route.segments[journeyStep].to}
-                        </h2>
-                        <p>
-                          {
-                            activeJourney.route.segments[journeyStep]
-                              .instructions
-                          }
-                        </p>
-                        {activeJourney.route.segments[journeyStep].mode ===
-                          "bus" && (
-                          <BusStopLabels
-                            segment={activeJourney.route.segments[journeyStep]}
-                            previous={precedingTransitSegment(
-                              activeJourney.route.segments,
-                              journeyStep,
-                            )}
-                          />
-                        )}
-                      </div>
-                    </div>
-                    <div className="active-step-details">
-                      <div className="active-step-meta">
-                        <Clock3 size={17} />
-                        {Math.ceil(
-                          activeJourney.route.segments[journeyStep].minutes,
-                        )}{" "}
-                        min ·{" "}
-                        {Math.round(
-                          activeJourney.route.segments[journeyStep].distance,
-                        )}{" "}
-                        m
-                      </div>
-                      {["bus", "rail"].includes(
-                        activeJourney.route.segments[journeyStep].mode,
-                      ) && (
-                        <p className="segment-crowding">
-                          <UsersRound size={15} aria-hidden="true" />
-                          {crowdDescription(
-                            activeJourney.route.segments[journeyStep],
-                          )}
-                        </p>
-                      )}
-                    </div>
-                    {activeJourney.route.segments[journeyStep].geometryKind ===
-                      "schematic" && (
-                      <p className="active-journey-note">
-                        Schematic bus line · not the roads travelled
-                      </p>
-                    )}
-                    <TransitArrivals
-                      segments={activeJourney.route.segments}
-                      step={journeyStep}
-                      demo={activeJourney.demo}
-                      departure={activeJourney.departure}
-                      demoBuses={activeJourney.buses}
-                    />
-                    <div className="journey-location" aria-live="polite">
+                <ol className="active-instruction-list">
+                  {activeJourney.route.segments.map((segment, index) => (
+                    <li
+                      className={`active-instruction ${segment.mode}`}
+                      key={segment.id}
+                    >
+                      <ModeIcon mode={segment.mode} size={18} aria-hidden="true" />
                       <span>
-                        <LocateFixed size={16} />
-                        {trackingLocation
-                          ? request.dataMode === "demo"
-                            ? "Simulated position follows each confirmed step"
-                            : currentLocation
-                              ? `Live location on · ±${Math.round(currentLocation.accuracy)} m`
-                              : "Finding your live location…"
-                          : currentLocation
-                            ? "Last location shown on the map"
-                            : "Location is off"}
+                        {activeInstruction(
+                          segment,
+                          index,
+                          activeJourney.route.segments,
+                          activeJourney.departure,
+                        )}
                       </span>
-                      {trackingLocation ? (
-                        <button
-                          className="text-button"
-                          onClick={stopLocationTracking}
-                        >
-                          Stop location
-                        </button>
-                      ) : (
-                        <button
-                          className="text-button"
-                          onClick={startLocationTracking}
-                          disabled={locationBusy}
-                        >
-                          {request.dataMode === "demo"
-                            ? "Restart simulation"
-                            : "Start live location"}
-                        </button>
-                      )}
-                    </div>
-                    {locationError && (
-                      <p className="location-error" role="alert">
-                        <TriangleAlert size={14} /> {locationError}
-                      </p>
-                    )}
-                    <p className="active-journey-note">
-                      Manual progress · foreground location stops when this
-                      journey closes · timings are estimates.
-                    </p>
-                    <div className="journey-progress">
-                      {activeJourney.route.segments.map((_, i) => (
-                        <i key={i} className={i <= journeyStep ? "done" : ""} />
-                      ))}
-                    </div>
-                    <div className="journey-controls">
-                      <button
-                        className="secondary-button"
-                        disabled={!journeyStep}
-                        onClick={() => setJourneyProgress(journeyStep - 1)}
-                      >
-                        <ArrowLeft size={16} /> Back
-                      </button>
-                      <button
-                        className="primary-button"
-                        onClick={() => setJourneyProgress(journeyStep + 1)}
-                      >
-                        I’m here <ArrowRight size={16} />
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="active-step-summary completion-summary">
-                      <span className="active-step-icon">
-                        <CheckCheck size={28} />
-                      </span>
-                      <div>
-                        <h2>A little less rush. A little more day.</h2>
-                        <p>
-                          You’ve reached {activeJourney.destination}. Your
-                          routine is ready for next time.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="journey-points-earned" role="status">
-                      <Leaf size={25} aria-hidden="true" />
-                      <strong>
-                        {completionPoints
-                          ? `+${completionPoints} ${request.dataMode === "demo" ? "demo " : ""}points earned`
-                          : "Journey complete"}
-                      </strong>
-                      <p>
-                        {completionPoints
-                          ? "Your good choices are adding up."
-                          : "No new points for this journey. Points are awarded once per planned trip."}
-                      </p>
-                    </div>
-                    <div className="journey-controls completion-controls">
-                      <button
-                        className="secondary-button"
-                        onClick={() => {
-                          closeJourney();
-                          setTab("rewards");
-                        }}
-                      >
-                        View rewards <Gift size={17} />
-                      </button>
-                      <button
-                        className="primary-button"
-                        onClick={() => {
-                          saveCommute();
-                          closeJourney();
-                        }}
-                      >
-                        Save commute <Heart size={17} />
-                      </button>
-                    </div>
-                  </>
-                )}
+                    </li>
+                  ))}
+                </ol>
               </div>
+              <button
+                type="button"
+                className="active-route-back"
+                onClick={closeJourney}
+              >
+                <ArrowLeft size={16} aria-hidden="true" />
+                Back to navigation
+              </button>
             </section>
           </div>
         </Modal>

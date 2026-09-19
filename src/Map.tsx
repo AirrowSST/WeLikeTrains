@@ -214,6 +214,27 @@ function routeSegmentPopup(segment: Segment) {
   return root;
 }
 
+const routeStationCodePattern =
+  /^(?:EW|NS|NE|CC|DT|TE|BP|PE|PW|SW|SE)\d+$/i;
+
+function routeStationCodes(codes: string[] | undefined) {
+  return Array.from(
+    new Set((codes ?? []).filter((code) => routeStationCodePattern.test(code))),
+  ).join("/");
+}
+
+function routeTransitLabel(
+  label: string,
+  mode: "bus" | "rail",
+  colour: string,
+) {
+  const root = document.createElement("span");
+  root.className = `route-transit-label ${mode}`;
+  root.textContent = label;
+  root.style.setProperty("--route-transit-colour", colour);
+  return root;
+}
+
 function centerMapOnLocation(map: L.Map, coord: L.LatLngExpression) {
   const mapRect = map.getContainer().getBoundingClientRect();
   const container = map.getContainer();
@@ -979,6 +1000,50 @@ export default function JourneyMap({
             fillColor: "#fff",
             fillOpacity: 1,
           }).addTo(group);
+
+        if (navigationMode && s.mode === "bus") {
+          const label = s.line.replace(/\s*(?:\/|,|\|)\s*/g, " \\ ");
+          const midpoint = s.geometry[Math.floor(s.geometry.length / 2)];
+          if (midpoint) {
+            L.marker(midpoint, {
+              interactive: false,
+              keyboard: false,
+              zIndexOffset: 1150,
+              icon: L.divIcon({
+                className: "route-transit-label-anchor",
+                html: routeTransitLabel(label, "bus", colour),
+                iconSize: [72, 26],
+                iconAnchor: [36, 35],
+              }),
+            }).addTo(group);
+          }
+        }
+        if (navigationMode && s.mode === "rail") {
+          const terminalLabels = [
+            {
+              coord: s.geometry[0],
+              code: routeStationCodes(s.hops?.[0]?.codes),
+            },
+            {
+              coord: s.geometry.at(-1),
+              code: routeStationCodes(s.hops?.at(-1)?.codes),
+            },
+          ];
+          terminalLabels.forEach(({ coord, code }) => {
+            if (!coord || !code) return;
+            L.marker(coord, {
+              interactive: false,
+              keyboard: false,
+              zIndexOffset: 1150,
+              icon: L.divIcon({
+                className: "route-transit-label-anchor",
+                html: routeTransitLabel(code, "rail", colour),
+                iconSize: [84, 26],
+                iconAnchor: [42, 35],
+              }),
+            }).addTo(group);
+          });
+        }
       }
       const midpoint = s.geometry[Math.floor(s.geometry.length / 2)];
       if (midpoint && !routeOnly) {

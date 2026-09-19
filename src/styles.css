@@ -7761,14 +7761,13 @@ html.journey-sheet-active body {
   display: none;
 }
 .active-route-back {
-  position: absolute;
-  z-index: 810;
-  top: calc(7px + env(safe-area-inset-top));
-  left: 10px;
-  padding: 5px 8px;
-  border-radius: 10px;
-  background: #fffffff0;
-  box-shadow: 0 2px 9px #173b2b1a;
+  flex: 0 0 auto;
+  min-height: 46px;
+  justify-content: center;
+  border-top: 1px solid #dbe5dc;
+  border-radius: 0;
+  background: #fffffff5;
+  box-shadow: 0 -3px 10px #173b2b0d;
 }
 .active-route-summary {
   position: absolute;
@@ -7816,4 +7815,68 @@ html.journey-sheet-active body {
 }
 .journey-navigation-stage .shelter-map-legend {
   top: calc(126px + env(safe-area-inset-top));
+}
+.route-transit-label-anchor {
+  background: transparent;
+  border: 0;
+}
+.route-transit-label {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border: 2px solid #fff;
+  border-radius: 5px;
+  box-shadow: 0 2px 5px #173b2b33;
+  color: #173328;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+.route-transit-label.bus {
+  background: #b9e5c7;
+}
+.route-transit-label.rail {
+  background: var(--route-transit-colour);
+  color: #fff;
+}
+.active-instruction-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.active-instruction {
+  display: grid;
+  grid-template-columns: 23px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 10px 11px;
+  border: 1px solid #d8e2da;
+  border-left: 5px solid #7d8581;
+  border-radius: 8px;
+  background: #f1f3f1;
+  color: #314b3d;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.36;
+}
+.active-instruction > svg {
+  margin-top: 1px;
+  color: #596c60;
+}
+.active-instruction.bus {
+  border-left-color: #8cc8a3;
+}
+.active-instruction.bus > svg {
+  color: #2d7750;
+}
+.active-instruction.rail {
+  border-left-color: #235ba8;
+}
+.active-instruction.rail > svg {
+  color: #235ba8;
 }
