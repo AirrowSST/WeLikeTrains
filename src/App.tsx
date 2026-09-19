@@ -965,6 +965,7 @@ function GooglePlacesInput({
   controlId,
   value,
   placeholder,
+  clearValueOnFocus,
   onChange,
   onUnavailable,
 }: {
@@ -972,6 +973,7 @@ function GooglePlacesInput({
   controlId: string;
   value: Place;
   placeholder?: string;
+  clearValueOnFocus?: boolean;
   onChange: (place: Place) => void;
   onUnavailable: (message: string, typedQuery: string) => void;
 }) {
@@ -1064,6 +1066,7 @@ function GooglePlacesInput({
         value={query}
         placeholder={placeholder}
         onFocus={() => {
+          if (clearValueOnFocus) setQuery("");
           session.current = null;
           setSuggestions([]);
           setEditing(true);
@@ -1147,6 +1150,10 @@ function PlacePicker({
   const [searchNote, setSearchNote] = useState("");
   const container = useRef<HTMLDivElement>(null);
   const useGoogle = !!googlePlacesApiKey && online && !googleUnavailable;
+  const clearValueOnFocus =
+    fieldKey === "A" &&
+    (value.id === "device-current-location" ||
+      value.id === "demo-current-location");
   useEffect(() => {
     if (googlePlacesApiKey && online) setGoogleUnavailable(false);
   }, [googlePlacesApiKey, online]);
@@ -1197,6 +1204,7 @@ function PlacePicker({
             controlId={`place-${fieldKey}`}
             value={value}
             placeholder={placeholder}
+            clearValueOnFocus={clearValueOnFocus}
             onChange={(place) => {
               setQuery(place.name);
               setSearchNote("");
@@ -1219,6 +1227,7 @@ function PlacePicker({
             value={query}
             placeholder={placeholder}
             onFocus={() => {
+              if (clearValueOnFocus) setQuery("");
               setEditing(true);
               setResults(places);
             }}
@@ -2299,9 +2308,6 @@ export default function App() {
       ? `${Math.round(headerWeather.temperature)}° · `
       : ""
   }${forecast}`;
-  const hasOrigin = request.origin.id !== UNSET_ORIGIN.id;
-  const weatherUnavailable =
-    weatherState === "Unavailable" || /unavailable/i.test(forecast);
   const clockDate = request.timeline
     ? new Date(timelineTime(request.timeline))
     : new Date(clockNow);
@@ -2355,7 +2361,7 @@ export default function App() {
       >
         <button
           type="button"
-          className={`weather-status ${weatherUnavailable ? "unavailable" : ""}`}
+          className="weather-status"
           aria-label={`${weatherLabel}. Singapore time ${clockLabel}. Open weather details`}
           title={`${weatherLabel} · ${clockLabel}`}
           onClick={() => setModal("weather")}
@@ -2368,19 +2374,6 @@ export default function App() {
             <strong>{weatherLabel}</strong>
             <time dateTime={clockDate.toISOString()}>{clockLabel}</time>
           </span>
-        </button>
-        <button
-          type="button"
-          className={`points-counter ${hasOrigin ? "origin-set" : ""}`}
-          aria-label={`${request.dataMode === "demo" ? "Demo: " : ""}${balance} points. Open rewards`}
-          onClick={() => {
-            setTab("rewards");
-            setModal(null);
-          }}
-        >
-          <Leaf size={18} aria-hidden="true" />
-          <strong>{balance.toLocaleString()}</strong>
-          <span>{request.dataMode === "demo" ? "demo pts" : "pts"}</span>
         </button>
       </div>
       <header className="site-header">
@@ -2629,6 +2622,33 @@ export default function App() {
                                 updateRequest({ destination: p })
                               }
                             />
+                            <button
+                              type="button"
+                              className="swap-button"
+                              aria-label="Swap From and To"
+                              title="Swap From and To"
+                              onClick={() => {
+                                const nextOrigin =
+                                  request.destination.id ===
+                                  UNSET_DESTINATION.id
+                                    ? UNSET_ORIGIN
+                                    : request.destination;
+                                const nextDestination =
+                                  request.origin.id === UNSET_ORIGIN.id
+                                    ? UNSET_DESTINATION
+                                    : request.origin;
+                                const next = {
+                                  ...request,
+                                  origin: nextOrigin,
+                                  destination: nextDestination,
+                                };
+                                clearLocation();
+                                setRequest(next);
+                                if (isPlannable(next)) void runPlan(next);
+                              }}
+                            >
+                              <ArrowDownUp size={18} aria-hidden="true" />
+                            </button>
                           </div>
                           <div className="time-fields time-sequence">
                             {request.timeline ? (

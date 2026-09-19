@@ -5560,6 +5560,19 @@ body {
 .place-field:focus-within {
   background: #f7fbf7;
 }
+.place-field:focus-within:has(input:placeholder-shown) {
+  z-index: 2;
+  border-radius: 10px;
+  outline: 2px solid #56866f;
+  outline-offset: -3px;
+}
+.place-field:focus-within:has(input:not(:placeholder-shown)) {
+  outline: 0;
+}
+.place-field input:focus-visible {
+  outline: 0;
+  outline-offset: 0;
+}
 .place-field:focus-within input::placeholder {
   color: transparent;
 }
@@ -5647,9 +5660,16 @@ body {
   color: #fff;
 }
 .swap-button {
+  left: 14px;
+  right: auto;
   top: 50%;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   transform: translateY(-50%);
   border-color: #c7d2c4;
+  background: #f7faf7;
   color: #385f4d;
 }
 .app-shell main {
@@ -6677,8 +6697,8 @@ html.journey-sheet-active body {
 /* Rewards keep the same single-column phone interface on every viewport. */
 .top-status {
   position: fixed;
-  top: calc(14px + env(safe-area-inset-top));
-  left: max(16px, calc(50% - 224px));
+  top: calc(6px + env(safe-area-inset-top));
+  left: max(8px, calc(50% - 232px));
   z-index: 950;
   display: flex;
   flex-direction: column;
@@ -6694,11 +6714,10 @@ html.journey-sheet-active body {
   opacity: 1;
 }
 .top-status.sheet-expanded .points-counter {
-  opacity: 0;
-  pointer-events: none;
+  display: none;
 }
 .top-status.sheet-expanded .weather-status {
-  opacity: 0.1;
+  opacity: 0.5;
 }
 .points-counter,
 .weather-status {
@@ -6709,11 +6728,6 @@ html.journey-sheet-active body {
   background: #fcfff5;
   box-shadow: 0 3px 16px #143c2020;
   transition: opacity 180ms ease;
-}
-.points-counter.origin-set,
-.weather-status.unavailable {
-  opacity: 0;
-  pointer-events: none;
 }
 .points-counter {
   display: flex;
