@@ -487,36 +487,46 @@ input {
 .place-results {
   position: absolute;
   top: 100%;
-  left: -12px;
-  right: -12px;
+  left: -8px;
+  right: -8px;
   background: #fff;
   z-index: 1001;
   list-style: none;
-  padding: 5px;
+  padding: 7px;
   margin: 0;
   border: 1px solid var(--line);
   border-radius: 9px;
   box-shadow: 0 8px 25px #243e3520;
-  max-height: 250px;
+  max-height: min(48dvh, 380px);
   overflow: auto;
 }
 .place-results button {
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
+  gap: 12px;
+  padding: 14px 13px;
   background: #fff;
   text-align: left;
   border-radius: 4px;
-  font-size: 12px;
-  min-height: 48px;
+  font-size: 16px;
+  line-height: 1.2;
+  min-height: 68px;
 }
 .place-results button:hover {
   background: #f0f4e9;
 }
+.place-results button > span {
+  min-width: 0;
+  flex: 1;
+}
 .place-results button small {
-  max-width: 220px;
+  display: block;
+  max-width: none;
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: normal;
 }
 .google-place-results {
   top: calc(100% + 6px);
@@ -2293,7 +2303,7 @@ input {
   max-width: 390px;
   margin: 0;
   font-family: Georgia, serif;
-  font-size: clamp(27px, 7vw, 35px);
+  font-size: clamp(32px, 8vw, 40px);
   font-weight: 400;
   line-height: 1.08;
   letter-spacing: -0.8px;
@@ -2305,8 +2315,8 @@ input {
   max-width: 400px;
   margin: 13px 0 0;
   color: #607158;
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.5;
 }
 .onboarding-body {
   flex: 1;
@@ -2322,7 +2332,7 @@ input {
 }
 .onboarding-choices legend {
   margin-bottom: 8px;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 650;
 }
 .onboarding-choice {
@@ -2347,13 +2357,13 @@ input {
   display: block;
 }
 .onboarding-choice strong {
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 600;
 }
 .onboarding-choice small {
   margin-top: 3px;
   color: #687960;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.4;
 }
 .onboarding-choice input[type="checkbox"] {
@@ -2407,7 +2417,7 @@ input {
 }
 .onboarding-fields > label > span {
   min-height: 30px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
 }
@@ -2415,7 +2425,7 @@ input {
   min-height: 28px;
   margin: 4px 0 9px;
   color: #77876f;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.35;
 }
 .onboarding-number {
@@ -2452,6 +2462,11 @@ input {
 .onboarding-actions .primary-button {
   min-height: 48px;
   justify-content: center;
+}
+.onboarding-actions .text-button {
+  color: #294c3b;
+  font-size: 16px;
+  font-weight: 750;
 }
 .modal-header {
   display: flex;
@@ -5542,6 +5557,15 @@ body {
   padding-block: 10px;
   cursor: text;
 }
+.place-field:focus-within {
+  background: #f7fbf7;
+}
+.place-field:focus-within input::placeholder {
+  color: transparent;
+}
+.place-field:focus-within small {
+  opacity: 0;
+}
 .place-field:first-child {
   border-bottom: 3px solid #d4ddd1;
 }
@@ -6661,9 +6685,13 @@ html.journey-sheet-active body {
   align-items: flex-start;
   gap: 8px;
   max-width: calc(min(100vw, 480px) - 32px);
+  transition: opacity 180ms ease;
 }
 .top-status.on-map {
   z-index: 480;
+}
+.top-status.sheet-expanded {
+  opacity: 0.1;
 }
 .points-counter,
 .weather-status {
@@ -6673,6 +6701,12 @@ html.journey-sheet-active body {
   color: #184e40;
   background: #fcfff5;
   box-shadow: 0 3px 16px #143c2020;
+  transition: opacity 180ms ease;
+}
+.points-counter.origin-set,
+.weather-status.unavailable {
+  opacity: 0;
+  pointer-events: none;
 }
 .points-counter {
   display: flex;

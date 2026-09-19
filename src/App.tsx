@@ -1180,7 +1180,15 @@ function PlacePicker({
     };
   }, [query, editing]);
   return (
-    <div className="place-field" ref={container}>
+    <div
+      className="place-field"
+      ref={container}
+      onPointerDown={(event) => {
+        const target = event.target as HTMLElement;
+        if (target.closest("input, button, .place-results")) return;
+        container.current?.querySelector<HTMLInputElement>("input")?.focus();
+      }}
+    >
       <div>
         <label htmlFor={`place-${fieldKey}`}>{label}</label>
         {useGoogle ? (
@@ -2291,6 +2299,9 @@ export default function App() {
       ? `${Math.round(headerWeather.temperature)}° · `
       : ""
   }${forecast}`;
+  const hasOrigin = request.origin.id !== UNSET_ORIGIN.id;
+  const weatherUnavailable =
+    weatherState === "Unavailable" || /unavailable/i.test(forecast);
   const clockDate = request.timeline
     ? new Date(timelineTime(request.timeline))
     : new Date(clockNow);
@@ -2338,11 +2349,13 @@ export default function App() {
         Skip to journey
       </a>
       <div
-        className={`top-status ${tab === "today" && !primaryPage ? "on-map" : ""}`}
+        className={`top-status ${tab === "today" && !primaryPage ? "on-map" : ""} ${
+          tab === "today" && sheetSnap === 0 ? "sheet-expanded" : ""
+        }`}
       >
         <button
           type="button"
-          className="weather-status"
+          className={`weather-status ${weatherUnavailable ? "unavailable" : ""}`}
           aria-label={`${weatherLabel}. Singapore time ${clockLabel}. Open weather details`}
           title={`${weatherLabel} · ${clockLabel}`}
           onClick={() => setModal("weather")}
@@ -2358,7 +2371,7 @@ export default function App() {
         </button>
         <button
           type="button"
-          className="points-counter"
+          className={`points-counter ${hasOrigin ? "origin-set" : ""}`}
           aria-label={`${request.dataMode === "demo" ? "Demo: " : ""}${balance} points. Open rewards`}
           onClick={() => {
             setTab("rewards");
