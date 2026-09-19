@@ -829,6 +829,34 @@ export default function JourneyMap({
     const rainySegments = journey.segments.filter((segment) =>
       segment.issues?.includes("rain"),
     );
+    // An interchange belongs to the junction between two rail legs. Build the
+    // labels once here instead of adding one for each leg, which avoids two
+    // overlapping badges for the same station.
+    const interchangeLabels = new Map<
+      string,
+      { coord: [number, number]; codes: string[]; line: string }
+    >();
+    journey.segments.forEach((segment, index) => {
+      const next = journey.segments[index + 1];
+      if (segment.mode !== "rail" || next?.mode !== "rail") return;
+      const terminal = segment.hops?.at(-1);
+      const following = next.hops?.[0];
+      const codes = Array.from(
+        new Set(
+          [
+            ...(terminal?.toCodes ?? []),
+            ...(terminal?.codes ?? []),
+            ...(following?.fromCodes ?? []),
+            ...(following?.codes ?? []),
+          ].filter((code) => routeStationCodePattern.test(code)),
+        ),
+      );
+      if (codes.length < 2) return;
+      const coord = segment.geometry.at(-1) ?? next.geometry[0];
+      if (!coord) return;
+      const key = `${coord[0].toFixed(5)}:${coord[1].toFixed(5)}:${codes.slice().sort().join("/")}`;
+      interchangeLabels.set(key, { coord, codes, line: next.line });
+    });
     if (plan.conditions.weather.rain) {
       const affected = rainySegments.length
         ? rainySegments
@@ -863,7 +891,13 @@ export default function JourneyMap({
         }).addTo(group);
       });
     }
-    journey.segments.forEach((s) => {
+    const firstRailSegment = journey.segments.findIndex(
+      (segment) => segment.mode === "rail",
+    );
+    const lastRailSegment = journey.segments.findLastIndex(
+      (segment) => segment.mode === "rail",
+    );
+    journey.segments.forEach((s, segmentIndex) => {
       const focused = navigationMode && s.id === focusSegmentId;
       const issues = s.issues ?? [];
       const severe =
@@ -1052,24 +1086,36 @@ export default function JourneyMap({
             }).addTo(group);
           }
         }
-        if (navigationMode && s.mode === "rail") {
+        if (
+          navigationMode &&
+          s.mode === "rail" &&
+          (segmentIndex === firstRailSegment || segmentIndex === lastRailSegment)
+        ) {
           const terminalLabels = [
-            {
-              coord: s.geometry[0],
-              code:
-                routeStationCodes(s.hops?.[0]?.fromCodes) ||
-                (s.hops?.[0]?.codes ?? []).find((code) =>
-                  routeStationCodePattern.test(code),
-                ),
-            },
-            {
-              coord: s.geometry.at(-1),
-              code:
-                routeStationCodes(s.hops?.at(-1)?.toCodes) ||
-                [...(s.hops?.at(-1)?.codes ?? [])]
-                  .reverse()
-                  .find((code) => routeStationCodePattern.test(code)),
-            },
+            ...(segmentIndex === firstRailSegment
+              ? [
+                  {
+                    coord: s.geometry[0],
+                    code:
+                      routeStationCodes(s.hops?.[0]?.fromCodes) ||
+                      (s.hops?.[0]?.codes ?? []).find((code) =>
+                        routeStationCodePattern.test(code),
+                      ),
+                  },
+                ]
+              : []),
+            ...(segmentIndex === lastRailSegment
+              ? [
+                  {
+                    coord: s.geometry.at(-1),
+                    code:
+                      routeStationCodes(s.hops?.at(-1)?.toCodes) ||
+                      [...(s.hops?.at(-1)?.codes ?? [])]
+                        .reverse()
+                        .find((code) => routeStationCodePattern.test(code)),
+                  },
+                ]
+              : []),
           ];
           terminalLabels.forEach(({ coord, code }) => {
             if (!coord || !code) return;
@@ -1118,6 +1164,23 @@ export default function JourneyMap({
             iconAnchor: [10, -6],
           }),
         }).addTo(group);
+    });
+    interchangeLabels.forEach(({ coord, codes, line }) => {
+      const label = codes.join("/");
+      const width = Math.max(74, codes.length * 44);
+      L.marker(coord, {
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 1180,
+        icon: L.divIcon({
+          className: "route-interchange-label-anchor",
+          html: routeTransitLabel(label, "rail", lineColors[line] ?? "#235ba8"),
+          iconSize: [width, 28],
+          iconAnchor: [width / 2, 36],
+        }),
+      })
+        .bindTooltip(`${label} interchange`, { sticky: true })
+        .addTo(group);
     });
     const longestExposedSection = routeOnly
       ? undefined
