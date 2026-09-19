@@ -18,22 +18,48 @@ import type { RailScheduleSnapshot } from "../server/rail-schedule";
 import type { BusNetworkSnapshot } from "../server/bus-network";
 
 describe("map transit details", () => {
-  it('returns three ordered forecast slots separately, using extension feed codes', async () => {
-    const stop = { id: 'expo', name: 'Expo', mode: 'rail' as const, codes: ['CG1'], lines: ['EWL'], lat: 1.3, lon: 103.8 };
+  it("returns three ordered forecast slots separately, using extension feed codes", async () => {
+    const stop = {
+      id: "expo",
+      name: "Expo",
+      mode: "rail" as const,
+      codes: ["CG1"],
+      lines: ["EWL"],
+      lat: 1.3,
+      lon: 103.8,
+    };
     const now = Date.now();
-    const value = { value: [3, -2, 1, 0, 2].map(i => ({ Station: 'CG1', CrowdLevel: 'm', StartTime: new Date(now + i * 1800000).toISOString(), EndTime: new Date(now + (i + 1) * 1800000).toISOString() })) };
-    const mock = vi.spyOn(feeds, 'cachedFetch').mockResolvedValue({ value, at: now, stale: false });
+    const value = {
+      value: [3, -2, 1, 0, 2].map((i) => ({
+        Station: "CG1",
+        CrowdLevel: "m",
+        StartTime: new Date(now + i * 1800000).toISOString(),
+        EndTime: new Date(now + (i + 1) * 1800000).toISOString(),
+      })),
+    };
+    const mock = vi
+      .spyOn(feeds, "cachedFetch")
+      .mockResolvedValue({ value, at: now, stale: false });
     const forecasts = await stationCrowds(stop, true);
-    expect(mock.mock.calls[0][1]).toContain('PCDForecast?TrainLine=CGL');
+    expect(mock.mock.calls[0][1]).toContain("PCDForecast?TrainLine=CGL");
     expect(forecasts).toHaveLength(3);
-    expect(forecasts.every(r => r.status === 'forecast' && r.line === 'CGL')).toBe(true);
-    expect(forecasts.map(r => r.start)).toEqual([0, 1, 2].map(i => new Date(now + i * 1800000).toISOString()));
-    mock.mockRejectedValue(new Error('Unavailable'));
-    expect(await stationCrowds(stop, true)).toEqual([{ line: 'CGL', level: 'unknown', status: 'unavailable' }]);
+    expect(
+      forecasts.every((r) => r.status === "forecast" && r.line === "CGL"),
+    ).toBe(true);
+    expect(forecasts.map((r) => r.start)).toEqual(
+      [0, 1, 2].map((i) => new Date(now + i * 1800000).toISOString()),
+    );
+    mock.mockRejectedValue(new Error("Unavailable"));
+    expect(await stationCrowds(stop, true)).toEqual([
+      { line: "CGL", level: "unknown", status: "unavailable" },
+    ]);
     mock.mockResolvedValue({ value, at: now, stale: true });
-    expect((await stationCrowds(stop, true))[0]).toMatchObject({ level: 'unknown', status: 'stale' });
+    expect((await stationCrowds(stop, true))[0]).toMatchObject({
+      level: "unknown",
+      status: "stale",
+    });
   });
-  it("rejects stale and expired platform crowd observations", async () => {
+  it("labels stale and recently expired platform crowd observations", async () => {
     const stop = {
       id: "rail",
       name: "Station",
@@ -60,7 +86,7 @@ describe("map transit details", () => {
     expect((await stationCrowds(stop))[0].level).toBe("high");
     mock.mockResolvedValue({ value, at: now, stale: true });
     expect((await stationCrowds(stop))[0]).toMatchObject({
-      level: "unknown",
+      level: "high",
       status: "stale",
     });
     mock.mockResolvedValue({
@@ -72,7 +98,10 @@ describe("map transit details", () => {
       at: now,
       stale: false,
     });
-    expect((await stationCrowds(stop))[0].level).toBe("unknown");
+    expect((await stationCrowds(stop))[0]).toMatchObject({
+      level: "high",
+      status: "stale",
+    });
   });
   it("colours each interchange code and branch with its line", () => {
     expect(stationColor("EW2")).toBe(stationColor("CG1"));

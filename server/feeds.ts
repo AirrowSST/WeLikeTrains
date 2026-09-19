@@ -6,10 +6,11 @@ import type {
   Notice,
   PlanRequest,
   Scenario,
+  Segment,
   TrafficReading,
 } from "../shared/types";
 import { canonicalLine, crowdValue } from "../shared/catalog";
-import { ltaConnection } from "./lta-client";
+import { ltaConnection, pacedDataMallFetch } from "./lta-client";
 import { trainRealtime } from "./rail-realtime";
 import { timelineInputs } from "../shared/timelines";
 
@@ -19,27 +20,107 @@ export const LTA_ENDPOINTS = {
   trafficSpeedBands: "v4/TrafficSpeedBands",
   estimatedTravelTimes: "EstTravelTimes",
 } as const;
+export const LTA_CROWD_LINES = [
+  "EWL",
+  "DTL",
+  "NEL",
+  "CCL",
+  "TEL",
+  "NSL",
+  "CGL",
+  "CEL",
+  "SLRT",
+  "PLRT",
+  "BPL",
+] as const;
+const crowdLineSet = new Set<string>(LTA_CROWD_LINES);
+const crowdLineByStationPrefix: Record<string, string> = {
+  EW: "EWL",
+  CG: "CGL",
+  NS: "NSL",
+  NE: "NEL",
+  CC: "CCL",
+  CE: "CEL",
+  DT: "DTL",
+  TE: "TEL",
+  BP: "BPL",
+  SE: "SLRT",
+  SW: "SLRT",
+  PE: "PLRT",
+  PW: "PLRT",
+};
+
+export function crowdFeedLinesForSegments(segments: Segment[]) {
+  const lines = new Set<string>();
+  for (const segment of segments) {
+    if (segment.mode !== "rail") continue;
+    if (crowdLineSet.has(segment.line)) lines.add(segment.line);
+    for (const stop of segment.stops) {
+      const prefix = stop.toUpperCase().match(/^[A-Z]+/)?.[0] ?? "";
+      const line = crowdLineByStationPrefix[prefix];
+      if (line) lines.add(line);
+    }
+  }
+  return [...lines];
+}
 const cache = new Map<string, { value: unknown; at: number }>();
 const pending = new Map<string, Promise<{ value: unknown; at: number }>>();
+export const feedQuotaBackoff = new Map<string, number>();
+
+export class DataMallQuotaError extends Error {
+  constructor(status?: number) {
+    super(
+      `LTA DataMall temporarily rate-limited this request${status ? ` (HTTP ${status})` : ""}`,
+    );
+    this.name = "DataMallQuotaError";
+  }
+}
+
+export const isDataMallQuotaError = (error: unknown) =>
+  error instanceof DataMallQuotaError;
+
 export async function cachedFetch(
   key: string,
   url: string,
   ttl: number,
   headers: Record<string, string> = {},
+  staleMaxAge = 3600000,
 ): Promise<{ value: any; at: number; stale: boolean }> {
   const previous = cache.get(key);
   if (previous && Date.now() - previous.at < ttl)
     return { ...previous, stale: false };
+  const quotaUntil = feedQuotaBackoff.get(key);
+  if (quotaUntil !== undefined && quotaUntil > Date.now()) {
+    if (previous && Date.now() - previous.at < staleMaxAge)
+      return { ...previous, stale: true };
+    throw new DataMallQuotaError();
+  }
   let task = pending.get(key);
   if (!task) {
     task = (async () => {
-      const r = await fetch(url, {
-        headers,
-        redirect: headers.AccountKey ? "error" : "follow",
-        signal: AbortSignal.timeout(7000),
-      });
-      if (!r.ok) throw new Error(`Upstream HTTP ${r.status}`);
-      const entry = { value: await r.json(), at: Date.now() };
+      const r = await pacedDataMallFetch(
+        url,
+        {
+          headers,
+          redirect: headers.AccountKey ? "error" : "follow",
+        },
+        7000,
+      );
+      let value: any;
+      try {
+        value = await r.json();
+      } catch {
+        throw new Error(`Upstream returned invalid JSON (HTTP ${r.status})`);
+      }
+      if (!r.ok) {
+        const fault = String(
+          value?.fault?.faultstring ?? value?.message ?? value?.error ?? "",
+        );
+        if (/rate limit|quota/i.test(fault))
+          throw new DataMallQuotaError(r.status);
+        throw new Error(`Upstream HTTP ${r.status}`);
+      }
+      const entry = { value, at: Date.now() };
       cache.set(key, entry);
       return entry;
     })();
@@ -48,7 +129,11 @@ export async function cachedFetch(
   try {
     return { ...(await task), stale: false };
   } catch (e) {
-    if (previous && Date.now() - previous.at < 3600000)
+    if (isDataMallQuotaError(e))
+      // DataMall supplies no Retry-After header for these HTTP 500 faults.
+      // Back off per endpoint so refresh loops do not deepen the quota issue.
+      feedQuotaBackoff.set(key, Date.now() + 10 * 60000);
+    if (previous && Date.now() - previous.at < staleMaxAge)
       return { ...previous, stale: true };
     throw e;
   } finally {
@@ -774,6 +859,76 @@ export async function getLiveWeather(request: {
   return result;
 }
 
+export async function getRailCrowding(lines: string[]): Promise<{
+  crowd: CrowdReading[];
+  feeds: FeedStatus[];
+}> {
+  const crowd: CrowdReading[] = [];
+  const feeds: FeedStatus[] = [];
+  const connection = ltaConnection();
+  const requested = [
+    ...new Set(
+      lines
+        .map((line) => line.toUpperCase())
+        .filter((line) => crowdLineSet.has(line)),
+    ),
+  ];
+
+  await Promise.allSettled(
+    requested.flatMap((line) =>
+      ([false, true] as const).map(async (forecast) => {
+        const name = `${line} ${forecast ? "crowd forecast" : "station crowds"}`;
+        if (!connection.key) {
+          feeds.push({
+            name,
+            status: "unavailable",
+            detail: "LTA AccountKey has not been configured",
+          });
+          return;
+        }
+        const endpoint = `${forecast ? "PCDForecast" : "PCDRealTime"}?TrainLine=${line}`;
+        const url = `${connection.base}/${endpoint}`;
+        try {
+          const item = await cachedFetch(
+            url,
+            url,
+            forecast ? 21600000 : 60000,
+            { AccountKey: connection.key, Accept: "application/json" },
+            forecast ? 30 * 3600000 : 3600000,
+          );
+          if (!item.stale)
+            crowd.push(...parseCrowds(item.value, line, forecast));
+          feeds.push({
+            name: connection.simulated ? `SIMULATED · ${name}` : name,
+            status: item.stale
+              ? "stale"
+              : connection.simulated
+                ? "demo"
+                : "live",
+            updatedAt: new Date(item.at).toISOString(),
+            detail: connection.simulated
+              ? `Local DataMall simulator${item.stale ? " · cached after a synthetic outage" : " · authored test data"}`
+              : item.stale
+                ? "Cached after an upstream failure; not used for a new plan"
+                : "Official LTA DataMall",
+          });
+        } catch (error) {
+          feeds.push({
+            name: connection.simulated ? `SIMULATED · ${name}` : name,
+            status: "unavailable",
+            detail: connection.simulated
+              ? "Local DataMall simulator unavailable"
+              : isDataMallQuotaError(error)
+                ? "LTA DataMall rate limit reached; retry later"
+                : "Official feed could not be reached; no crowd level is assumed",
+          });
+        }
+      }),
+    ),
+  );
+  return { crowd, feeds };
+}
+
 export async function getConditions(
   request: Pick<
     PlanRequest,
@@ -896,19 +1051,6 @@ export async function getConditions(
       });
     }
   }
-  const lines = [
-    "EWL",
-    "DTL",
-    "NEL",
-    "CCL",
-    "TEL",
-    "NSL",
-    "CGL",
-    "CEL",
-    "SLRT",
-    "PLRT",
-    "BPL",
-  ];
   await Promise.allSettled([
     ...(
       [
@@ -927,20 +1069,6 @@ export async function getConditions(
     lta("TrainServiceAlerts", "LTA service alerts", 60000, (r) =>
       conditions.notices.push(...parseTrainAlerts(r)),
     ),
-    ...lines.flatMap((line) => [
-      lta(
-        `PCDRealTime?TrainLine=${line}`,
-        `${line} station crowds`,
-        600000,
-        (r) => conditions.crowd.push(...parseCrowds(r, line)),
-      ),
-      lta(
-        `PCDForecast?TrainLine=${line}`,
-        `${line} crowd forecast`,
-        21600000,
-        (r) => conditions.crowd.push(...parseCrowds(r, line, true)),
-      ),
-    ]),
     lta("v2/FacilitiesMaintenance", "Lift maintenance", 1800000, (r) => {
       for (const [i, v] of toList(r.value).entries()) {
         const detail = String(

@@ -1,14 +1,17 @@
-import { ltaConnection } from "./lta-client";
+import { ltaConnection, pacedDataMallFetch } from "./lta-client";
 
 /** Never forward AccountKey to a download host or expose signed URLs in errors. */
 export async function downloadLtaFile(endpoint: string, maxBytes = 80_000_000) {
   const connection = ltaConnection();
   if (!connection.key) throw new Error("LTA credential unavailable");
-  const metadata = await fetch(`${connection.base}/${endpoint}`, {
-    headers: { AccountKey: connection.key, Accept: "application/json" },
-    redirect: "error",
-    signal: AbortSignal.timeout(15000),
-  });
+  const metadata = await pacedDataMallFetch(
+    `${connection.base}/${endpoint}`,
+    {
+      headers: { AccountKey: connection.key, Accept: "application/json" },
+      redirect: "error",
+    },
+    15000,
+  );
   if (!metadata.ok) throw new Error(`LTA metadata HTTP ${metadata.status}`);
   const body = await metadata.json();
   const link = body?.value?.[0]?.Link ?? body?.value?.Link ?? body?.Link;

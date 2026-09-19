@@ -65,17 +65,42 @@ function labelledIcon(
 
 function transitStopIcon(stop: TransitStop) {
   const root = document.createElement("span");
-  root.className = "transit-stop-symbol";
+  root.className = "transit-stop-content";
   root.setAttribute("aria-hidden", "true");
-  root.innerHTML = mapIcons[stop.mode];
+  const symbol = document.createElement("span");
+  symbol.className = "transit-stop-symbol";
+  symbol.innerHTML = mapIcons[stop.mode];
   if (stop.mode === "rail") {
     const colors = [
       ...new Set(stop.codes.map((code) => stationColor(code, stop.lines))),
     ];
-    root.style.background =
+    symbol.style.background =
       colors.length > 1
         ? `linear-gradient(135deg, ${colors.map((color, i) => `${color} ${(i / colors.length) * 100}%, ${color} ${((i + 1) / colors.length) * 100}%`).join(", ")})`
         : stationColor(stop.codes[0] ?? "", stop.lines);
+    const label = document.createElement("span");
+    label.className = "transit-stop-label";
+    label.style.setProperty(
+      "--station-line-colors",
+      colors.length > 1
+        ? `linear-gradient(90deg, ${colors.join(", ")})`
+        : (colors[0] ?? stationColor(stop.codes[0] ?? "", stop.lines)),
+    );
+    const codes = document.createElement("span");
+    codes.className = "transit-stop-label-codes";
+    stop.codes.forEach((code) => {
+      const badge = document.createElement("b");
+      badge.textContent = code;
+      badge.style.background = stationColor(code, stop.lines);
+      badge.style.color = stationTextColor(stationColor(code, stop.lines));
+      codes.append(badge);
+    });
+    const name = document.createElement("strong");
+    name.textContent = stop.name;
+    label.append(codes, name);
+    root.append(symbol, label);
+  } else {
+    root.append(symbol);
   }
   return root;
 }
@@ -111,6 +136,10 @@ function transitStopPopup(
   const name = document.createElement("strong");
   name.textContent = stop.name;
   heading.append(name);
+  const more = document.createElement("span");
+  more.className = "transit-stop-more";
+  more.textContent = "More info";
+  heading.append(more);
   root.append(heading);
   if (stop.mode === "bus" && stop.lines.length) {
     const lines = document.createElement("div");
@@ -240,6 +269,14 @@ export default function JourneyMap({
   const activeSegmentPath = useRef<L.Polyline | null>(null);
   const segmentPaths = useRef(new Map<string, L.Polyline>());
   const centeredOnLocation = useRef(false);
+  const labelledRailCodes = useRef(new Set<string>());
+  const updateTransitStopsRef = useRef<() => void>(() => undefined);
+  labelledRailCodes.current = new Set(
+    (selected ?? plan?.recommended)?.segments
+      .filter((segment) => segment.mode === "rail")
+      .flatMap((segment) => [segment.stops[0], segment.stops.at(-1)])
+      .filter((code): code is string => !!code) ?? [],
+  );
   const [detailStop, setDetailStop] = useState<TransitStop | null>(null);
   const [busSelection, setBusSelection] = useState<{
     stop: TransitStop;
@@ -527,7 +564,16 @@ export default function JourneyMap({
           transitMarkers.delete(id);
         }
       for (const stop of transitStops) {
-        if (!visibleStops.has(stop.id) || transitMarkers.has(stop.id)) continue;
+        if (!visibleStops.has(stop.id)) continue;
+        const showLabel =
+          stop.mode === "rail" &&
+          (zoom >= 14 ||
+            stop.codes.some((code) => labelledRailCodes.current.has(code)));
+        const existing = transitMarkers.get(stop.id);
+        if (existing) {
+          existing.getElement()?.classList.toggle("show-label", showLabel);
+          continue;
+        }
         const kind = stop.mode === "rail" ? "MRT / LRT station" : "bus stop";
         const marker = L.marker([stop.lat, stop.lon], {
           keyboard: true,
@@ -535,7 +581,7 @@ export default function JourneyMap({
           alt: `${stop.name} ${kind}`,
           zIndexOffset: stop.mode === "rail" ? 220 : 180,
           icon: L.divIcon({
-            className: `transit-stop-marker ${stop.mode}`,
+            className: `transit-stop-marker ${stop.mode}${showLabel ? " show-label" : ""}`,
             html: transitStopIcon(stop),
             iconSize: [44, 44],
             iconAnchor: [22, 22],
@@ -563,6 +609,7 @@ export default function JourneyMap({
         transitMarkers.set(stop.id, marker);
       }
     };
+    updateTransitStopsRef.current = updateTransitStops;
     m.on("moveend zoomend", updateTransitStops);
     fetch("/api/transit-stops", { signal: stopRequest.signal })
       .then((response) => {
@@ -602,10 +649,14 @@ export default function JourneyMap({
       m.off("moveend zoomend", updateTransitStops);
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
       observer.disconnect();
+      updateTransitStopsRef.current = () => undefined;
       m.remove();
       map.current = null;
     };
   }, []);
+  useEffect(() => {
+    updateTransitStopsRef.current();
+  }, [plan, selected]);
   useEffect(() => {
     const m = map.current,
       group = routes.current;

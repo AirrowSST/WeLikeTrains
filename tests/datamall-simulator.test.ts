@@ -5,6 +5,7 @@ import { ltaConnection } from "../server/lta-client";
 import {
   cachedFetch,
   feedCache,
+  feedQuotaBackoff,
   getBusArrivals,
   getConditions,
 } from "../server/feeds";
@@ -26,6 +27,7 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   feedCache.clear();
+  feedQuotaBackoff.clear();
   await Promise.all(servers.splice(0).map((server) => server.close()));
 });
 

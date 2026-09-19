@@ -2,9 +2,13 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { canonicalLine, crowdValue } from "../shared/catalog";
 import {
   LTA_ENDPOINTS,
+  DataMallQuotaError,
   cachedFetch,
+  crowdFeedLinesForSegments,
   feedCache,
+  feedQuotaBackoff,
   getConditions,
+  getRailCrowding,
   parseTrainAlerts,
   parseCrowds,
   parseBuses,
@@ -21,12 +25,13 @@ import {
   localChat,
   resolveChatToolCalls,
 } from "../server/providers";
-import type { PlanResponse } from "../shared/types";
+import type { PlanResponse, Segment } from "../shared/types";
 import { noticeActive } from "../server/planner";
 import { planSchema } from "../server/validation";
 
 afterEach(() => {
   feedCache.clear();
+  feedQuotaBackoff.clear();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
@@ -36,9 +41,84 @@ const jsonResponse = (body: unknown) =>
   ({ ok: true, json: async () => body }) as Response;
 
 describe("official data contracts", () => {
+  it("scopes crowd calls to route lines and reuses their cache", async () => {
+    vi.stubEnv("LTA_ACCOUNT_KEY", "test-key");
+    const fetcher = vi.fn(async (_input: string | URL | Request) =>
+      jsonResponse({ value: [] }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    await getConditions({
+      dataMode: "live",
+      scenario: "normal",
+      departure: "2026-09-21T07:40:00+08:00",
+    });
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        /PCDRealTime|PCDForecast/.test(String(url)),
+      ),
+    ).toBe(false);
+
+    const first = await getRailCrowding(["EWL", "EWL", "CGL", "invalid"]);
+    const second = await getRailCrowding(["CGL", "EWL"]);
+    const crowdUrls = fetcher.mock.calls
+      .map(([url]) => String(url))
+      .filter((url) => /PCDRealTime|PCDForecast/.test(url));
+    expect(crowdUrls).toHaveLength(4);
+    expect(new Set(crowdUrls)).toEqual(
+      new Set([
+        "https://datamall2.mytransport.sg/ltaodataservice/PCDRealTime?TrainLine=EWL",
+        "https://datamall2.mytransport.sg/ltaodataservice/PCDForecast?TrainLine=EWL",
+        "https://datamall2.mytransport.sg/ltaodataservice/PCDRealTime?TrainLine=CGL",
+        "https://datamall2.mytransport.sg/ltaodataservice/PCDForecast?TrainLine=CGL",
+      ]),
+    );
+    expect(first.feeds).toHaveLength(4);
+    expect(second.feeds).toHaveLength(4);
+  });
+
+  it("derives crowd API lines from only the rail segments and branch codes", () => {
+    const segment = (mode: Segment["mode"], line: string, stops: string[]) =>
+      ({ mode, line, stops }) as Segment;
+    expect(
+      crowdFeedLinesForSegments([
+        segment("rail", "EWL", ["EW4", "CG1", "CG2"]),
+        segment("rail", "CCL", ["CC4", "CE1"]),
+        segment("bus", "27", ["76141"]),
+      ]).sort(),
+    ).toEqual(["CCL", "CEL", "CGL", "EWL"]);
+  });
+
+  it("identifies DataMall quota faults hidden behind HTTP 500", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            fault: {
+              faultstring: "Rate limit quota violation. Quota limit exceeded.",
+            },
+          }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const request = () =>
+      cachedFetch(
+        "quota-fixture",
+        "https://datamall2.mytransport.sg/ltaodataservice/PCDForecast?TrainLine=EWL",
+        0,
+        { AccountKey: "test-key" },
+      );
+    await expect(request()).rejects.toBeInstanceOf(DataMallQuotaError);
+    await expect(request()).rejects.toBeInstanceOf(DataMallQuotaError);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("excludes road works from live requests and feed diagnostics", async () => {
     vi.stubEnv("LTA_ACCOUNT_KEY", "test-key");
-    const fetcher = vi.fn(async (_input: unknown) => jsonResponse({ value: [] }));
+    const fetcher = vi.fn(async (_input: unknown) =>
+      jsonResponse({ value: [] }),
+    );
     vi.stubGlobal("fetch", fetcher);
     const result = await getConditions({
       dataMode: "live",

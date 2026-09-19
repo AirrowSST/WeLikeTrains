@@ -974,13 +974,34 @@ test("opens local MRT and bus-stop details from map icons", async ({
   context,
 }) => {
   await useDeterministicPlans(page, true);
-  await page.route('**/api/station-board?*', route => route.fulfill({ json: {
-    groups: [{ line: 'EWL', towards: 'Tuas Link', times: [new Date(Date.now() + 300000).toISOString()] }],
-    crowds: [{ line: 'EWL', level: 'moderate', status: 'current platform crowd' }],
-    forecasts: ['low', 'moderate', 'high'].map((level, i) => ({ line: 'EWL', level, status: 'forecast', start: new Date(Date.now() + i * 1800000).toISOString(), end: new Date(Date.now() + (i + 1) * 1800000).toISOString() })),
-  } }));
+  await page.route("**/api/station-board?*", (route) =>
+    route.fulfill({
+      json: {
+        groups: [
+          {
+            line: "EWL",
+            towards: "Tuas Link",
+            times: [new Date(Date.now() + 300000).toISOString()],
+          },
+        ],
+        crowds: [
+          { line: "EWL", level: "moderate", status: "current platform crowd" },
+        ],
+        forecasts: ["low", "moderate", "high"].map((level, i) => ({
+          line: "EWL",
+          level,
+          status: "forecast",
+          start: new Date(Date.now() + i * 1800000).toISOString(),
+          end: new Date(Date.now() + (i + 1) * 1800000).toISOString(),
+        })),
+      },
+    }),
+  );
   await page.goto("/");
-  await expect(startJourneyButton(page)).toBeEnabled();
+  await expect(page.locator(".route-options")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
   await expect(page.locator(".journey-map")).toHaveAttribute(
     "data-ready",
     "true",
@@ -1001,21 +1022,44 @@ test("opens local MRT and bus-stop details from map icons", async ({
   expect(clickableRailIndex).toBeGreaterThanOrEqual(0);
   const railStop = railStops.nth(clickableRailIndex);
   await expect(railStop).toHaveAttribute("aria-label", /MRT \/ LRT station/);
+  await expect(
+    page
+      .locator(".transit-stop-marker.rail.show-label .transit-stop-label")
+      .first(),
+  ).toBeVisible();
   await railStop.click();
   const transitPopup = page.locator(".transit-stop-popup");
   await expect(transitPopup).not.toContainText("MRT / LRT station");
   await expect(transitPopup).not.toContainText("Expand station information");
-  await page.getByRole('button', { name: /Show .+ station information/ }).click();
-  const details = page.getByRole('dialog', { name: /information/ });
-  await expect(details).toContainText('Scheduled departures');
-  await expect(details.getByRole('heading', { name: 'Predicted crowdedness' })).toBeVisible();
-  await expect(details.getByRole('img', { name: 'Moderate crowdedness' })).toHaveCount(2);
-  await expect(details.getByRole('img', { name: 'Low crowdedness' })).toBeVisible();
-  await expect(details.getByRole('img', { name: 'High crowdedness' })).toBeVisible();
-  expect(await details.getByRole('img', { name: 'High crowdedness' }).locator('.filled').count()).toBe(3);
-  await expect(details).toContainText('Tuas Link');
-  await expect(details).toContainText('not live train tracking');
-  await page.getByRole('button', { name: 'Close station or stop information' }).click();
+  await expect(transitPopup).toContainText("More info");
+  await page
+    .getByRole("button", { name: /Show .+ station information/ })
+    .click();
+  const details = page.getByRole("dialog", { name: /information/ });
+  await expect(details).toContainText("Scheduled departures");
+  await expect(
+    details.getByRole("heading", { name: "Predicted crowdedness" }),
+  ).toBeVisible();
+  await expect(
+    details.getByRole("img", { name: "Moderate crowdedness" }),
+  ).toHaveCount(2);
+  await expect(
+    details.getByRole("img", { name: "Low crowdedness" }),
+  ).toBeVisible();
+  await expect(
+    details.getByRole("img", { name: "High crowdedness" }),
+  ).toBeVisible();
+  expect(
+    await details
+      .getByRole("img", { name: "High crowdedness" })
+      .locator(".filled")
+      .count(),
+  ).toBe(3);
+  await expect(details).toContainText("Tuas Link");
+  await expect(details).toContainText("not live train tracking");
+  await page
+    .getByRole("button", { name: "Close station or stop information" })
+    .click();
   await page.locator(".leaflet-popup-close-button").click();
 
   const mapBox = await page.locator(".journey-map").boundingBox();
@@ -1121,28 +1165,53 @@ test("opens local MRT and bus-stop details from map icons", async ({
   } else {
     await busStop.click();
   }
-  await expect(page.locator(".transit-stop-popup")).not.toContainText("Bus stop");
-  const serviceButton = page.locator('.stop-service-buttons button').first();
+  await expect(page.locator(".transit-stop-popup")).not.toContainText(
+    "Bus stop",
+  );
+  const serviceButton = page.locator(".stop-service-buttons button").first();
   const service = (await serviceButton.textContent())!;
-  await page.route('**/api/buses/*', route => route.fulfill({ json: {
-    status: 'live', updatedAt: new Date().toISOString(), buses: [{ service, stop: clickableBusId!.replace('lta-bus:', ''), eta: new Date(Date.now() + 240000).toISOString(), monitored: true, status: 'live', load: 'high', type: 'DD', wheelchair: true }],
-  } }));
+  await page.route("**/api/buses/*", (route) =>
+    route.fulfill({
+      json: {
+        status: "live",
+        updatedAt: new Date().toISOString(),
+        buses: [
+          {
+            service,
+            stop: clickableBusId!.replace("lta-bus:", ""),
+            eta: new Date(Date.now() + 240000).toISOString(),
+            monitored: true,
+            status: "live",
+            load: "high",
+            type: "DD",
+            wheelchair: true,
+          },
+        ],
+      },
+    }),
+  );
   await expect(page.locator(".transit-stop-popup")).not.toContainText(
     "More stop information",
   );
-  await page.getByRole('button', { name: /Show .+ stop information/ }).click();
-  await expect(details).toContainText('Live bus arrivals');
-  await expect(details).toContainText('Crowding: high');
-  await expect(details).toContainText('Double-deck bus');
+  await page.getByRole("button", { name: /Show .+ stop information/ }).click();
+  await expect(details).toContainText("Live bus arrivals");
+  await expect(details).toContainText("Crowding: high");
+  await expect(details).toContainText("Double-deck bus");
   await page.setViewportSize({ width: 320, height: 740 });
-  expect(await details.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
-  await page.getByRole('button', { name: 'Close station or stop information' }).click();
+  expect(await details.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+    true,
+  );
+  await page
+    .getByRole("button", { name: "Close station or stop information" })
+    .click();
   await serviceButton.click();
-  await expect(page.getByRole('region', { name: 'Bus service map' })).toContainText('Stops served');
-  await expect(page.locator('.bus-line-stop').first()).toBeAttached();
-  await expect(page.locator('.bus-service-schematic')).toBeAttached();
-  const busMapPanel = page.getByRole('region', { name: 'Bus service map' });
-  const pointsChip = page.locator('.points-counter');
+  await expect(
+    page.getByRole("region", { name: "Bus service map" }),
+  ).toContainText("Stops served");
+  await expect(page.locator(".bus-line-stop").first()).toBeAttached();
+  await expect(page.locator(".bus-service-schematic")).toBeAttached();
+  const busMapPanel = page.getByRole("region", { name: "Bus service map" });
+  const pointsChip = page.locator(".points-counter");
   const [busMapPanelBox, pointsChipBox] = await Promise.all([
     busMapPanel.boundingBox(),
     pointsChip.boundingBox(),
@@ -1151,12 +1220,15 @@ test("opens local MRT and bus-stop details from map icons", async ({
     pointsChipBox!.y + pointsChipBox!.height + 6,
   );
   expect(
-    await page.locator('.bus-line-stop').first().evaluate((marker) =>
-      marker.parentElement?.className.includes('bus-service-stop-pane'),
-    ),
+    await page
+      .locator(".bus-line-stop")
+      .first()
+      .evaluate((marker) =>
+        marker.parentElement?.className.includes("bus-service-stop-pane"),
+      ),
   ).toBe(true);
-  await page.getByRole('button', { name: 'Clear bus stops' }).click();
-  await expect(page.locator('.bus-line-stop')).toHaveCount(0);
+  await page.getByRole("button", { name: "Clear bus stops" }).click();
+  await expect(page.locator(".bus-line-stop")).toHaveCount(0);
 });
 
 test("keeps Commutes and Disruptions content inside the phone gutter", async ({

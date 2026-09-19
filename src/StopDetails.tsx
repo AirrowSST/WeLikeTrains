@@ -178,7 +178,10 @@ export default function StopDetails({
       <div className="station-crowd-cards">
         {entries.map((c, i) => {
           const expired = !!c.end && Date.parse(c.end) <= clock;
-          const level = available && !expired ? c.level : "unknown";
+          const level =
+            available && (!expired || c.status === "stale")
+              ? c.level
+              : "unknown";
           return (
             <div
               className="station-crowd-card"
@@ -197,14 +200,15 @@ export default function StopDetails({
               {(!available ||
                 expired ||
                 c.status === "stale" ||
+                c.status === "rate-limited" ||
                 c.status === "unavailable" ||
                 demo ||
                 c.status === "simulated") && (
                 <small className="station-crowd-note">
                   {!available
                     ? "Offline · fresh data unavailable"
-                    : expired
-                      ? "Expired reading"
+                    : c.status === "stale" || expired
+                      ? "Last reported · not current"
                       : c.status}
                 </small>
               )}

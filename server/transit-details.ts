@@ -4,7 +4,7 @@ import {
   loadRailScheduleSnapshot,
   type RailScheduleSnapshot,
 } from "./rail-schedule";
-import { cachedFetch, parseCrowds } from "./feeds";
+import { cachedFetch, isDataMallQuotaError, parseCrowds } from "./feeds";
 import { ltaConnection } from "./lta-client";
 import { canonicalLine } from "../shared/catalog";
 import type { TransitStop } from "../shared/types";
@@ -152,22 +152,33 @@ export async function stationCrowds(
           {
             AccountKey: connection.key,
           },
+          forecast ? 30 * 3600000 : 3600000,
         );
-        if (response.stale) return [{ ...unavailable, status: "stale" }];
+        if (response.stale && forecast)
+          return [{ ...unavailable, status: "stale" }];
         const now = Date.now();
         const readings = parseCrowds(response.value, line, forecast)
           .filter(
             (r) =>
               stop.codes.includes(r.station) &&
-              (forecast || Date.parse(r.start) <= now) &&
-              Date.parse(r.end) > now,
+              (forecast || Date.parse(r.start) <= now),
           )
           .sort((a, b) =>
             forecast
               ? Date.parse(a.start) - Date.parse(b.start)
               : Date.parse(b.start) - Date.parse(a.start),
           );
-        const unique = readings
+        const active = forecast
+          ? readings.filter((reading) => Date.parse(reading.end) > now)
+          : readings.filter((reading) => Date.parse(reading.end) > now);
+        const selected = active.length
+          ? active
+          : forecast
+            ? []
+            : readings.filter(
+                (reading) => now - Date.parse(reading.end) <= 60 * 60000,
+              );
+        const unique = selected
           .filter(
             (r, i, all) =>
               all.findIndex(
@@ -183,13 +194,22 @@ export async function stationCrowds(
               end: reading.end,
               status: connection.simulated
                 ? "simulated"
-                : forecast
-                  ? "forecast"
-                  : "current station crowd",
+                : response.stale || Date.parse(reading.end) <= now
+                  ? "stale"
+                  : forecast
+                    ? "forecast"
+                    : "current station crowd",
             }))
           : [unavailable];
-      } catch {
-        return [unavailable];
+      } catch (error) {
+        return [
+          {
+            ...unavailable,
+            status: isDataMallQuotaError(error)
+              ? "rate-limited"
+              : "unavailable",
+          },
+        ];
       }
     }),
   );

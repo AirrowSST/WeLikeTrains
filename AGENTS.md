@@ -4,6 +4,8 @@ This repository is intended for repeated human/AI collaboration. Treat this file
 
 ## User decisions — retain these
 
+- LTA crowd feeds must be quota-safe: do not fan out `PCDRealTime`/`PCDForecast` across every line on each plan. Determine relevant lines from computed route candidates, share current/forecast caches with station overlays, pace official DataMall request starts, retain visibly stale/unavailable states and identify quota faults without treating them as low crowding.
+
 - User requested both current and forecast station crowdedness as icons on 2026-09-19. Show one/two/three filled person figures for low/moderate/high, retain short accessible text labels, and show forecast time windows separately from current readings. Unknown/stale/offline data must not appear as low crowding.
 
 - User approved Google Places UI Kit for island-wide online address discovery on 2026-09-19. It may supply a selected Singapore place ID and coordinate in normal live mode; Wayce still calculates routes on its local OSM/DataMall graph and displays them on OneMap/OSM. Preserve indexed local search when the UI Kit is unconfigured, unavailable or offline. Disclose that typed online searches go to Google. Do not substitute raw Places/Geocoding web-service results, Google routing or a Google basemap without a new decision.

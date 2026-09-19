@@ -1090,34 +1090,220 @@ input {
   border: 0 !important;
   background: transparent !important;
 }
-.station-code-list { display: inline-flex; flex-wrap: wrap; gap: 5px; }
-.station-code { color: white; border-radius: 5px; padding: 5px 8px; font-size: 13px; }
-.stop-service-buttons { display: flex; flex-wrap: wrap; gap: 5px; max-height: 160px; overflow: auto; margin: 8px 0; }
-.stop-service-buttons button { min-width: 44px; min-height: 44px; border: 1px solid #ded8eb; border-radius: 8px; color: #503590; background: #f6f2fc; font-weight: 700; }
-.transit-stop-popup > button { min-height: 44px; }
-.modal.stop-details { width: calc(100% - 24px); max-width: 456px; max-height: calc(100dvh - 32px); }
-.stop-detail-body { padding: 0 20px 24px; overflow-wrap: anywhere; }
-.station-crowd-cards { display: grid; gap: 8px; }
-.station-crowd-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; padding: 12px; border: 1px solid #dce4df; border-radius: 12px; background: #fff; }
-.station-crowd-card > div > small { display: block; font-size: 12px; line-height: 1.5; margin-top: 4px; color: #52665c; }
-.station-crowd-indicator { display: grid; justify-items: center; gap: 3px; font-size: 12px; color: #294e3e; }
-.station-crowd-indicator.moderate { color: #78520d; }
-.station-crowd-indicator.high { color: #a52f37; }
-.station-crowd-indicator.unknown { color: #52665c; }
-.station-crowd-people { display: flex; gap: 1px; }
-.station-crowd-people .filled { fill: currentColor; stroke-width: 1.5; }
-.station-crowd-people .empty { color: #b9c2bc; fill: none; stroke-width: 1; }
-.station-crowd-note { grid-column: 1 / -1; color: #52665c; }
-.station-crowd-caption { color: #52665c; font-size: 12px; line-height: 1.5; }
-.stop-service-card { border: 1px solid #dce4df; border-radius: 12px; padding: 12px; margin: 12px 0; }
-.stop-service-card h4 { margin: 0 0 8px; }
-.bus-arrival-row { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid #e3e9e5; }
-.bus-map-panel { position: absolute; z-index: 1200; top: calc(116px + env(safe-area-inset-top)); left: 12px; right: 64px; padding: 10px; border-radius: 12px; background: white; box-shadow: 0 2px 10px #0002; font-size: 12px; }
-.bus-map-panel > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.bus-map-panel label { display: grid; gap: 3px; margin-top: 7px; }
-.bus-map-panel select { width: 100%; min-width: 0; min-height: 44px; }
-.bus-line-stop { display: grid; place-items: center; background: transparent; border: 0; }
-.bus-line-stop > span { display: grid; place-items: center; width: 28px; height: 28px; background: #6852b8; color: white; border: 2px solid white; border-radius: 50%; font-weight: 700; }
+.transit-stop-marker.rail {
+  display: grid !important;
+  place-items: center;
+}
+.transit-stop-content {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.transit-stop-label {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 3px);
+  display: none;
+  gap: 2px;
+  width: max-content;
+  max-width: 132px;
+  padding: 5px 7px 4px;
+  overflow: hidden;
+  border: 1px solid #d9e0dc;
+  border-radius: 7px;
+  background: #fffffff2;
+  box-shadow: 0 1px 5px #153d6626;
+  color: #243e35;
+  line-height: 1.05;
+  text-align: left;
+  transform: translateY(-50%);
+}
+.transit-stop-marker.show-label .transit-stop-label {
+  display: grid;
+}
+.transit-stop-label::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--station-line-colors);
+  content: "";
+}
+.transit-stop-label-codes {
+  display: flex;
+  gap: 2px;
+  padding-top: 1px;
+}
+.transit-stop-label-codes b {
+  padding: 1px 3px;
+  border-radius: 3px;
+  font-size: 8px;
+  line-height: 1.15;
+}
+.transit-stop-label strong {
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.station-code-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.station-code {
+  color: white;
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+.stop-service-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-height: 160px;
+  overflow: auto;
+  margin: 8px 0;
+}
+.stop-service-buttons button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid #ded8eb;
+  border-radius: 8px;
+  color: #503590;
+  background: #f6f2fc;
+  font-weight: 700;
+}
+.transit-stop-popup > button {
+  min-height: 44px;
+}
+.modal.stop-details {
+  width: calc(100% - 24px);
+  max-width: 456px;
+  max-height: calc(100dvh - 32px);
+}
+.stop-detail-body {
+  padding: 0 20px 24px;
+  overflow-wrap: anywhere;
+}
+.station-crowd-cards {
+  display: grid;
+  gap: 8px;
+}
+.station-crowd-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 12px;
+  border: 1px solid #dce4df;
+  border-radius: 12px;
+  background: #fff;
+}
+.station-crowd-card > div > small {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 4px;
+  color: #52665c;
+}
+.station-crowd-indicator {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: #294e3e;
+}
+.station-crowd-indicator.moderate {
+  color: #78520d;
+}
+.station-crowd-indicator.high {
+  color: #a52f37;
+}
+.station-crowd-indicator.unknown {
+  color: #52665c;
+}
+.station-crowd-people {
+  display: flex;
+  gap: 1px;
+}
+.station-crowd-people .filled {
+  fill: currentColor;
+  stroke-width: 1.5;
+}
+.station-crowd-people .empty {
+  color: #b9c2bc;
+  fill: none;
+  stroke-width: 1;
+}
+.station-crowd-note {
+  grid-column: 1 / -1;
+  color: #52665c;
+}
+.station-crowd-caption {
+  color: #52665c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.stop-service-card {
+  border: 1px solid #dce4df;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.stop-service-card h4 {
+  margin: 0 0 8px;
+}
+.bus-arrival-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px 0;
+  border-top: 1px solid #e3e9e5;
+}
+.bus-map-panel {
+  position: absolute;
+  z-index: 1200;
+  top: calc(116px + env(safe-area-inset-top));
+  left: 12px;
+  right: 64px;
+  padding: 10px;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 2px 10px #0002;
+  font-size: 12px;
+}
+.bus-map-panel > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.bus-map-panel label {
+  display: grid;
+  gap: 3px;
+  margin-top: 7px;
+}
+.bus-map-panel select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+}
+.bus-line-stop {
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+}
+.bus-line-stop > span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  background: #6852b8;
+  color: white;
+  border: 2px solid white;
+  border-radius: 50%;
+  font-weight: 700;
+}
 .transit-stop-symbol {
   display: grid;
   place-items: center;
@@ -1180,6 +1366,12 @@ input {
 .transit-stop-popup-heading strong {
   font-size: 13px;
   line-height: 1.25;
+}
+.transit-stop-popup-heading .transit-stop-more {
+  color: #503590;
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
 }
 .transit-stop-popup-heading:focus-visible {
   outline: 2px solid #173f35;

@@ -21,7 +21,13 @@ import {
   walkSegment,
   type TransitEdge,
 } from "./network";
-import { getConditions, getBusArrivals, parseBuses } from "./feeds";
+import {
+  crowdFeedLinesForSegments,
+  getBusArrivals,
+  getConditions,
+  getRailCrowding,
+  parseBuses,
+} from "./feeds";
 import { timelineInputs } from "../shared/timelines";
 import {
   evaluateRailSegments,
@@ -1044,6 +1050,14 @@ export async function planJourney(request: PlanRequest): Promise<PlanResponse> {
     );
   }
   if (!base.length) throw new NoUsableRouteError();
+  if (request.dataMode === "live") {
+    const crowdLines = crowdFeedLinesForSegments(
+      base.flatMap((journey) => journey.segments),
+    );
+    const railCrowding = await getRailCrowding(crowdLines);
+    conditions.crowd.push(...railCrowding.crowd);
+    conditions.feeds.push(...railCrowding.feeds);
+  }
   if (request.timeline && request.dataMode === "demo") {
     const input = timelineInputs(request.timeline);
     const stops = new Map<string, Set<string>>();
