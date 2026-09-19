@@ -51,9 +51,10 @@ They share authored API payload generators with the HTTP simulator, pass transpo
 payloads through the feed parsers, and never fetch real weather for a timeline.
 Both timelines for each profile start at that profile's departure time on
 21 September 2026 and last 60 simulated minutes. Control remains clear and
-normal; eventful starts a transport event at +5 minutes (Rachel: EWL, Arjun:
-NEL, Mdm Lim: Outram Park lift), heavy rain at +12, clear weather at +25 and
-transport recovery at +40. These are synthetic exercises, not historical events.
+normal; eventful starts every adverse condition immediately at minute 0
+(heavy rain plus Rachel's EWL disruption, Arjun's NEL disruption or Mdm Lim's
+Outram Park lift outage), clears the weather at +25 and restores transport at
++40. These are synthetic exercises, not historical events.
 Playback advances one simulated minute per step, waiting for planning to finish.
 It replans from the selected origin; journey progress and simulated location
 steps remain manually controlled. Exit demo restores the guest/account space.

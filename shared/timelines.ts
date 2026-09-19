@@ -28,15 +28,13 @@ export function timelineDefinition(id: TimelineId) {
     start: `2026-09-21T${profile.departure}:00+08:00`,
     events: eventful
       ? [
-          { minute: 0, label: "Clear weather and normal service" },
           {
-            minute: 5,
+            minute: 0,
             label:
               persona === "lim"
-                ? "Outram Park lift unavailable"
-                : `${persona === "rachel" ? "EWL" : "NEL"} disruption begins`,
+                ? "Outram Park lift unavailable; heavy rain begins"
+                : `${persona === "rachel" ? "EWL" : "NEL"} disruption and heavy rain begin`,
           },
-          { minute: 12, label: "Heavy rain begins" },
           { minute: 25, label: "Rain clears; transport event continues" },
           { minute: 40, label: "Service and lifts restored" },
         ]
@@ -55,15 +53,11 @@ export function timelineTime(selection: TimelineSelection) {
 export function timelineInputs(selection: TimelineSelection) {
   const definition = timelineDefinition(selection.id);
   const at = timelineTime(selection);
-  const disrupted =
-    definition.eventful && selection.minute >= 5 && selection.minute < 40;
-  const rain =
-    definition.eventful && selection.minute >= 12 && selection.minute < 25;
+  const disrupted = definition.eventful && selection.minute < 40;
+  const rain = definition.eventful && selection.minute < 25;
   const line = definition.persona === "arjun" ? "NEL" : "EWL";
   const stations = line === "NEL" ? "NE17,NE12,NE1" : "EW2,EW8,EW14";
-  const eventStart = new Date(
-    Date.parse(definition.start) + 5 * 60000,
-  ).toISOString();
+  const eventStart = new Date(Date.parse(definition.start)).toISOString();
   const eventEnd = new Date(
     Date.parse(definition.start) + 40 * 60000,
   ).toISOString();

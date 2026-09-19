@@ -50,7 +50,7 @@ describe("profile timeline playback", () => {
     );
   });
   for (const persona of ["rachel", "arjun", "lim"] as const) {
-    it(`${persona}: control stays clear; eventful applies and recovers at exact boundaries without network access`, async () => {
+    it(`${persona}: control stays clear; all eventful conditions start immediately and recover at exact boundaries without network access`, async () => {
       vi.stubGlobal("fetch", () => {
         throw new Error("Timelines must be offline");
       });
@@ -63,9 +63,9 @@ describe("profile timeline playback", () => {
         const eventful = await getConditions(
           request(`${persona}-eventful`, minute),
         );
-        expect(eventful.notices.length > 0).toBe(minute >= 5 && minute < 40);
+        expect(eventful.notices.length > 0).toBe(minute < 40);
         expect(eventful.weather.walkStatus).toBe(
-          minute >= 12 && minute < 25 ? "invalid" : "valid",
+          minute < 25 ? "invalid" : "valid",
         );
         expect(
           eventful.feeds.every(
@@ -74,11 +74,11 @@ describe("profile timeline playback", () => {
           ),
         ).toBe(true);
       }
-      expect(await getConditions(request(`${persona}-eventful`, 5))).toEqual(
-        await getConditions(request(`${persona}-eventful`, 5)),
+      expect(await getConditions(request(`${persona}-eventful`, 0))).toEqual(
+        await getConditions(request(`${persona}-eventful`, 0)),
       );
       const controlPlan = await planJourney(request(`${persona}-control`, 0));
-      const eventPlan = await planJourney(request(`${persona}-eventful`, 5));
+      const eventPlan = await planJourney(request(`${persona}-eventful`, 0));
       expect(controlPlan.travelDecision).toBe("travel");
       if (persona === "lim")
         expect(
@@ -91,7 +91,7 @@ describe("profile timeline playback", () => {
           eventPlan.recommended.duration !== controlPlan.recommended.duration ||
           eventPlan.travelDecision === "wait",
       ).toBe(true);
-      const rainy = await planJourney(request(`${persona}-eventful`, 12));
+      const rainy = await planJourney(request(`${persona}-eventful`, 0));
       expect(rainy.conditions.weather.rain).toBe(true);
       const recovered = await planJourney(request(`${persona}-eventful`, 40));
       expect(recovered.conditions.notices).toHaveLength(0);

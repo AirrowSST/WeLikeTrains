@@ -4,6 +4,8 @@ This repository is intended for repeated human/AI collaboration. Treat this file
 
 ## User decisions — retain these
 
+- User audit decision on 2026-09-19: P0 items are verified by the user; record this as user attestation without claiming new agent checks or deployment/submission authority. Focus remaining work on P1/P2. Road works are out of scope: no RoadWorks polling or road-work route warnings. See `docs/AUDIT-TRIAGE.md`.
+
 - User requested bus/train times inside the active **One step at a time** journey popup on 2026-09-19. Show the current or next boarding stop/service; refresh only while the popup is visible. Bus times may be live when fresh and monitored; bundled GTFS train departures must be labelled scheduled, never live train tracking. Preserve visible stale/offline/unavailable states and isolated demo clocks/data.
 - This is a **MOBILE-ONLY web app**, not a desktop dashboard. Keep one column, bottom navigation, comfortable touch targets and the same phone interface on wide screens (maximum width 480px).
 - Rachel (Tampines → Raffles Place, 07:40 / 08:45) is primary. Keep Arjun and Mdm Lim selectable.
@@ -32,6 +34,8 @@ This repository is intended for repeated human/AI collaboration. Treat this file
 - User approved the routing-source integration work on 2026-09-19: official bus-reference joins and frequency waits, LTA station exits/covered links/cycling layers, train realtime adapters, released planned bus changes, traffic corrections and a consented local field-measurement workflow. OSM/local routing and display-only OneMap remain. Deployment, public routing providers, automatic journey collection and submission remain separate. See `docs/ROUTING-DATA-STATUS.md` for actual coverage and provider availability.
 
 - User approved six demo timelines on 2026-09-19: control (no events) and eventful for Rachel, Arjun and Mdm Lim. These replace the UI's custom weather and disruption selectors. Timelines use an isolated 2026-09-21 simulation clock, shared authored DataMall/NEA payloads, play/pause/restart/speed/event jumps and manual journey progress. Timeline state must never enter live requests or account persistence.
+
+- User decided on 2026-09-19 that every adverse condition in an eventful simulation starts at minute 0. Heavy rain and the persona-specific rail disruption or lift outage must already affect the initial plan; authored recovery points may remain later in the timeline.
 
 - User approved an opt-in local DataMall API simulator on 2026-09-19. `npm run dev:datamall` serves authored fixtures on loopback. `LTA_BASE_URL` is development-only, always uses a dummy key, and must label simulated feeds. Simulated GTFS imports stay under ignored `.cache/`; production rejects the override. See README for scenarios and commands.
 

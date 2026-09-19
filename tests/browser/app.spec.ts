@@ -184,9 +184,8 @@ test("plays profile timelines, jumps through recovery and restores the guest", a
   await page.getByRole("button", { name: "Start demo" }).click();
   await expect(page.getByLabel("Timeline minute")).toHaveValue("0");
   await page.getByLabel("Demo timeline").selectOption("eventful");
-  await page.getByLabel("Jump to timeline event").selectOption("12");
   await expect(page.locator(".timeline-controls")).toContainText(
-    "Heavy rain begins",
+    "disruption and heavy rain begin",
   );
   await expect(page.locator(".recommendation")).toContainText(
     "Wait for the heavy weather",
@@ -488,7 +487,7 @@ test("plans, compares, saves, interviews preferences and shows planned notices",
   });
   await expect(page.getByLabel("Demo test controls")).toHaveCount(0);
   await openDeveloperDemos(page);
-  await startTimelineAt(page, 12);
+  await startTimelineAt(page, 0);
   await expect(page.locator(".rain-zone").first()).toBeVisible();
   await expect(page.locator(".map-mode-key")).toContainText("Rain area");
   await page.getByRole("button", { name: "Exit demo" }).click();
@@ -770,7 +769,7 @@ test("compares original, affected and revised routes with complete crowd labels"
   const currentPlan = await useDeterministicPlans(page, true);
   await page.goto("/");
   await openDeveloperDemos(page);
-  await startTimelineAt(page, 5);
+  await startTimelineAt(page, 0);
 
   await expect
     .poll(() => page.locator(".route-original").count())
@@ -805,7 +804,7 @@ test("tells the commuter to wait when heavy weather blocks every route", async (
   await useDeterministicPlans(page, true);
   await page.goto("/");
   await openDeveloperDemos(page);
-  await startTimelineAt(page, 12);
+  await startTimelineAt(page, 0);
 
   await expect(page.locator(".recommendation")).toContainText(
     "Route unavailable",
@@ -874,7 +873,7 @@ test("bell shows only service-disruption alerts", async ({ page }) => {
   await useDeterministicPlans(page);
   await page.goto("/");
   await openDeveloperDemos(page);
-  await startTimelineAt(page, 5);
+  await startTimelineAt(page, 0);
   await expect(startJourneyButton(page)).toBeEnabled();
 
   await page.getByRole("button", { name: "View disruption alerts" }).click();
