@@ -3633,6 +3633,23 @@ input {
   backdrop-filter: blur(10px);
   pointer-events: auto;
 }
+.active-trip-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.active-trip-layout > .active-route-summary {
+  position: relative;
+  top: auto;
+  flex: 0 0 auto;
+  padding-top: calc(7px + env(safe-area-inset-top));
+}
+.active-trip-layout > .journey-navigation-stage {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
 .journey-navigation-stage {
   position: relative;
   width: 100%;
@@ -3712,6 +3729,28 @@ input {
 }
 .journey-navigation-stage.sheet-collapsed .active-journey-scroll {
   overflow-y: hidden;
+}
+.active-journey-sheet > .labelled-sheet-handle {
+  position: relative;
+  flex: 0 0 52px;
+  height: 52px;
+  gap: 5px;
+  align-content: center;
+  border-radius: inherit;
+  color: #176637;
+}
+.labelled-sheet-handle strong {
+  font-size: 16px;
+  font-weight: 750;
+}
+.active-trip-layout .active-journey.active-journey-scroll {
+  padding-top: 12px;
+}
+.active-trip-layout .sheet-collapsed .active-journey-scroll {
+  display: none;
+}
+.active-trip-layout .active-route-back {
+  margin-top: auto;
 }
 .active-journey {
   text-align: left;

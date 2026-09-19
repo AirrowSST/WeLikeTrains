@@ -964,6 +964,7 @@ function SheetDragHandle({
   sheetMoved,
   snapJourneySheet,
   startSheetDrag,
+  displayLabel,
 }: {
   controls: string;
   label: string;
@@ -971,12 +972,14 @@ function SheetDragHandle({
   sheetMoved: ReturnType<typeof useJourneySheet>["sheetMoved"];
   snapJourneySheet: ReturnType<typeof useJourneySheet>["snapJourneySheet"];
   startSheetDrag: ReturnType<typeof useJourneySheet>["startSheetDrag"];
+  displayLabel?: string;
 }) {
   return (
     <button
       type="button"
-      className="sheet-drag-handle"
-      aria-label={`Resize ${label}, ${sheetSnapDescriptions[sheetSnap]}`}
+      className={`sheet-drag-handle${displayLabel ? " labelled-sheet-handle" : ""}`}
+      aria-label={displayLabel ?? `Resize ${label}, ${sheetSnapDescriptions[sheetSnap]}`}
+      aria-expanded={displayLabel ? sheetSnap !== 2 : undefined}
       aria-controls={controls}
       data-sheet-snap={sheetSnapNames[sheetSnap]}
       title={`Drag to resize ${label}`}
@@ -987,7 +990,7 @@ function SheetDragHandle({
           event.preventDefault();
           return;
         }
-        snapJourneySheet(sheetSnap === 0 ? 2 : 0);
+        snapJourneySheet(displayLabel ? (sheetSnap === 2 ? 0 : 2) : (sheetSnap === 0 ? 2 : 0));
       }}
       onKeyDown={(event) => {
         if (event.key === "ArrowUp") {
@@ -1006,6 +1009,7 @@ function SheetDragHandle({
       }}
     >
       <span aria-hidden="true" />
+      {displayLabel && <strong>{displayLabel}</strong>}
     </button>
   );
 }
@@ -1617,6 +1621,7 @@ export default function App() {
     sheetSelector: ".active-journey-sheet",
     scrollSelector: ".active-journey-scroll",
     lockDocument: false,
+    collapsedHeight: 104,
     middleRatio: 0.32,
     middleMaxHeight: 290,
   });
@@ -4862,12 +4867,7 @@ export default function App() {
           onClose={closeJourney}
           className="journey-navigation-modal"
         >
-          <div
-            ref={activeJourneyLayout}
-            className={`journey-navigation-stage sheet-${
-              sheetSnapNames[activeJourneySheetSnap]
-            } ${activeJourneySheetDragging ? "sheet-dragging" : ""}`}
-          >
+          <div className="active-trip-layout">
             <header className="active-route-summary">
               <div>
                 <span>From</span>
@@ -4884,6 +4884,12 @@ export default function App() {
                 <strong>{sgTime(activeJourney.route.arrival)}</strong>
               </div>
             </header>
+          <div
+            ref={activeJourneyLayout}
+            className={`journey-navigation-stage sheet-${
+              sheetSnapNames[activeJourneySheetSnap]
+            } ${activeJourneySheetDragging ? "sheet-dragging" : ""}`}
+          >
             <JourneyMap
               plan={plan}
               selected={activeJourney.route}
@@ -4891,12 +4897,14 @@ export default function App() {
               onViewAlerts={() => setModal("alerts")}
               hasAlerts={disruptionAlerts.length > 0}
               request={request}
-              navigationMode
+              focusSelectedRoute
+              showComparison={request.dataMode === "demo" && request.scenario === "disruption"}
             />
             <section className="active-journey-sheet" aria-label="Trip instructions">
               <SheetDragHandle
                 controls="active-journey-content"
                 label="One step at a time panel"
+                displayLabel={activeJourneySheetSnap === 2 ? "Display instructions" : "Display map"}
                 sheetSnap={activeJourneySheetSnap}
                 sheetMoved={activeJourneySheetMoved}
                 snapJourneySheet={snapActiveJourneySheet}
@@ -4962,6 +4970,7 @@ export default function App() {
                 Back to navigation
               </button>
             </section>
+          </div>
           </div>
         </Modal>
       )}
