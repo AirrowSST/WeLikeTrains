@@ -64,6 +64,35 @@ function labelledIcon(
   return root;
 }
 
+function sameCoordinate(
+  first: [number, number] | undefined,
+  second: [number, number] | undefined,
+) {
+  return (
+    !!first &&
+    !!second &&
+    Math.abs(first[0] - second[0]) < 0.00001 &&
+    Math.abs(first[1] - second[1]) < 0.00001
+  );
+}
+
+function nextTransitSegment(segments: Segment[], index: number) {
+  for (let current = index + 1; current < segments.length; current += 1) {
+    const segment = segments[current];
+    if (segment.mode === "bus" || segment.mode === "rail") return segment;
+  }
+  return undefined;
+}
+
+function busRouteLabel(label: string, kind: "board" | "alight" | "transfer") {
+  const root = document.createElement("span");
+  root.className = `bus-route-label ${kind}`;
+  const text = document.createElement("strong");
+  text.textContent = label;
+  root.append(text);
+  return root;
+}
+
 function transitStopIcon(stop: TransitStop) {
   const root = document.createElement("span");
   root.className = "transit-stop-content";
@@ -802,7 +831,7 @@ export default function JourneyMap({
         }).addTo(group);
       });
     }
-    journey.segments.forEach((s) => {
+    journey.segments.forEach((s, index) => {
       const schematicBus = s.mode === "bus" && s.geometryKind === "schematic";
       const focused = navigationMode && s.id === focusSegmentId;
       const issues = s.issues ?? [];
@@ -823,6 +852,48 @@ export default function JourneyMap({
                   : (lineColors[s.line] ?? "#235ba8");
       const tooltip = document.createElement("span");
       tooltip.textContent = `${s.from} → ${s.to}`;
+      if (s.mode === "bus") {
+        const previous = journey.segments[index - 1];
+        const next = nextTransitSegment(journey.segments, index);
+        const boardingAlreadyLabelled =
+          previous?.mode === "bus" &&
+          sameCoordinate(previous.geometry.at(-1), s.geometry[0]);
+        const transferAtAlighting =
+          next?.mode === "bus" &&
+          sameCoordinate(s.geometry.at(-1), next.geometry[0]);
+        const stops: {
+          coord: [number, number] | undefined;
+          label: string;
+          kind: "board" | "alight" | "transfer";
+        }[] = [];
+        if (!boardingAlreadyLabelled)
+          stops.push({
+            coord: s.geometry[0],
+            label: `Board Bus ${s.line}`,
+            kind: "board",
+          });
+        stops.push({
+          coord: s.geometry.at(-1),
+          label: transferAtAlighting
+            ? `Alight Bus ${s.line} · Board Bus ${next.line}`
+            : `Alight Bus ${s.line}`,
+          kind: transferAtAlighting ? "transfer" : "alight",
+        });
+        stops.forEach(({ coord, label, kind }) => {
+          if (!coord) return;
+          L.marker(coord, {
+            interactive: false,
+            keyboard: false,
+            zIndexOffset: 1400,
+            icon: L.divIcon({
+              className: "bus-route-label-anchor",
+              html: busRouteLabel(label, kind),
+              iconSize: [148, 26],
+              iconAnchor: [74, 34],
+            }),
+          }).addTo(group);
+        });
+      }
       if (schematicBus) {
         const stops = s.hops?.length
           ? s.hops.flatMap((hop, index) =>

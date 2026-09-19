@@ -1587,6 +1587,34 @@ input {
 .route-mode-marker.bus {
   color: #7b3fc6;
 }
+.bus-route-label-anchor {
+  border: 0 !important;
+  background: transparent !important;
+}
+.bus-route-label {
+  display: inline-flex;
+  max-width: 148px;
+  padding: 5px 7px;
+  border: 1px solid #cdbceb;
+  border-radius: 7px;
+  background: #fffffff2;
+  box-shadow: 0 2px 7px #38255e26;
+  color: #4b326f;
+  font-size: 9px;
+  line-height: 1.15;
+  text-align: center;
+  white-space: normal;
+}
+.bus-route-label.board {
+  border-color: #8b6cc7;
+}
+.bus-route-label.alight {
+  color: #5a6672;
+}
+.bus-route-label.transfer {
+  border-color: #7250af;
+  background: #f6f1ff;
+}
 .route-mode-marker.cycle {
   color: #d06c18;
 }
@@ -2062,6 +2090,24 @@ input {
   color: #8a9681;
   line-height: 1.5;
 }
+.bus-stop-labels {
+  display: grid;
+  gap: 3px;
+  margin-top: 5px;
+}
+.bus-stop-labels p {
+  margin: 0;
+}
+.bus-stop-labels strong {
+  color: #4b326f;
+  font-weight: 700;
+}
+.active-step-summary .bus-stop-labels {
+  margin-top: 8px;
+}
+.active-step-summary .bus-stop-labels p {
+  font-size: 11px;
+}
 .timeline-step .step-detail {
   max-width: 560px;
   margin-top: 7px;
@@ -2231,6 +2277,17 @@ input {
   box-shadow: 0 4px 22px #214d3b26;
   font-size: 15px;
   letter-spacing: 0.1px;
+  animation: waycey-float 3.6s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes waycey-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
 }
 .companion-button > span {
   width: 42px;
@@ -5101,6 +5158,7 @@ body {
     transition: none !important;
     scroll-behavior: auto !important;
   }
+  .companion-button,
   .current-location-marker::before {
     animation: none;
   }

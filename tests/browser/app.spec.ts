@@ -317,6 +317,46 @@ test("shows planning failures beside the route action", async ({ page }) => {
   );
 });
 
+test("collapses the journey sheet to reveal the map after a route search", async ({
+  page,
+}) => {
+  await useDeterministicPlans(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const handle = page.getByRole("button", { name: /Resize journey panel/ });
+  const sheet = page.locator(".journey-sheet");
+  const stage = page.locator(".journey-layout");
+  await expect(page.locator(".companion-button")).toHaveCSS(
+    "animation-name",
+    "waycey-float",
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.locator(".companion-button")).toHaveCSS(
+    "animation-name",
+    "none",
+  );
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(handle).toHaveAttribute("data-sheet-snap", "middle");
+  const stageHeight = (await stage.boundingBox())!.height;
+  const sheetHeightBeforeSearch = (await sheet.boundingBox())!.height;
+  const visibleMapBeforeSearch = stageHeight - sheetHeightBeforeSearch;
+
+  await page.getByRole("button", { name: "Find my best route" }).click();
+
+  await expect(page.locator(".route-options")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(handle).toHaveAttribute("data-sheet-snap", "collapsed");
+  await expect
+    .poll(async () => (await sheet.boundingBox())!.height)
+    .toBeLessThanOrEqual(73);
+  const visibleMapAfterSearch =
+    (await stage.boundingBox())!.height - (await sheet.boundingBox())!.height;
+  expect(visibleMapAfterSearch).toBeGreaterThan(visibleMapBeforeSearch);
+});
+
 test("keeps the route action compact in a very short visual viewport", async ({
   page,
 }) => {
@@ -1039,6 +1079,12 @@ test("opens schematic bus details from a served-stop marker on a narrow phone", 
     .first()
     .click();
   await expect(page.locator(".bus-route-schematic")).toBeAttached();
+  await expect(page.locator(".bus-route-label.board")).toContainText(
+    "Board Bus 31",
+  );
+  await expect(page.locator(".bus-route-label.alight")).toContainText(
+    "Alight Bus 31",
+  );
 
   const busStop = page.locator(".bus-route-stop").first();
   await expect(busStop).toHaveAttribute("role", "button");

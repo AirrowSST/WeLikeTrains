@@ -196,9 +196,15 @@ test("shows upcoming bus and train times, refreshes only while open and handles 
   await page.goto("/");
   await expect(page.getByRole("button", { name: /^Start / })).toHaveCount(0);
   await expect(await selectFirstRoute(page)).toBeEnabled();
+  await expect(page.getByText("Board Bus 27 at Tampines stop")).toBeVisible();
+  await expect(
+    page.getByText("Alight Bus 27 at Tampines MRT"),
+  ).toBeVisible();
   expect(busCalls).toBe(0);
   await page.getByRole("button", { name: /^Start / }).click();
   const busBoard = page.getByRole("region", { name: "Bus arrival times" });
+  await expect(page.getByRole("heading", { name: "Board Bus 27" })).toBeVisible();
+  await expect(page.getByText("Alight Bus 27 at Tampines MRT")).toBeVisible();
   await expect(busBoard).toContainText("Next boarding · Tampines stop (76141)");
   await expect(busBoard.locator(".arrival-times li")).toHaveCount(3);
   await expect(busBoard).toContainText("Live bus arrivals");

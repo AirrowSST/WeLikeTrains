@@ -586,6 +586,39 @@ function LinePill({ segment }: { segment: Segment }) {
     </span>
   );
 }
+
+function busActionLabel(segment: Segment, previous?: Segment) {
+  return previous?.mode === "bus" || previous?.mode === "rail"
+    ? `Transfer to Bus ${segment.line}`
+    : `Board Bus ${segment.line}`;
+}
+
+function precedingTransitSegment(segments: Segment[], index: number) {
+  for (let current = index - 1; current >= 0; current -= 1) {
+    const segment = segments[current];
+    if (segment.mode === "bus" || segment.mode === "rail") return segment;
+  }
+  return undefined;
+}
+
+function BusStopLabels({
+  segment,
+  previous,
+}: {
+  segment: Segment;
+  previous?: Segment;
+}) {
+  return (
+    <div className="bus-stop-labels" aria-label={`Bus ${segment.line} stops`}>
+      <p>
+        <strong>{busActionLabel(segment, previous)}</strong> at {segment.from}
+      </p>
+      <p>
+        <strong>Alight Bus {segment.line}</strong> at {segment.to}
+      </p>
+    </div>
+  );
+}
 function CrowdBadge({ crowd }: { crowd: Journey["crowd"] }) {
   const labels: Record<Journey["crowd"], string> = {
     low: "Low crowd",
@@ -1474,47 +1507,51 @@ export default function App() {
       preferences: { ...previous.preferences, ...value },
     }));
   };
-  const runPlan = useCallback(async (value: PlanRequest) => {
-    if (!isPlannable(value)) {
-      setPlan(null);
-      setLoading(false);
-      return;
-    }
-    activeRequest.current?.abort();
-    const control = new AbortController();
-    activeRequest.current = control;
-    setLoading(true);
-    setError("");
-    try {
-      const response = await fetch("/api/plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(value),
-        signal: control.signal,
-      });
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error ?? "Unable to plan your journey");
-      setPlan(data);
-      setShowAllRoutes(false);
-      setSelectedId(null);
-      if (value.dataMode === "live") persist(PLAN_KEY, data);
-    } catch (e: any) {
-      if (e.name !== "AbortError") {
-        if (navigator.onLine) {
-          setPlan(null);
-          setSelectedId(null);
-        }
-        setError(
-          navigator.onLine
-            ? e.message
-            : "You’re offline. Your last saved journey is shown; conditions may have changed.",
-        );
+  const runPlan = useCallback(
+    async (value: PlanRequest, focusMapOnSuccess = false) => {
+      if (!isPlannable(value)) {
+        setPlan(null);
+        setLoading(false);
+        return;
       }
-    } finally {
-      if (activeRequest.current === control) setLoading(false);
-    }
-  }, []);
+      activeRequest.current?.abort();
+      const control = new AbortController();
+      activeRequest.current = control;
+      setLoading(true);
+      setError("");
+      try {
+        const response = await fetch("/api/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(value),
+          signal: control.signal,
+        });
+        const data = await response.json();
+        if (!response.ok)
+          throw new Error(data.error ?? "Unable to plan your journey");
+        setPlan(data);
+        setShowAllRoutes(false);
+        setSelectedId(null);
+        if (focusMapOnSuccess) snapJourneySheet(2);
+        if (value.dataMode === "live") persist(PLAN_KEY, data);
+      } catch (e: any) {
+        if (e.name !== "AbortError") {
+          if (navigator.onLine) {
+            setPlan(null);
+            setSelectedId(null);
+          }
+          setError(
+            navigator.onLine
+              ? e.message
+              : "You’re offline. Your last saved journey is shown; conditions may have changed.",
+          );
+        }
+      } finally {
+        if (activeRequest.current === control) setLoading(false);
+      }
+    },
+    [],
+  );
   const buildAccountState = (
     overrides: Partial<
       Pick<
@@ -2870,7 +2907,7 @@ export default function App() {
                               }
                             : request;
                           setRequest(next);
-                          void runPlan(next);
+                          void runPlan(next, true);
                         }}
                       >
                         <div className="route-input-group">
@@ -3051,7 +3088,7 @@ export default function App() {
                           <span>{error}</span>
                           <button
                             type="button"
-                            onClick={() => runPlan(request)}
+                            onClick={() => runPlan(request, true)}
                             className="text-button"
                           >
                             Retry
@@ -3387,10 +3424,27 @@ export default function App() {
                                       ? `Walk to ${s.to}`
                                       : s.mode === "cycle"
                                         ? `Cycle to ${s.to}`
-                                        : `${s.mode === "bus" ? "Bus " : ""}${s.line} to ${s.to}`}
+                                        : s.mode === "bus"
+                                          ? busActionLabel(
+                                              s,
+                                              precedingTransitSegment(
+                                                selected.segments,
+                                                i,
+                                              ),
+                                            )
+                                        : `${s.line} to ${s.to}`}
                                   </h3>
-                                  <p>
-                                    {s.mode === "walk" ? (
+                                  {s.mode === "bus" ? (
+                                    <BusStopLabels
+                                      segment={s}
+                                      previous={precedingTransitSegment(
+                                        selected.segments,
+                                        i,
+                                      )}
+                                    />
+                                  ) : (
+                                    <p>
+                                      {s.mode === "walk" ? (
                                       <>
                                         {Math.round(s.distance)} m{" "}
                                         {s.sheltered && (
@@ -3408,7 +3462,8 @@ export default function App() {
                                     ) : (
                                       `From ${s.from}${s.affected ? " · Service affected" : ""}`
                                     )}
-                                  </p>
+                                    </p>
+                                  )}
                                   {s.mode === "walk" && (
                                     <p className="segment-shelter-summary">
                                       <Umbrella size={13} aria-hidden="true" />
@@ -4647,13 +4702,34 @@ export default function App() {
                           STEP {journeyStep + 1} OF{" "}
                           {activeJourney.route.segments.length}
                         </p>
-                        <h2>{activeJourney.route.segments[journeyStep].to}</h2>
+                        <h2>
+                          {activeJourney.route.segments[journeyStep].mode ===
+                          "bus"
+                            ? busActionLabel(
+                                activeJourney.route.segments[journeyStep],
+                                precedingTransitSegment(
+                                  activeJourney.route.segments,
+                                  journeyStep,
+                                ),
+                              )
+                            : activeJourney.route.segments[journeyStep].to}
+                        </h2>
                         <p>
                           {
                             activeJourney.route.segments[journeyStep]
                               .instructions
                           }
                         </p>
+                        {activeJourney.route.segments[journeyStep].mode ===
+                          "bus" && (
+                          <BusStopLabels
+                            segment={activeJourney.route.segments[journeyStep]}
+                            previous={precedingTransitSegment(
+                              activeJourney.route.segments,
+                              journeyStep,
+                            )}
+                          />
+                        )}
                       </div>
                     </div>
                     <div className="active-step-details">
